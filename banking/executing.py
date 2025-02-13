@@ -1,6 +1,6 @@
 """
 Created on 09.12.2019
-__updated__ = "2025-02-06"
+__updated__ = "2025-02-13"
 Author: Wolfang Kramer
 """
 
@@ -1961,9 +1961,8 @@ class FinTS_MariaDB_Banking(object):
                                                                   DB_opening_status, DB_opening_balance, DB_opening_currency])
                     total_df.append(dataframe)
             if total_df:
-                BuiltPandasBox.CELLWIDTH_FIXED[title] = True
                 PandasBoxBalancesAllBanks(
-                    title=title, dataframe=total_df, mode=CURRENCY_SIGN)
+                    title=title, dataframe=total_df, mode=CURRENCY_SIGN, cellwidth_resizeable=False)
             else:
                 self.footer.set(
                     ' '.join([message, MESSAGE_TEXT['DATA_NO'].format('', '')]))
@@ -1982,9 +1981,9 @@ class FinTS_MariaDB_Banking(object):
                                                           DB_closing_status, DB_closing_balance, DB_closing_currency,
                                                           DB_opening_status, DB_opening_balance, DB_opening_currency])
             # ignore F_keys because Columns  dropped in PandasBoxBalances
-            BuiltPandasBox.CELLWIDTH_FIXED[title] = True
             PandasBoxBalances(title=title, dataframe=dataframe, dataframe_sum=[
-                              DB_closing_balance, DB_opening_balance], mode=CURRENCY_SIGN)
+                              DB_closing_balance, DB_opening_balance], mode=CURRENCY_SIGN,
+                              cellwidth_resizeable=False)
         else:
             self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, ''))
 
@@ -2201,10 +2200,10 @@ class FinTS_MariaDB_Banking(object):
                                    key=lambda i: (i[DB_name]))
                 title_period = ' '.join(
                     [title, date_])
-                BuiltPandasBox.CELLWIDTH_FIXED[title_period] = True
                 while True:
                     table = PandasBoxHolding(title=title_period, dataframe=(data_list, date_field_list.field_list), dataframe_sum=[
-                                             DB_total_amount, DB_acquisition_amount, FN_PROFIT], mode=NO_CURRENCY_SIGN)
+                                             DB_total_amount, DB_acquisition_amount, FN_PROFIT], mode=NO_CURRENCY_SIGN,
+                                             cellwidth_resizeable=False)
                     if table.button_state == WM_DELETE_WINDOW:
                         break
 
@@ -2234,10 +2233,10 @@ class FinTS_MariaDB_Banking(object):
                 iban=iban, price_date=to_date)
             title_period = ' '.join(
                 [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
-            BuiltPandasBox.CELLWIDTH_FIXED[title_period] = True
             while True:
                 table = PandasBoxHoldingPercent(title=title_period, dataframe=(
-                    data_to_date, data_from_date), mode=CURRENCY_SIGN)
+                    data_to_date, data_from_date), mode=CURRENCY_SIGN,
+                    cellwidth_resizeable=False)
                 if table.button_state == WM_DELETE_WINDOW:
                     break
 
@@ -2260,10 +2259,9 @@ class FinTS_MariaDB_Banking(object):
                 dataframe = DataFrame(list(result), columns=['ORIGIN',
                                                              DB_ISIN, DB_name, DB_pieces])
                 title = title + MESSAGE_TEXT['TRANSACTION_PIECES_PORTFOLIO']
-                BuiltPandasBox.CELLWIDTH_FIXED[title] = True
                 while True:
                     table = BuiltPandasBox(
-                        dataframe=dataframe, title=title)
+                        dataframe=dataframe, title=title, cellwidth_resizeable=False)
                     if table.button_state == WM_DELETE_WINDOW:
                         break
             else:
@@ -2295,10 +2293,10 @@ class FinTS_MariaDB_Banking(object):
         if result:
             title_period = ' '.join(
                 [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
-            BuiltPandasBox.CELLWIDTH_FIXED[title_period] = True
             while True:
                 table = PandasBoxTransactionProfit(
-                    title=title_period, dataframe=list(result), mode=NO_CURRENCY_SIGN)
+                    title=title_period, dataframe=list(result), mode=NO_CURRENCY_SIGN,
+                    cellwidth_resizeable=False)
                 if table.button_state == WM_DELETE_WINDOW:
                     break
 
@@ -2316,7 +2314,7 @@ class FinTS_MariaDB_Banking(object):
         while True:
             input_date = InputDate(title=title,
                                    header=MESSAGE_TEXT['SELECT'],
-                                   from_date=from_date, to_date=to_date)
+                                   from_date=from_date, to_date=to_date, cellwidth_resizeable=False)
             if input_date.button_state == WM_DELETE_WINDOW:
                 return
             from_date = input_date.field_dict[FN_FROM_DATE]
@@ -2326,10 +2324,10 @@ class FinTS_MariaDB_Banking(object):
             if result:
                 title_period = ' '.join(
                     [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
-                BuiltPandasBox.CELLWIDTH_FIXED[title_period] = True
                 while True:
                     table = PandasBoxTransactionProfit(
-                        title=title_period, dataframe=list(result), mode=NO_CURRENCY_SIGN)
+                        title=title_period, dataframe=list(result), mode=NO_CURRENCY_SIGN,
+                        cellwidth_resizeable=False)
                     if table.button_state == WM_DELETE_WINDOW:
                         break
             else:
@@ -2427,7 +2425,7 @@ class FinTS_MariaDB_Banking(object):
             title = ' '.join(
                 [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
             BuiltPandasBox(title=title, dataframe=DataFrame(
-                data), mode=NO_CURRENCY_SIGN)
+                data), mode=NO_CURRENCY_SIGN, cellwidth_resizeable=False)
         else:
             self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, ''))
 
@@ -2448,7 +2446,7 @@ class FinTS_MariaDB_Banking(object):
             title = ' '.join(
                 [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
             BuiltPandasBox(title=title, dataframe=DataFrame(data, columns=[DB_account, DB_name, FN_BALANCE]),
-                           dataframe_sum=[FN_BALANCE], mode=NO_CURRENCY_SIGN)
+                           dataframe_sum=[FN_BALANCE], mode=NO_CURRENCY_SIGN, cellwidth_resizeable=False)
         else:
             self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, ''))
 

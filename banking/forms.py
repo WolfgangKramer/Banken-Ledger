@@ -1232,6 +1232,28 @@ class Isin(BuiltEnterBox):
                     VALIDITY_DEFAULT)
 
 
+class LedgerCoaTableRowBox(BuiltTableRowBox):
+    """
+    TOP-LEVEL-WINDOW        EnterBox LedgerCoa Table Values
+    """
+
+    def validation_addon(self, field_def):
+        """
+        check if account is already used in table ledger_coa
+        """
+        if field_def.name == DB_iban:
+            iban_ = field_def.widget.get()
+            result = self.mariadb.select_table(
+                LEDGER_COA, [DB_account], iban=iban_)
+            if len(result) > 1:
+                account = getattr(self._field_defs, DB_account).widget.get()
+                for account_tuple in result:
+                    if account != account_tuple[0]:
+                        self.footer.set(
+                            MESSAGE_TEXT['IBAN_USED'].format(account_tuple[0]))
+                        return
+
+
 class LedgerTableRowBox(BuiltTableRowBox):
     """
     TOP-LEVEL-WINDOW        EnterBox Ledger Table Values
@@ -2369,9 +2391,9 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
 
         row_dict = self.get_selected_row()
         protected = TABLE_FIELDS[LEDGER_COA]
-        ledger_coa = BuiltTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
-                                      protected=protected,
-                                      title=self.title,  button1_text=None, button2_text=None)
+        ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
+                                          protected=protected,
+                                          title=self.title,  button1_text=None, button2_text=None)
         if ledger_coa.button_state == WM_DELETE_WINDOW:
             return
         self.quit_widget()
@@ -2380,9 +2402,9 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
 
         row_dict = self.get_selected_row()
         protected = TABLE_FIELDS[LEDGER_COA]
-        ledger_coa = BuiltTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
-                                      protected=protected,
-                                      title=self.title, button1_text=BUTTON_DELETE, button2_text=None)
+        ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
+                                          protected=protected,
+                                          title=self.title, button1_text=BUTTON_DELETE, button2_text=None)
         if ledger_coa.button_state == WM_DELETE_WINDOW:
             return
         elif ledger_coa.button_state == BUTTON_DELETE:
@@ -2397,9 +2419,9 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
         row_dict = self.get_selected_row()
         protected = [DB_account]
         mandatory = [DB_name]
-        ledger_coa = BuiltTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
-                                      protected=protected, mandatory=mandatory,
-                                      title=self.title, button1_text=BUTTON_UPDATE)
+        ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
+                                          protected=protected, mandatory=mandatory,
+                                          title=self.title, button1_text=BUTTON_UPDATE)
         if ledger_coa.button_state == WM_DELETE_WINDOW:
             return
         elif ledger_coa.button_state == BUTTON_UPDATE:
@@ -2417,9 +2439,9 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
     def new_row_insert(self, row_dict):
 
         mandatory = [DB_account, DB_name]
-        ledger_coa = BuiltTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
-                                      mandatory=mandatory,
-                                      title=self.title, button1_text=BUTTON_NEW)
+        ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
+                                          mandatory=mandatory,
+                                          title=self.title, button1_text=BUTTON_NEW)
         if ledger_coa.button_state == WM_DELETE_WINDOW:
             return ledger_coa
         elif ledger_coa.button_state == BUTTON_NEW:

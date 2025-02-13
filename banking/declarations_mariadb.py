@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-01-24"
+__updated__ = "2025-02-11"
 @author: Wolfgang Kramer
 """
 from collections import namedtuple
@@ -157,7 +157,7 @@ CREATE_LEDGER = "CREATE TABLE IF NOT EXISTS `ledger` (\
 CREATE_LEDGER_COA = "CREATE TABLE IF NOT EXISTS  `ledger_coa` (\
     `account` CHAR(4) NOT NULL COMMENT 'Account Number(4 digits)' COLLATE 'latin1_swedish_ci',\
     `name` VARCHAR(50) NOT NULL COMMENT 'Account Name' COLLATE 'latin1_swedish_ci',\
-    `iban` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'IBAN if  Financial Account represents a Bank Account' COLLATE 'latin1_swedish_ci',\
+    `iban` CHAR(22) NOT NULL DEFAULT 'NA' COMMENT 'IBAN if  Financial Account represents a Bank Account' COLLATE 'latin1_swedish_ci',\
     `eur_accounting` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated:  EUR Account',\
     `tax_on_input` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated: Amount subject to input tax',\
     `value_added_tax` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated: Amount subject to value_added_tax',\

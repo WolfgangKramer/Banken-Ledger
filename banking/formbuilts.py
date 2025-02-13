@@ -1,6 +1,6 @@
 """
 Created on 28.01.2020
-__updated__ = "2025-02-09"
+__updated__ = "2025-02-13"
 @author: Wolfgang Kramer
 """
 
@@ -1660,6 +1660,7 @@ class BuiltPandasBox(Frame):
                                                  standard column menu,
                                                  right side toolbar,
                                                  decimals without currency_symbol
+        cellwidth_resizeable     True:    F1-, F2, F3 keys change cellwidth (standard)
     """
     RIGHT = ['int', 'smallint', 'decimal', 'bigint', TYP_DECIMAL]
     COLUMN_CURRENCY = {DB_amount: DB_amount_currency,
@@ -1674,15 +1675,14 @@ class BuiltPandasBox(Frame):
                        DB_total_amount_portfolio: DB_amount_currency
                        }
     CELLWIDTH = 80
-    # contains functions (titles) where F1, F2, F3-Key are nonfunctionlal
-    CELLWIDTH_FIXED = {}
 
     re_decimal = re.compile(r'(?<![.,])[-]{0,1}\d+[,.]{0,1}\d*')
     re_negative = re.compile('-')
 
     def __init__(self, title='MESSAGE_TITLE', root=None,
                  dataframe=None, dataframe_sum=[], dataframe_typ=TYP_ALPHANUMERIC,
-                 message=None, name=PANDAS_NAME_SHOW, mode=NO_CURRENCY_SIGN
+                 message=None, name=PANDAS_NAME_SHOW, mode=NO_CURRENCY_SIGN,
+                 cellwidth_resizeable=True
                  ):
         Caller.caller = self.caller = self.__class__.__name__
         self.title = title
@@ -1698,6 +1698,8 @@ class BuiltPandasBox(Frame):
         self.dataframe_sum = dataframe_sum
         self.dataframe_typ = dataframe_typ
         self.mode = mode
+        # activates F1-,  F2-, F3_keys to change cellwidth
+        self.cellwidth_resizeable = cellwidth_resizeable
         self.dataframe_window = Toplevel()
         self.dataframe_window.bind_all("<F1>", self._increase_col_width)
         self.dataframe_window.bind_all("<F2>", self._decrease_col_width)
@@ -1723,6 +1725,9 @@ class BuiltPandasBox(Frame):
                 title=title, root=self, parent=self.frame_widget, dataframe=self.dataframe,
                 mode=mode)
         self.pandas_table.fontsize = FONTSIZE
+        self.font = Font(family=self.pandas_table.font,
+                         size=self.pandas_table.fontsize)
+        self.column_width = self._get_col_width()
         self.pandas_table.set_defaults()
         self.pandas_table.showindex = True
         self.set_geometry()
@@ -1741,7 +1746,7 @@ class BuiltPandasBox(Frame):
 
     def _standard_col_width(self, event):
 
-        if self.title in BuiltPandasBox.CELLWIDTH_FIXED:
+        if not self.cellwidth_resizeable:
             return
         columns = list(self.dataframe.columns)
         standard_column_width = 0
@@ -1752,45 +1757,55 @@ class BuiltPandasBox(Frame):
                     if len(column) < len(dataframe_column[i]):
                         column = dataframe_column[i]
             # max length of column names
-            font = Font(family=self.pandas_table.font,
-                        size=self.pandas_table.fontsize)
-            column_width = font.measure(column)
+            column_width = self.font.measure(column)
             if column_width > standard_column_width:
                 standard_column_width = column_width
-        BuiltPandasBox.CELLWIDTH = standard_column_width + font.measure('A')
-        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-        GEOMETRY_DICT[''.join([self.caller, '_CELLWIDTH', ])
-                      ] = BuiltPandasBox.CELLWIDTH
-        shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+        self._save_col_width(standard_column_width + self.font.measure('A'))
         self.quit_widget()
 
     def _increase_col_width(self, event):
 
-        if self.title in BuiltPandasBox.CELLWIDTH_FIXED:
+        if not self.cellwidth_resizeable:
             return
-        if BuiltPandasBox.CELLWIDTH < 200:
-            BuiltPandasBox.CELLWIDTH = BuiltPandasBox.CELLWIDTH + 20
-            GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-            GEOMETRY_DICT[''.join([self.caller, '_CELLWIDTH', ])
-                          ] = BuiltPandasBox.CELLWIDTH
-            shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+        if self._get_col_width() < 200:
+            self.column_width = self.column_width + 20
+            self._save_col_width(self.column_width)
         self.quit_widget()
 
     def _decrease_col_width(self, event):
 
-        if self.title in BuiltPandasBox.CELLWIDTH_FIXED:
+        if not self.cellwidth_resizeable:
             return
-        if BuiltPandasBox.CELLWIDTH > 30:
-            BuiltPandasBox.CELLWIDTH = BuiltPandasBox.CELLWIDTH - 20
-            GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-            GEOMETRY_DICT[''.join([self.caller, '_CELLWIDTH', ])
-                          ] = BuiltPandasBox.CELLWIDTH
-            shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+        if self._get_col_width() > 30:
+            self.column_width = self.column_width - 20
+            self._save_col_width(self.column_width)
         self.quit_widget()
+
+    def _save_col_width(self, column_width):
+
+        self.column_width = column_width
+        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
+        if not GEOMETRY_DICT:
+            GEOMETRY_DICT = {}
+        GEOMETRY_DICT[''.join([self.caller, 'COLUMN_WIDTH'])
+                      ] = self.column_width
+        shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+
+    def _get_col_width(self):
+
+        self.column_width = self.pandas_table.maxcellwidth / 2
+        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
+        if GEOMETRY_DICT:
+            geometry_key = ''.join([self.caller, 'COLUMN_WIDTH'])
+            if geometry_key in GEOMETRY_DICT:
+                self.column_width = GEOMETRY_DICT[geometry_key]
+        return self.column_width
 
     def set_geometry(self):
 
         GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
+        if not GEOMETRY_DICT:
+            GEOMETRY_DICT = {}
         if self.caller in GEOMETRY_DICT:
             geometry = GEOMETRY_DICT[self.caller]
             geometry = geometry.replace('x', ' ')
@@ -1850,9 +1865,11 @@ class BuiltPandasBox(Frame):
             geometry = ''.join([str(width), 'x', str(
                 height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
             GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
+            if not GEOMETRY_DICT:
+                GEOMETRY_DICT = {}
             GEOMETRY_DICT[caller] = geometry
             GEOMETRY_DICT[''.join([caller, '_CELLWIDTH', ])
-                          ] = BuiltPandasBox.CELLWIDTH
+                          ] = self.column_width
             shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
 
     def handle_click(self, event):
@@ -1874,23 +1891,6 @@ class BuiltPandasBox(Frame):
         for _key in keys:
             row_dict[_key.lower()] = row_dict.pop(_key)
         return row_dict
-
-    '''def create_data_table(self):
-        """
-        Creates Table of named Tuples (Default Tuple Name: name=PANDAS_NAME_SHOW)
-        ( e.g. used by Class AcquisitionTable)
-        """
-        self.data_table = []
-        for data_row in self.dataframe.itertuples(index=False, name=self.name):
-            """
-            index : bool, default True
-                If True, return the index as the first element of the tuple.
-            name : str or None, default "Pandas"
-                The name of the returned namedtuples or None to return regular
-                tuples.
-            """
-            self.data_table.append(data_row)
-        return self.data_table '''
 
     def create_dataframe(self):
 
@@ -1948,7 +1948,7 @@ class BuiltPandasBox(Frame):
         for dataframe_column in columns:
             column = dataframe_column
             # Include column heading for width calculation, if cellwidth unchangeable by f_keys
-            if self.title in BuiltPandasBox.CELLWIDTH_FIXED:
+            if not self.cellwidth_resizeable:
                 if isinstance(dataframe_column, tuple):  # multi level column_name
                     for i in range(len(dataframe_column)):
                         if len(column) < len(dataframe_column[i]):
@@ -1959,7 +1959,7 @@ class BuiltPandasBox(Frame):
                 column_width = font.measure(column)
                 if column_width > standard_column_width:
                     standard_column_width = column_width
-                BuiltPandasBox.CELLWIDTH = standard_column_width + \
+                self.column_width = standard_column_width + \
                     font.measure('A')
             ######
             column_levels = False
@@ -2040,7 +2040,7 @@ class BuiltPandasBox(Frame):
                             lambda x: Amount(x))
             if align in [E, W]:
                 self.pandas_table.columnformats['alignment'][column] = align
-        self.pandas_table.cellwidth = BuiltPandasBox.CELLWIDTH
+        self.pandas_table.cellwidth = self.column_width
         self.drop_currencies()
 
     def drop_currencies(self):
@@ -2061,7 +2061,7 @@ class BuiltPandasBox(Frame):
     def _set_options(self, align=E):
         options = {'align': align,
                    'cellbackgr': '#F4F4F3',
-                   'cellwidth': BuiltPandasBox.CELLWIDTH,
+                   'cellwidth': self.column_width,
                    'thousandseparator': '',
                    'font': 'Arial',
                    'fontsize': 8,

@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-02-04"
+__updated__ = "2025-02-11"
 @author: Wolfgang Kramer
 """
 
@@ -202,6 +202,7 @@ MESSAGE_TEXT = {
     'HTTP': 'Server not connected! HTTP Status Code: {}\nBank: {}  Server: {}',
     'HTTP_INPUT': 'Server not valid or not available! HTTP Status Code: {}',
     'IBAN': 'IBAN invalid',
+    'IBAN_USED': 'IBAN is already assigned to account {}',
     'IMPORT_CSV': 'Import CSV_File into Table {}',
     'ISIN_DATA': 'Enter ISIN Data',
     'ISIN_IN_HOLDING': 'No deletion allowed \n {} ({}) \n Used in holding or transaction table',

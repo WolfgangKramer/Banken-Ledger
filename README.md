@@ -11,7 +11,7 @@ Only German banks with FINTS access and PIN/TAN authentication
 # Installing on Windows
 * Install MariaDB 10.5 and create an empty database >banken<
 * Install Python 3.9
-* Download GitHub project from https://github.com/WolfgangKramer/BankArchive
+* Download GitHub project from https://github.com/WolfgangKramer/Banken-Ledger
 The directory structure, should look like this:  
 <pre>
 bankarchive/  

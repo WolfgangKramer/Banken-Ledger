@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-02-11"
+__updated__ = "2025-04-24"
 @author: Wolfgang Kramer
 """
 from collections import namedtuple
@@ -34,7 +34,6 @@ DATABASE_FIELDS_PROPERTIES = {
 """
 -------------------------------- MariaDB Tables ----------------------------------
 """
-DATABASES = []
 BANKIDENTIFIER = 'bankidentifier'
 HOLDING = 'holding'
 HOLDING_VIEW = 'holding_view'
@@ -117,13 +116,13 @@ CREATE_ISIN = "CREATE TABLE  IF NOT EXISTS   `isin` (\
     `type` VARCHAR(50) NOT NULL DEFAULT 'SHARE' COMMENT 'SHARE, BOND, SUBSCRIPTION RIGHT' COLLATE 'latin1_swedish_ci',\
     `validity` DATE NOT NULL DEFAULT '9999-01-01' COMMENT 'Isin valid to this date',\
     `wkn` CHAR(6) NOT NULL DEFAULT 'NA' COMMENT 'Die Wertpapierkennnummer (WKN, vereinzelt auch WPKN oder WPK abgekürzt) ist eine in Deutschland verwendete sechsstellige Ziffern- und Buchstabenkombination zur Identifizierung von Wertpapieren (Finanzinstrumenten). Setzt man drei Nullen vor die WKN, so erhält man die neunstellige deutsche National Securities Identifying Number (NSIN) des jeweiligen Wertpapiers.' COLLATE 'latin1_swedish_ci',\
-    `symbol` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'ticker symbol' COLLATE 'latin1_swedish_ci',\
     `origin_symbol` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'origin of symbol: Yahoo or AlphaVantage' COLLATE 'latin1_swedish_ci',\
-    `adjustments` VARCHAR(500) NULL DEFAULT '{}' COMMENT 'Json String, json format{date_to: [r-factor,used] ...., }, dict items: date_to: date_to of adjustment, r_factor: adjustment factor of e.g. splits or special dividends up to date_to,  used:  activated means adjustment executed])' COLLATE 'latin1_swedish_ci',\
+    `symbol` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'ticker symbol' COLLATE 'latin1_swedish_ci',\
     `currency` CHAR(3) NOT NULL DEFAULT 'EUR' COMMENT 'Currency Code' COLLATE 'latin1_swedish_ci',\
     `comment` TEXT NULL DEFAULT NULL COLLATE 'latin1_swedish_ci',\
     PRIMARY KEY (`name`) USING BTREE,\
-    UNIQUE INDEX `ISIN` (`isin_code`) USING BTREE\
+    UNIQUE INDEX `ISIN` (`isin_code`) USING BTREE,\
+    INDEX `symbol` (`symbol`) USING BTREE\
 )\
 COMMENT='ISIN informations'\
 COLLATE='latin1_swedish_ci'\
@@ -157,7 +156,7 @@ CREATE_LEDGER = "CREATE TABLE IF NOT EXISTS `ledger` (\
 CREATE_LEDGER_COA = "CREATE TABLE IF NOT EXISTS  `ledger_coa` (\
     `account` CHAR(4) NOT NULL COMMENT 'Account Number(4 digits)' COLLATE 'latin1_swedish_ci',\
     `name` VARCHAR(50) NOT NULL COMMENT 'Account Name' COLLATE 'latin1_swedish_ci',\
-    `iban` CHAR(22) NOT NULL DEFAULT 'NA' COMMENT 'IBAN if  Financial Account represents a Bank Account' COLLATE 'latin1_swedish_ci',\
+    `iban` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'IBAN if  Financial Account represents a Bank Account' COLLATE 'latin1_swedish_ci',\
     `eur_accounting` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated:  EUR Account',\
     `tax_on_input` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated: Amount subject to input tax',\
     `value_added_tax` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated: Amount subject to value_added_tax',\
@@ -167,8 +166,10 @@ CREATE_LEDGER_COA = "CREATE TABLE IF NOT EXISTS  `ledger_coa` (\
     `transfer_rate` DECIMAL(14,2) NOT NULL DEFAULT '0.00' COMMENT 'Amount of the duplicate in the Tansfer Account',\
     `contra_account` VARCHAR(4) NOT NULL DEFAULT 'NA' COMMENT 'Recommendation of this Contra Account Number' COLLATE 'latin1_swedish_ci',\
     `asset_accounting` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated: Account represents Assets',\
+    `opening_balance_account` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated: Opening Balance Account',\
     `portfolio` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated: Account represents Portfolio Assets',\
     `obsolete` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated:  Account Number not used, may be used in the Past',\
+    `download` TINYINT(1) NOT NULL DEFAULT '0' COMMENT 'Activated:  Download Financial Postings/Holdings from this bank account',\
     PRIMARY KEY (`account`) USING BTREE\
 )\
  COMMENT='The chart of accounts (COA) is a comprehensive listing, categorized by account type, of every account used in an accounting system.\r\nUnlike a trial balance that only includes active or balanced accounts at the end of a period,\r\nthe COA encompasses all accounts in the system, providing a simple list of account numbers and names'\
@@ -228,19 +229,19 @@ LEFT JOIN (ledger_coa as t2)    ON (t1.debit_account=t2.account)  ;"
 
 
 CREATE_PRICES = "CREATE TABLE IF NOT EXISTS `prices` (\
-    `symbol` VARCHAR(50) NOT NULL DEFAULT 'NA' COLLATE 'latin1_swedish_ci',\
-    `price_date` DATE NOT NULL DEFAULT '2000-01-01',\
-    `open` DECIMAL(14,6) NULL DEFAULT '0.000000',\
-    `high` DECIMAL(14,6) NULL DEFAULT '0.000000',\
-    `low` DECIMAL(14,6) NULL DEFAULT '0.000000',\
-    `close` DECIMAL(14,6) NULL DEFAULT '0.000000',\
-    `volume` DECIMAL(14,2) NULL DEFAULT '0.00',\
-    `adjclose` DECIMAL(14,6) NULL DEFAULT '0.000000',\
-    `histclose` DECIMAL(14,6) NULL DEFAULT '0.000000' COMMENT 'historical value without adjustments',\
-    `dividends` DECIMAL(14,2) NULL DEFAULT '0.00',\
-    `splits` DECIMAL(14,2) UNSIGNED NULL DEFAULT '0.00',\
-    `origin` VARCHAR(50) NULL DEFAULT 'NA' COLLATE 'latin1_swedish_ci',\
-    PRIMARY KEY (`symbol`, `price_date`) USING BTREE\
+    `symbol` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'Ticker Symbol' COLLATE 'latin1_swedish_ci',\
+    `price_date` DATE NOT NULL DEFAULT '2000-01-01' COMMENT 'Date of Prices',\
+    `open` DECIMAL(14,6) NULL DEFAULT '0.000000' COMMENT 'Opening Price',\
+    `high` DECIMAL(14,6) UNSIGNED NULL DEFAULT '0.000000' COMMENT 'Highest Price',\
+    `low` DECIMAL(14,6) NULL DEFAULT '0.000000' COMMENT 'Lowest Price',\
+    `close` DECIMAL(14,6) NULL DEFAULT '0.000000' COMMENT 'Closing Price',\
+    `volume` DECIMAL(14,2) NULL DEFAULT '0.00' COMMENT 'Trading Volume in Units',\
+    `adjclose` DECIMAL(14,6) NULL DEFAULT '0.000000' COMMENT 'Adjusted Price',\
+    `dividends` DECIMAL(14,2) NULL DEFAULT '0.00' COMMENT 'Dividends',\
+    `splits` DECIMAL(14,2) UNSIGNED NULL DEFAULT '0.00' COMMENT 'Splits',\
+    `origin` VARCHAR(50) NULL DEFAULT 'NA' COMMENT 'Origin of Price data e.g. YAHOO!, AlphaAdVantage' COLLATE 'latin1_swedish_ci',\
+    PRIMARY KEY (`symbol`, `price_date`) USING BTREE,\
+    CONSTRAINT `isin` FOREIGN KEY (`symbol`) REFERENCES `isin` (`symbol`) ON UPDATE NO ACTION ON DELETE CASCADE\
 )\
 COLLATE='latin1_swedish_ci'\
 ENGINE=InnoDB\
@@ -372,7 +373,6 @@ CREATE_TABLES = [CREATE_BANKIDENTIFIER,
 DB_acquisition_amount = 'acquisition_amount'
 DB_acquisition_price = 'acquisition_price'
 DB_additional_purpose = 'additional_purpose'
-DB_adjustments = 'adjustments'
 DB_open = 'open'
 DB_low = 'low'
 DB_high = 'high'

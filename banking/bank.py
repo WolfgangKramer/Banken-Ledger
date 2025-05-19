@@ -1,10 +1,10 @@
 """
 Created on 18.11.2019
-__updated__ = "2024-10-17"
+__updated__ = "2025-05-19"
 @author: Wolfgang Kramer
 """
 from banking.declarations import (
-    BANK_MARIADB_INI, BMW_BANK_CODE,
+    BANK_MARIADB_INI,
     CUSTOMER_ID_ANONYMOUS,
     DIALOG_ID_UNASSIGNED,
     HTTP_CODE_OK, MESSAGE_TEXT,
@@ -13,12 +13,12 @@ from banking.declarations import (
     KEY_BPD, KEY_UPD, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS,
     PRODUCT_ID, PNS,
     SCRAPER_BANKDATA,
-    SHELVE_KEYS, SYSTEM_ID_UNASSIGNED, KEY_LOGGING,
+    SHELVE_KEYS, SYSTEM_ID_UNASSIGNED,
 )
 from banking.dialog import Dialogs
 from banking.formbuilts import MessageBoxError, MessageBoxInfo
 from banking.forms import InputPIN
-from banking.scraper import BmwBank
+
 from banking.utils import shelve_get_key, http_error_code
 from datetime import date
 from random import randint
@@ -55,14 +55,9 @@ class InitBank(object):
             webbrowser.open(self.server)
             return None  # thread checking
         if bank_code in list(SCRAPER_BANKDATA.keys()):
-            if bank_code == BMW_BANK_CODE:
-                self.dialogs = BmwBank(PNS[bank_code], shelve_get_key(
-                    BANK_MARIADB_INI, KEY_LOGGING))
-                self.scraper = True
-            else:
-                MessageBoxError(
-                    message=MESSAGE_TEXT['LOGIN_SCRAPER'].format('', self.bank_code))
-                return None  # thread checking
+            MessageBoxError(
+                message=MESSAGE_TEXT['LOGIN_SCRAPER'].format('', self.bank_code))
+            return None  # thread checking
         else:
             self.dialogs = Dialogs(mariadb)
             try:

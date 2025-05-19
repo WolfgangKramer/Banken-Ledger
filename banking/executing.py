@@ -1,6 +1,6 @@
 """
 Created on 09.12.2019
-__updated__ = "2025-02-13"
+__updated__ = "2025-05-19"
 Author: Wolfang Kramer
 """
 
@@ -27,13 +27,13 @@ from banking.declarations import (
     BMW_BANK_CODE, BUNDESBANK_BLZ_MERKBLATT, BUNDEBANK_BLZ_DOWNLOAD,
     CURRENCY_SIGN, CREDIT,
     DEBIT,
-    EURO, ERROR, EDIT_ROW,
+    ERROR, EDIT_ROW,
     FINTS_SERVER, FINTS_SERVER_ADDRESS,
-    START_DATE_PRICES,
-    FN_DATE, FN_PROFIT_LOSS, FN_PROFIT, FN_FROM_DATE, FN_TO_DATE,
+    START_DATE_PRICES, START_DATE_TRANSACTIONS,
+    FN_COMPARATIVE,
+    FN_DATE, FN_FROM_DATE, FN_TO_DATE,
     FN_PIECES_CUM, FN_ALL_BANKS,
     FN_CREDIT, FN_DEBIT, FN_BALANCE,
-    FORMS_TEXT,
     INFORMATION, Informations,
     JSON_KEY_ERROR_MESSAGE, JSON_KEY_META_DATA,
     KEY_ACCOUNTS, KEY_ACC_BANK_CODE, KEY_ACC_OWNER_NAME, KEY_ALPHA_VANTAGE_PRICE_PERIOD,
@@ -49,7 +49,7 @@ from banking.declarations import (
     KEY_THREADING, KEY_LEDGER,
     KEY_USER_ID, KEY_VERSION_TRANSACTION,
     MENU_TEXT, MESSAGE_TEXT, MESSAGE_TITLE,
-    NOT_ASSIGNED, NUMERIC,
+    NOT_ASSIGNED, NUMERIC, NO_CURRENCY_SIGN,
     OUTPUTSIZE_FULL, OUTPUTSIZE_COMPACT, ORIGIN_PRICES, ORIGIN_INSERTED,
     PERCENT,
     SCRAPER_BANKDATA,
@@ -65,32 +65,34 @@ from banking.declarations import (
 )
 from banking.declarations_mariadb import (
     TABLE_FIELDS,
-    BANKIDENTIFIER,
-    DB_amount_currency, DB_acquisition_amount,
+
+    DB_amount_currency, DB_amount, DB_account, DB_applicant_name,
     DB_opening_balance, DB_opening_currency, DB_opening_status, DB_opening_entry_date,
     DB_closing_balance, DB_closing_currency, DB_closing_status, DB_closing_entry_date,
-    DB_counter, DB_date,
-    DB_code, DB_ISIN, DB_entry_date,
-    DB_name, DB_pieces,
-    DB_total_amount, DB_price_date,
-    DB_total_amount_portfolio,
-    DB_iban, DB_posted_amount, DB_market_price,
-    DB_transaction_type, DB_symbol,
+    DB_counter, DB_date, DB_category, DB_code, DB_currency, DB_credit_account,
+    DB_debit_account,
+    DB_entry_date,
+    DB_ISIN, DB_iban, DB_id_no,
+    DB_market_price,
+    DB_name,
     DB_origin, DB_origin_symbol,
+    DB_pieces, DB_portfolio, DB_purpose_wo_identifier,
+    DB_total_amount, DB_price_date,
+    DB_total_amount_portfolio, DB_transaction_type,
+    DB_symbol,
     DB_open, DB_low, DB_high, DB_close, DB_adjclose, DB_volume, DB_dividends, DB_splits,
-    DB_amount,
-    DB_account,
-    DB_portfolio,
 
     HOLDING, HOLDING_VIEW,
+    BANKIDENTIFIER, LEDGER_STATEMENT,
     ISIN, PRICES_ISIN_VIEW, PRICES, SERVER, STATEMENT,
     TRANSACTION, TRANSACTION_VIEW,
     LEDGER, LEDGER_COA, LEDGER_VIEW,
 
 )
 from banking.formbuilts import (
-    BUTTON_OK, BUTTON_SAVE, BUTTON_NEW, BUTTON_APPEND, BUTTON_DELETE,
-    BUTTON_UPDATE, BUTTON_ALPHA_VANTAGE,
+    BUTTON_SAVE, BUTTON_APPEND, BUTTON_DELETE,
+    BUTTON_PRICES_IMPORT, BUTTON_REPLACE,
+    BUTTON_ALPHA_VANTAGE,
     BuiltRadioButtons, BuiltPandasBox,
     destroy_widget,
     FileDialogue,
@@ -100,21 +102,21 @@ from banking.formbuilts import (
     WM_DELETE_WINDOW,
 )
 from banking.forms import (
-    Adjustments, AlphaVantageParameter, AppCustomizing,
+    AlphaVantageParameter, AppCustomizing,
     BankDataChange, BankDataNew, BankDelete,
-    InputISIN,  Isin, InputAccount,
-    InputDay, InputDate, InputDateHoldingPerc,
-    InputDateFieldlist, InputDateFieldlistPrices, InputDateFieldlistHolding,
+    InputISIN,
+    InputDate, InputPeriod, InputDateHolding,
+    InputDateIsins, InputDateTable, InputDateTransactions, InputDatePrices,
     PandasBoxLedgerCoaTable, PandasBoxLedgerTable,
-    PandasBoxIsins,
-    PandasBoxStatementTable, PandasBoxHoldingTable,
-    PandasBoxHolding, PandasBoxBalancesAllBanks,
+    PandasBoxIsinComparision,
+    PandasBoxStatementTable, PandasBoxHoldingTable, PandasBoxIsinTable,
+    PandasBoxBalancesAllBanks,
     PandasBoxHoldingPercent, PandasBoxTotals, PandasBoxTransactionDetail,
     PandasBoxHoldingPortfolios, PandasBoxBalances,
-    PandasBoxTransactionTable, PandasBoxTransactionProfit,
-    PandasBoxHoldingTransaction, PandasBoxPrices,
+    PandasBoxTransactionTable, PandasBoxTransactionTableShow, PandasBoxTransactionProfit,
+    PandasBoxPrices, PandasBoxLedgerAccountCategory,
     PrintList, PrintMessageCode,
-    SelectFields,
+    SelectFields, SelectLedgerAccount, SelectLedgerAccountCategory,
     SepaCreditBox,
     VersionTransaction, SelectDownloadPrices,
 )
@@ -125,14 +127,13 @@ from banking.utils import (
     date_days, date_years, dec2,
     dictaccount, dict_get_first_key,
     exception_error,
+    holding_informations_append,
     listbank_codes,
     prices_informations_append,
-    shelve_exist, shelve_put_key, shelve_get_key,
+    shelve_exist, shelve_put_key, shelve_get_key, shelve_get_keylist, shelve_del_key,
     dictbank_names, delete_shelve_files,
 )
-from banking.declarations import NO_CURRENCY_SIGN
-from banking.utils import holding_informations_append
-from banking.declarations_mariadb import LEDGER_STATEMENT
+from banking.declarations_mariadb import TABLE_FIELDS_PROPERTIES
 
 '''
 Ledger declaratives
@@ -386,7 +387,8 @@ class FinTS_MariaDB_Banking(object):
         style.configure('TLabel', font=('Arial', 8, 'bold'))
         style.configure('OPT.TLabel', font=(
             'Arial', 8, 'bold'), foreground='Grey')
-        style.configure('HDR.TLabel', font=('Courier', 8), foreground='Grey')
+        style.configure('HDR.TLabel', font=(
+            'Courier', 12, 'bold'), foreground='Grey')
         style.configure('TButton', font=('Arial', 8, 'bold'), relief=GROOVE,
                         highlightcolor='blue', highlightthickness=5, shiftrelief=3)
         style.configure('TText', font=('Courier', 8))
@@ -520,7 +522,8 @@ class FinTS_MariaDB_Banking(object):
     def _bank_data_scraper(self, bank_code):
 
         bank = self._bank_init(bank_code)
-        get_accounts = bank.get_accounts(bank)
+        get_accounts = bank.get_accounts()
+        bank.logoff()
         accounts = []
         for account in get_accounts:
             acc = {}
@@ -543,7 +546,7 @@ class FinTS_MariaDB_Banking(object):
 
         if bank_code in list(SCRAPER_BANKDATA.keys()):
             if bank_code == BMW_BANK_CODE:
-                bank = BmwBank()
+                bank = BmwBank(self.mariadb)
         else:
             bank = InitBank(bank_code, self.mariadb)
         return bank
@@ -677,9 +680,10 @@ class FinTS_MariaDB_Banking(object):
                 label=MENU_TEXT['Assets'], command=self._ledger_assets)
             ledger_menu.add_command(
                 label=MENU_TEXT['Journal'], command=self._ledger_journal)
-
             ledger_menu.add_command(
                 label=MENU_TEXT['Account'], command=self._ledger_account)
+            ledger_menu.add_command(
+                label=MENU_TEXT['Account Category'], command=self._ledger_account_category)
             ledger_menu.add_separator()
         ledger_menu.add_command(
             label=MENU_TEXT['Chart of Accounts'], command=self._ledger_coa_table)
@@ -796,10 +800,10 @@ class FinTS_MariaDB_Banking(object):
                          self._data_holding_performance(x, y)))
             all_banks_menu.add_command(
                 label=MENU_TEXT['Holding ISIN Comparision'],
-                command=(lambda x=FN_ALL_BANKS, y='', z=EURO: self._data_holding_isin_comparision(x, y, z)))
+                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision(x, '', '')))
             all_banks_menu.add_command(
                 label=MENU_TEXT['Holding ISIN Comparision'] + '%',
-                command=(lambda x=FN_ALL_BANKS, y='', z=PERCENT: self._data_holding_isin_comparision(x, y, z)))
+                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision(x, '', '%')))
             all_banks_menu.add_command(label=MENU_TEXT['Balances'],
                                        command=self._data_balances)
 
@@ -811,15 +815,13 @@ class FinTS_MariaDB_Banking(object):
                 MENU_TEXT['Database'], bank_owner_account, database_menu, menu_font)
             database_menu.add_separator()
         database_menu.add_command(
-            label=MENU_TEXT['ISIN Table'], command=self._isin_table)
+            label=MENU_TEXT['ISIN Table'], command=self._data_isin_table)
         database_menu.add_command(
             label=MENU_TEXT['Prices ISINs'],
             command=(lambda x=None: self._data_prices(x)))
         database_menu.add_command(
             label=MENU_TEXT['Prices ISINs'] + '%',
             command=(lambda x=PERCENT: self._data_prices(x)))
-        database_menu.add_command(
-            label=MENU_TEXT['Historical Prices'],  command=self._import_prices_histclose)
 
     def _create_menu_customizing(self, menu, menu_font, MariaDBname):
         """
@@ -829,9 +831,9 @@ class FinTS_MariaDB_Banking(object):
         menu.add_cascade(label=MENU_TEXT['Customize'], menu=customize_menu)
         customize_menu.add_command(label=MENU_TEXT['Application INI File'],
                                    command=self._appcustomizing)
-        customize_menu.add_command(label=MENU_TEXT['Reset Screen Positions'],
-                                   command=self._reset)
         if self.shelve_app:
+            customize_menu.add_command(label=MENU_TEXT['Reset Screen Positions'],
+                                       command=self._reset)
             customize_menu.add_separator()
             customize_menu.add_command(label=MENU_TEXT['Import Bankidentifier CSV-File'],
                                        command=self._import_bankidentifier)
@@ -938,14 +940,10 @@ class FinTS_MariaDB_Banking(object):
                     account_menu.add_command(
                         label=label,
                         command=lambda x=bank_code, y=acc: self._show_holdings(x, y))
-                    label = label + '%'
-                    account_menu.add_command(
-                        label=label,
-                        command=lambda x=bank_code, y=acc: self._show_holdings_perc(x, y))
                 if 'HKWDU' in acc[KEY_ACC_ALLOWED_TRANSACTIONS] or \
                         'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
                     label = ' '.join(
-                        [MENU_TEXT['Holding'], acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER], TRANSACTION.upper()])
+                        [MENU_TEXT['Transactions'], acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER], TRANSACTION.upper()])
                     account_menu.add_command(
                         label=label,
                         command=(lambda x=bank_code, y=acc: self._show_transactions(x, y)))
@@ -964,12 +962,10 @@ class FinTS_MariaDB_Banking(object):
                                  y=acc[KEY_ACC_IBAN]: self._data_holding_performance(x, y)))
                     account_menu.add_command(
                         label=MENU_TEXT['Holding ISIN Comparision'],
-                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN],
-                                 z=EURO: self._data_holding_isin_comparision(x, y, z)))
+                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y, '')))
                     account_menu.add_command(
                         label=MENU_TEXT['Holding ISIN Comparision'] + '%',
-                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN],
-                                 z=PERCENT: self._data_holding_isin_comparision(x, y, z)))
+                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y, '%')))
                     account_menu.add_command(
                         label=MENU_TEXT['Transaction Detail'],
                         command=(lambda x=bank_name,
@@ -1000,7 +996,7 @@ class FinTS_MariaDB_Banking(object):
                                  y=acc[KEY_ACC_IBAN]: self._data_holding_table(x, y)))
                     account_menu.add_separator()
                     account_menu.add_command(
-                        label=MENU_TEXT['Update Holding Prices'],
+                        label=MENU_TEXT['Update Holding Market Price by Closing Price'],
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]:
                                  self._data_update_holding_prices(x, y)))
@@ -1054,50 +1050,30 @@ class FinTS_MariaDB_Banking(object):
                     bank_owner_account[bank_code] = owners
         return bank_owner_account
 
-    def _date_init(self, iban, timedelta_days=1):
-
-        to_date = date.today()
-        while int(to_date.strftime('%w')) in [6, 0]:
-            to_date = to_date - timedelta(days=1)
-        if iban == '':
-            from_date = self.mariadb.select_max_column_value(
-                HOLDING, DB_price_date, period=(date(2000, 1, 1), to_date - timedelta(days=timedelta_days)))
-        else:
-            from_date = self.mariadb.select_max_column_value(
-                HOLDING, DB_price_date, iban=iban, period=(date(2000, 1, 1), to_date - timedelta(days=timedelta_days)))
-        if not from_date:
-            return None, None
-        while int(from_date.strftime('%w')) in [6, 0]:
-            from_date = from_date - timedelta(days=1)
-        if to_date < from_date:
-            to_date = from_date
-        return from_date, to_date
-
     def _data_holding_performance(self, bank_name, iban):
 
         self._delete_footer()
         _data_holding_performance = None
-        from_date = date.today() - timedelta(days=360)
-        to_date = date.today()
         title = ' '.join([bank_name, MENU_TEXT['Holding Performance']])
+        data_dict = {FN_FROM_DATE: date.today() - timedelta(days=360),
+                     FN_TO_DATE: date.today()}
         while True:
-            input_date = InputDate(title=title,
-                                   from_date=from_date, to_date=to_date)
+            input_period = InputPeriod(title=title, data_dict=data_dict)
             if isinstance(_data_holding_performance, BuiltPandasBox):
                 destroy_widget(_data_holding_performance.dataframe_window)
-            if input_date.button_state == WM_DELETE_WINDOW:
+            if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            from_date = input_date.field_dict[FN_FROM_DATE]
-            to_date = input_date.field_dict[FN_TO_DATE]
+            data_dict = input_period.field_dict
+
             if bank_name == FN_ALL_BANKS:
                 select_holding_total = self.mariadb.select_holding_all_total(
-                    period=(from_date, to_date))
+                    period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
             else:
                 select_holding_total = self.mariadb.select_holding_total(
-                    iban=iban, period=(from_date, to_date))
+                    iban=iban, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
             if select_holding_total:
                 title_period = ' '.join([title, ' ',
-                                         MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
+                                         MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
                 while True:
                     table = PandasBoxHoldingPortfolios(
                         title=title_period, dataframe=select_holding_total, mode=NUMERIC)
@@ -1110,109 +1086,121 @@ class FinTS_MariaDB_Banking(object):
     def _data_holding_isin_comparision(self, bank_name, iban, sign):
 
         self._delete_footer()
-        percent = ''
-        if sign == PERCENT:
-            percent = '%'
-        from_date, to_date = self._date_init(iban, timedelta_days=90)
-        title = ' '.join(
-            [bank_name, MENU_TEXT['Holding ISIN Comparision'], percent])
-        if iban:
-            select_holding_all_isin = self.mariadb.select_dict(
-                HOLDING_VIEW, DB_name, DB_ISIN, iban=iban)
+
+        to_date = date.today()
+        while int(to_date.strftime('%w')) in [6, 0]:
+            to_date = to_date - timedelta(days=1)
+        if iban == '':
+            from_date = self.mariadb.select_max_column_value(
+                HOLDING, DB_price_date, period=(START_DATE_HOLDING, to_date - timedelta(days=90)))
         else:
-            select_holding_all_isin = self.mariadb.select_dict(
-                HOLDING_VIEW, DB_name, DB_ISIN, period=(from_date, to_date))
-        if not select_holding_all_isin:
+            from_date = self.mariadb.select_max_column_value(
+                HOLDING, DB_price_date, iban=iban, period=(START_DATE_HOLDING, to_date - timedelta(days=90)))
+        if not from_date:
+            return None, None
+        while int(from_date.strftime('%w')) in [6, 0]:
+            from_date = from_date - timedelta(days=1)
+        if to_date < from_date:
+            to_date = from_date
+        if sign == '%':
+            title = ' '.join(
+                [bank_name, MENU_TEXT['Holding ISIN Comparision %']])
+        else:
+            title = ' '.join(
+                [bank_name, MENU_TEXT['Holding ISIN Comparision']])
+        if iban:
+            isin_dict = self.mariadb.select_dict(
+                HOLDING_VIEW, DB_ISIN, DB_name, iban=iban, order=DB_name)
+        else:
+            isin_dict = self.mariadb.select_dict(
+                HOLDING_VIEW, DB_ISIN, DB_name, period=(from_date, to_date), order=DB_name)
+        if not isin_dict:
             MessageBoxInfo(title=title, message=(
                 MESSAGE_TEXT['DATA_NO'].format('', '')))
             return
-        default_texts = []
-
+        data_dict = {FN_FROM_DATE: from_date,
+                     FN_TO_DATE: to_date, FN_COMPARATIVE: DB_market_price}
+        for isin_code in isin_dict.keys():
+            data_dict[isin_code] = 0
         while True:
-            date_field_list = InputDateFieldlist(
-                title=title,
-                from_date=from_date, standard=title,
-                default_texts=default_texts,
-                field_list=list(select_holding_all_isin.keys()))
-            if date_field_list.button_state == WM_DELETE_WINDOW:
+            date_isins = InputDateIsins(table=isin_dict,
+                                        title=title, data_dict=data_dict, separator=[FN_TO_DATE, FN_COMPARATIVE])
+            if date_isins.button_state == WM_DELETE_WINDOW:
                 return
-            default_texts = date_field_list.field_list
-            from_date = date_field_list.field_dict[FN_FROM_DATE]
-            to_date = date_field_list.field_dict[FN_TO_DATE]
-            title1 = ' '.join([
-                title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
-            while True:
-                selected_fields = BuiltRadioButtons(
-                    title=title1,
-                    button1_text=BUTTON_OK, button2_text=None,
-                    button3_text=None, button4_text=None, button5_text=None,
-                    default_value=None,
-                    radiobutton_dict={DB_pieces: ' ',
-                                      DB_market_price: ' ',
-                                      DB_total_amount: ' ',
-                                      DB_acquisition_amount: ' ',
-                                      FN_PROFIT_LOSS: ' '}
-                )
-                if selected_fields.button_state == WM_DELETE_WINDOW:
-                    break
-                else:
-                    db_field = selected_fields.field
-                if db_field == FN_PROFIT_LOSS:
-                    db_fields = [DB_name, DB_price_date,
-                                 DB_total_amount, DB_acquisition_amount]
-                else:
-                    db_fields = [DB_name, DB_price_date, db_field]
-                if iban:
-                    select_holding_data = self.mariadb.select_holding_data(
-                        field_list=db_fields, iban=iban, name=date_field_list.field_list,
-                        period=(from_date, to_date))
-                else:
-                    select_holding_data = self.mariadb.select_holding_data(
-                        field_list=db_fields, name=date_field_list.field_list, period=(from_date, to_date))
-                if select_holding_data:
+            data_dict = date_isins.field_dict
+            selected_isins = list(
+                filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
+            # more than one isin selected
+            if len(selected_isins) > 1:
+                from_date, to_date, data = self.mariadb.select_holding_comparision(
+                    iban, data_dict[FN_COMPARATIVE], selected_isins, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
+                if data:
                     self.footer.set('')
-                    title2 = ' '.join([title1, db_field.upper()])
+                    title_period = ' '.join([data_dict[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
+                        from_date, to_date)])
                     while True:
-                        table = PandasBoxIsins(title=title2, dataframe=(
-                            db_field, select_holding_data, sign, date_field_list.field_list),
+                        table = PandasBoxIsinComparision(title=title_period, dataframe=(
+                            data_dict[FN_COMPARATIVE], data, sign),
                             dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
                         if table.button_state == WM_DELETE_WINDOW:
                             break
                 else:
                     self.footer.set(
                         MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
+            else:
+                self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
+
+    def _data_isin_table(self):
+
+        self._delete_footer()
+        title = ' '.join([MENU_TEXT['Database'], MENU_TEXT['ISIN Table']])
+        selected_row = 0
+        while True:
+            message = None
+            data = self.mariadb.select_table(
+                ISIN, '*', result_dict=True, order=DB_name)
+            isin_table = PandasBoxIsinTable(
+                title, data, self.mariadb, message, mode=EDIT_ROW, selected_row=selected_row)
+            selected_row = isin_table.selected_row
+            message = isin_table.message
+            if isin_table.button_state == WM_DELETE_WINDOW:
+                break
+            if isin_table.button_state == BUTTON_PRICES_IMPORT:
+                self._import_prices_run(
+                    self.mariadb, title, [isin_table.selected_row_dict[DB_name]], BUTTON_REPLACE)
+                self._show_informations()
+            self.footer.set(message)
 
     def _data_holding_table(self, bank_name, iban):
 
         self._delete_footer()
         title = ' '.join([bank_name,
                           MENU_TEXT['Holding Table']])
-        from_date = date.today()
-        to_date = date.today()
+        data_dict = {FN_FROM_DATE: date.today(), FN_TO_DATE: date.today()}
         while True:
-            date_field_list = InputDateFieldlist(title=title,
-                                                 from_date=from_date, to_date=to_date,
-                                                 standard=MENU_TEXT['Holding Table'],
-                                                 field_list=TABLE_FIELDS[HOLDING_VIEW][3:])
-            if date_field_list.button_state == WM_DELETE_WINDOW:
-                break
-            from_date = date_field_list.field_dict[FN_FROM_DATE]
-            to_date = date_field_list.field_dict[FN_TO_DATE]
-            field_list = date_field_list.field_list
+            date_holding_view = InputDateTable(
+                title=title, data_dict=data_dict, table=HOLDING_VIEW)
+            if date_holding_view.button_state == WM_DELETE_WINDOW:
+                return
+            data_dict = date_holding_view.field_dict
+            selected_check_button = list(
+                filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
             message = None
-            period = ' '.join([from_date, '-', to_date])
+            period = ' '.join(
+                [data_dict[FN_FROM_DATE], '-', data_dict[FN_TO_DATE]])
             title_period = ' '.join([title, period])
-            while True:
-                data = self.mariadb.select_table(
-                    HOLDING_VIEW, [DB_iban, DB_price_date, DB_ISIN] + field_list, result_dict=True,
-                    date_name=DB_price_date, iban=iban, period=(from_date, to_date))
-                holding_table = PandasBoxHoldingTable(
-                    title_period, data, self.mariadb, message, iban, mode=EDIT_ROW)
-                message = holding_table.message
-                if holding_table.button_state == WM_DELETE_WINDOW:
-                    break
-            else:
-                self.footer.set(message)
+
+            data = self.mariadb.select_table(
+                HOLDING_VIEW, [DB_iban, DB_price_date, DB_ISIN] + selected_check_button, result_dict=True,
+                date_name=DB_price_date, iban=iban, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
+            if data:
+                while True:
+                    holding_table = PandasBoxHoldingTable(
+                        title_period, data, self.mariadb, message, iban, mode=EDIT_ROW)
+                    message = holding_table.message
+                    if holding_table.button_state == WM_DELETE_WINDOW:
+                        break
+                    self.footer.set(message)
 
     def _data_update_holding_prices(self, bank_name, iban):
         '''
@@ -1220,69 +1208,57 @@ class FinTS_MariaDB_Banking(object):
         Replaces market_price (table HOLDING) by close price (table PRICES)
         If not existing: creates holding positions 
         '''
-        title = ' '.join([bank_name, 'holding_update_prices'])
-        holdings = []
-        date_day = date.today()
-        input_date = InputDay(
-            title=title, header=MESSAGE_TEXT['SELECT'], date=date_day)
-        if input_date.button_state == WM_DELETE_WINDOW:
-            return
-        if input_date:
-            date_day = input_date.field_dict[FN_DATE]
-            while True:
-                holdings = self.mariadb.select_table(
-                    HOLDING_VIEW, '*', result_dict=True, iban=iban, price_date=date_day)
-                if holdings:
-                    for holding_dict in holdings:
-                        title_download = ' '.join(
-                            [title, MENU_TEXT['Download'], MENU_TEXT['Prices']])
-                        result = self._data_update_holding_price(
-                            title_download, bank_name, iban, holding_dict)
-                        if not result:
-                            isin = Isin(
-                                title, self.mariadb, self.shelve_app[KEY_ALPHA_VANTAGE], isin_name=holding_dict[DB_name])
-                            if isin.button_state == WM_DELETE_WINDOW:
-                                result = False
-                            if isin.button_state == MENU_TEXT['Prices']:
-                                result = self._data_update_holding_price(
-                                    title_download, bank_name, iban, holding_dict)
-                            if not result:
-                                origin_symbol = self.mariadb.select_table(
-                                    ISIN, DB_origin_symbol, isin_code=holding_dict[DB_ISIN])
-                                if origin_symbol:
-                                    origin_symbol = origin_symbol[0]
-                                else:
-                                    origin_symbol = NOT_ASSIGNED
-                                holding_informations_append(WARNING, MESSAGE_TEXT['PRICES_NO'].format(
-                                    ' '.join(['\n', bank_name, HOLDING.upper(), DB_price_date.upper(
-                                    ), date_days.convert(holding_dict[DB_price_date])]),
-                                    holding_dict[DB_symbol], origin_symbol, holding_dict[DB_ISIN], holding_dict[DB_name]))
-                    self._show_informations()
-                    break
-                else:
-                    if date_days.isweekend(date_day):
-                        MessageBoxInfo(
-                            title=title, message=MESSAGE_TEXT['DATE_NO_WORKDAY'].format(date_day))
-                        break
+        title = ' '.join(
+            [bank_name, MENU_TEXT['Update Holding Market Price by Closing Price']])
+        while True:
+            input_date = InputDate(title=title)
+            if input_date.button_state == WM_DELETE_WINDOW:
+                return
+            if input_date:
+                date_day = input_date.field_dict[FN_DATE]
+            if date_days.isweekend(date_day):
+                MessageBoxInfo(
+                    title=title, message=MESSAGE_TEXT['DATE_NO_WORKDAY'].format(date_day))
+            break
+        holdings = self.mariadb.select_table(
+            HOLDING_VIEW, '*', result_dict=True, iban=iban, price_date=date_day)
+        if not holdings:  # duplicate holding positions
+            period = (START_DATE_HOLDING, date_day)
+            message_box_ask = MessageBoxAsk(
+                title=title, message=MESSAGE_TEXT['HOLDING_INSERT'].format(date_day))
+            if message_box_ask.result:
+                holdings = self.mariadb.select_table_next(
+                    HOLDING, '*', DB_price_date, '<', date_day,  result_dict=True, date_name=DB_price_date, iban=iban, period=period)
+                for holding_dict in holdings:
+                    holding_dict[DB_price_date] = date_day
+                    holding_dict[DB_origin] = ORIGIN_INSERTED
+                    self.mariadb.execute_insert(
+                        HOLDING, holding_dict)
+                    holding_informations_append(INFORMATION, ' '.join(['\n', bank_name, MESSAGE_TEXT['HOLDING_INSERT'].format(
+                        date_day), '\n', holding_dict[DB_ISIN], '\n']))
+            else:
+                MessageBoxInfo(title=title, message=MESSAGE_TEXT['DATA_NO'].format(
+                    HOLDING.upper(), (date_days.convert(START_DATE_HOLDING), date_day)))
+                return
+            holdings = self.mariadb.select_table(
+                HOLDING_VIEW, '*', result_dict=True, iban=iban, price_date=date_day)
+        if holdings:  # update holding positions
+            for holding_dict in holdings:
+                title_download = ' '.join(
+                    [title, MENU_TEXT['Download'], MENU_TEXT['Prices']])
+                result = self._data_update_holding_price(
+                    title_download, bank_name, iban, holding_dict)
+                if not result:
+                    origin_symbol = self.mariadb.select_table(
+                        ISIN, DB_origin_symbol, isin_code=holding_dict[DB_ISIN])
+                    if origin_symbol:
+                        origin_symbol = origin_symbol[0]
                     else:
-                        period = (START_DATE_HOLDING, date_day)
-                        message_box_ask = MessageBoxAsk(
-                            title=title, message=MESSAGE_TEXT['HOLDING_INSERT'].format(date_day))
-                        if message_box_ask.result:
-                            holdings = self.mariadb.select_table_next(
-                                HOLDING, '*', DB_price_date, '<', date_day,  result_dict=True, date_name=DB_price_date, iban=iban, period=period)
-                            for holding_dict in holdings:
-                                holding_dict[DB_price_date] = date_day
-                                holding_dict[DB_origin] = ORIGIN_INSERTED
-                                self.mariadb.execute_insert(
-                                    HOLDING, holding_dict)
-                                holding_informations_append(INFORMATION, ' '.join(['\n', bank_name, MESSAGE_TEXT['HOLDING_INSERT'].format(
-                                    date_day), '\n', holding_dict[DB_ISIN], '\n']))
-                        else:
-                            MessageBoxInfo(title=title, message=MESSAGE_TEXT['DATA_NO'].format(
-                                HOLDING.upper(), (date_days.convert(START_DATE_HOLDING), date_day)))
-                            break
-        if holdings:
+                        origin_symbol = NOT_ASSIGNED
+                    holding_informations_append(WARNING, MESSAGE_TEXT['PRICES_NO'].format(
+                        ' '.join(['\n', bank_name, HOLDING.upper(), DB_price_date.upper(
+                        ), date_days.convert(holding_dict[DB_price_date])]),
+                        holding_dict[DB_symbol], origin_symbol, holding_dict[DB_ISIN], holding_dict[DB_name]))
             self.mariadb.update_total_holding_amount(
                 iban=iban, period=(date_day, date_day))
         self._show_informations()
@@ -1292,11 +1268,23 @@ class FinTS_MariaDB_Banking(object):
         Imports prices
         Updates market_price, total_amount
         '''
-        self._import_prices_run(self.mariadb, title, [
-                                holding_dict[DB_name]], BUTTON_APPEND)
         price = self.mariadb.select_table(
             PRICES_ISIN_VIEW, DB_close, result_dict=True, isin_code=holding_dict[DB_ISIN], price_date=holding_dict[DB_price_date])
+        if not price:
+            # import price data
+            data = self.mariadb.select_table(
+                ISIN, '*', result_dict=True, isin_code=holding_dict[DB_ISIN])
+            message = None
+            isin_table = PandasBoxIsinTable(
+                title, data, self.mariadb, message, mode=EDIT_ROW)
+            message = isin_table.message
+            if isin_table.button_state == WM_DELETE_WINDOW:
+                return
+            if isin_table.button_state == BUTTON_PRICES_IMPORT:
+                self._import_prices_run(
+                    self.mariadb, title, [isin_table.selected_row_dict[DB_name]], BUTTON_REPLACE)
         if price:
+            # update holding market price
             price_dict = price[0]
             field_dict = {}
             field_dict[DB_market_price] = price_dict[DB_close]
@@ -1308,17 +1296,65 @@ class FinTS_MariaDB_Banking(object):
             holding_informations_append(INFORMATION, ' '.join(['\n', bank_name, DB_ISIN.upper(), holding_dict[DB_ISIN], holding_dict[DB_name], '\n          ',
                                                                DB_price_date.upper(), date_days.convert(holding_dict[DB_price_date]), '\n']))
             return True
-        else:
-            return False
+        return False
 
     def _data_transaction_detail(self, bank_name, iban):
 
         self._delete_footer()
-        title = ' '.join([bank_name, MENU_TEXT['Transaction Detail']])
-        Transaction = DataTransactionDetail(
-            title=title, mariadb=self.mariadb, table=TRANSACTION_VIEW,
-            bank_name=bank_name, iban=iban)
-        self.footer.set(Transaction.footer)
+        title = ' '.join([bank_name,
+                          MENU_TEXT['Transaction Detail']])
+        data_dict = {}
+        if iban:
+            data_dict[DB_iban] = iban
+        while True:
+            date_transations = InputDateTransactions(
+                title=title, data_dict=data_dict, mariadb=self.mariadb, upper=[DB_name])
+            if date_transations.button_state == WM_DELETE_WINDOW:
+                return
+            data_dict = date_transations.field_dict
+            title_period = ' '.join(
+                [title, data_dict[FN_FROM_DATE], '-', data_dict[FN_TO_DATE]])
+            period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
+            if iban in data_dict.keys():
+                select_isin_transaction = self.mariadb.select_transactions_data(
+                    iban=data_dict[DB_iban], name=data_dict[DB_name], period=period)
+            else:
+                select_isin_transaction = self.mariadb.select_transactions_data(
+                    name=data_dict[DB_name], period=period)
+            if select_isin_transaction:
+                count_transactions = len(select_isin_transaction)
+                if iban:
+                    select_holding_ibans = [iban]
+                else:
+                    select_holding_ibans = self.mariadb.select_holding_fields(
+                        field_list=DB_iban)
+                for iban in select_holding_ibans:
+                    select_isin_transaction = self._data_transaction_add_portfolio(
+                        iban, data_dict[DB_name], period, select_isin_transaction)
+                title_period = ' '.join(
+                    [title, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                while True:
+                    table = PandasBoxTransactionDetail(title=title_period, dataframe=(
+                        count_transactions, select_isin_transaction), mode=NO_CURRENCY_SIGN)
+                    if table.button_state == WM_DELETE_WINDOW:
+                        break
+                    else:
+                        self.footer.set(
+                            MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
+
+    def _data_transaction_add_portfolio(self, iban, name, period, select_isin_transaction):
+
+        # add portfolio position, adds not realized profit/loss to transactions
+        select_holding_last = self.mariadb.select_holding_last(
+            iban, name, period, field_list='price_date, market_price, pieces, total_amount')
+        if select_holding_last:
+            if select_holding_last[0] < select_isin_transaction[-1][0]:
+                return select_isin_transaction
+            self.period = (self.period[0], select_holding_last[0])
+            select_holding_last = (
+                select_holding_last[0], 0, TRANSACTION_DELIVERY,  *select_holding_last[1:])
+            select_isin_transaction.append(select_holding_last)
+        return select_isin_transaction
 
     def _data_transaction_table(self, bank_name, iban):
 
@@ -1379,95 +1415,60 @@ class FinTS_MariaDB_Banking(object):
             title = MENU_TEXT['Prices ISINs'] + ' %'
         else:
             title = MENU_TEXT['Prices ISINs']
-        select_isin_ticker = self.mariadb.select_isin_with_ticker(
-            [DB_name, DB_symbol], order=DB_name)
-        if not select_isin_ticker:
-            MessageBoxInfo(title=title, message=(
-                MESSAGE_TEXT['DATA_NO'].format(ISIN.upper(), DB_symbol.upper())))
-            return
-        name_symbol = dict(select_isin_ticker)
-        from_date = START_DATE_PRICES
-        to_date = date.today()
-        default_texts = []
-        default_texts_prices = shelve_get_key(BANK_MARIADB_INI, title + PRICES)
-        if not default_texts_prices:
-            default_texts_prices = []
+        data_dict = {FN_FROM_DATE: START_DATE_PRICES,
+                     FN_TO_DATE: date_days.convert(date.today())}
         while True:
-            date_field_list = InputDateFieldlistPrices(
-                title=title,
-                from_date=from_date, standard=None,
-                default_texts=default_texts,
-                field_list=list(name_symbol.keys()))
-            if date_field_list.button_state == WM_DELETE_WINDOW:
+            date_prices = InputDatePrices(
+                title=title, data_dict=data_dict, mariadb=self.mariadb, separator=[FN_TO_DATE, DB_splits])
+            if date_prices.button_state == WM_DELETE_WINDOW:
                 return
-            if not date_field_list.field_list:
-                self.footer.set(MESSAGE_TEXT['DATA_NO'].format(
-                    ', '.join(date_field_list.field_list), ''))
-                break
-            # selected names e.g. Amazon, ...
-            default_texts = date_field_list.field_list
-            from_date = date_field_list.field_dict[FN_FROM_DATE]
-            to_date = date_field_list.field_dict[FN_TO_DATE]
-            if sign == PERCENT:
-                symbol_list = list(map(name_symbol.get, default_texts))
-                from_date = self.mariadb.select_first_price_date_of_prices(
-                    symbol_list, period=(from_date, to_date))
-                if not from_date:
-                    self.footer.set(MESSAGE_TEXT['DATA_NO'].format(
-                        ', '.join(date_field_list.field_list), ''))
-                    break
-            selected_fields = SelectFields(
-                title=title, standard=title + PRICES,
-                default_texts=default_texts_prices,
-                checkbutton_texts=[DB_open, DB_low, DB_high, DB_close, DB_adjclose, DB_volume,
-                                   DB_dividends, DB_splits])
-            if selected_fields.button_state == WM_DELETE_WINDOW:
-                break
-            else:
-                # selected data fields e.g. close, ..
-                field_list = selected_fields.field_list
-            db_fields = [DB_name, DB_price_date, *field_list]
-            select_data = self.mariadb.select_table(PRICES_ISIN_VIEW, db_fields, order=DB_name, result_dict=True,
-                                                    name=date_field_list.field_list, period=(from_date, to_date))
-            select_origin_dict = dict(self.mariadb.select_table(
-                ISIN, [DB_name, DB_origin_symbol], name=date_field_list.field_list))
-            if select_data:
-                self.footer.set('')
-                while True:
-                    price_table = PandasBoxPrices(title=title, dataframe=(
-                        field_list, select_data, select_origin_dict, sign), dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
-                    if price_table.button_state == WM_DELETE_WINDOW:
-                        break
-            else:
-                self.footer.set(
-                    MESSAGE_TEXT['DATA_NO'].format(', '.join(date_field_list.field_list), ''))
+            data_dict = date_prices.field_dict
+            selected_check_button = list(
+                filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
+            db_fields = list(TABLE_FIELDS_PROPERTIES[PRICES].keys())
+            # intersection: price fields of table PRICES
+            selected_fields = list(set(db_fields) & set(selected_check_button))
+            selected_isins = list(set(db_fields) ^ set(
+                selected_check_button))  # symetric_difference: selected isin_codes
+            if selected_fields and selected_isins:
+                select_data = self.mariadb.select_table(PRICES_ISIN_VIEW, [DB_name, DB_price_date] + selected_fields,
+                                                        order=DB_name, result_dict=True,
+                                                        isin_code=selected_isins,
+                                                        period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
+                select_origin_dict = dict(self.mariadb.select_table(
+                    ISIN, [DB_name, DB_origin_symbol], isin_code=selected_isins))
+                if select_data:
+                    self.footer.set('')
+                    while True:
+                        price_table = PandasBoxPrices(title=title, dataframe=(
+                            selected_fields, select_data, select_origin_dict, sign), dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
+                        if price_table.button_state == WM_DELETE_WINDOW:
+                            break
+                else:
+                    self.footer.set(
+                        MESSAGE_TEXT['DATA_NO'].format(', '.join(selected_isins), ''))
 
     def _data_balances(self):
 
         self._delete_footer()
-        to_date = date.today()
-        from_date = date(2021, 10, 3)
         title = ' '.join(
             [MENU_TEXT['All_Banks'], MENU_TEXT['Balances']])
+        data_dict = {FN_FROM_DATE: date(2021, 10, 3), FN_TO_DATE: date.today()}
         while True:
-            input_date = InputDate(title=title,
-                                   header=MESSAGE_TEXT['SELECT'],
-                                   from_date=from_date, to_date=to_date
-                                   )
-            if input_date.button_state == WM_DELETE_WINDOW:
-                return input_date.button_state, None, None
+            input_period = InputPeriod(title=title, data_dict=data_dict)
+            if input_period.button_state == WM_DELETE_WINDOW:
+                return input_period.button_state, None, None
             self.footer.set(MESSAGE_TEXT['TASK_STARTED'].format(title))
-            from_date = input_date.field_dict[FN_FROM_DATE]
-            to_date = input_date.field_dict[FN_TO_DATE]
+            data_dict = input_period.field_dict
             data_total_amounts = self.mariadb.select_total_amounts(
-                period=(from_date, to_date))
+                period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
             title_period = ' '.join([title, MESSAGE_TEXT['PERIOD'].format(
-                from_date, to_date)])
+                data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
             self.footer.set(MESSAGE_TEXT['TASK_DONE'])
             if data_total_amounts:
                 while True:
                     table = PandasBoxTotals(
-                        title=title_period, dataframe=data_total_amounts, mode=NUMERIC)
+                        title_period, data_total_amounts, self.mariadb)
                     if table.button_state == WM_DELETE_WINDOW:
                         break
             else:
@@ -1519,28 +1520,6 @@ class FinTS_MariaDB_Banking(object):
         else:
             self.footer.set(MESSAGE_TEXT['SYMBOL_MISSING_ALL'].format(title))
 
-    def _import_prices_histclose(self):
-        '''
-        download of historical prices may contain adjusted close prices
-        e.g. extra dividends, splits, ... are represented by multiplication with a factor (r-factor)
-        Such close prices generate faulty total_amount of holding positions in the past  (table holding)
-        To get the historical precise close prices in table holding close prices must be readjusted (see Isin table)
-        '''
-        self._delete_footer()
-        names, names_symbol, names_adjustments = self.mariadb.select_isin_adjustments()
-        title = ' '.join([MENU_TEXT['Historical Prices']])
-        while True:
-            select_isins = SelectDownloadPrices(
-                title=title, checkbutton_texts=names,
-                button1_text=BUTTON_UPDATE, button2_text=None, button3_text=None,)
-            if select_isins.button_state == WM_DELETE_WINDOW:
-                self._show_informations()
-                return
-            field_list = select_isins.field_list
-            for name in field_list:
-                self.mariadb.update_prices_histclose(
-                    name, names_symbol[name], names_adjustments[name])
-
     def _import_prices_run(self, mariadb, title, field_list, state):
 
         for name in field_list:
@@ -1562,19 +1541,20 @@ class FinTS_MariaDB_Banking(object):
                         MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS, information=WARNING,
                                        message=MESSAGE_TEXT['SYMBOL_MISSING'].format(isin, name))
                     else:
-                        from_date = date_days.convert(START_DATE_PRICES)
+                        from_date = date_days.convert('2000-01-01')
                         start_date_prices = from_date
                         if state == BUTTON_APPEND:
                             max_price_date = self.mariadb.select_max_column_value(
                                 PRICES, DB_price_date, symbol=symbol)
                             if max_price_date:
                                 from_date = max_price_date + timedelta(days=1)
+                        to_date = date_days.subtract(date.today(), 1)
                         if origin_symbol == YAHOO:
                             tickers = Ticker(symbol)
                             f = io.StringIO()
                             with redirect_stdout(f):
                                 dataframe = tickers.history(auto_adjust=False,
-                                                            period=None, start=from_date, end=date.today())
+                                                            period=None, start=from_date, end=to_date)
                             if f.getvalue():
                                 prices_informations_append(
                                     INFORMATION, f.getvalue())
@@ -1724,32 +1704,6 @@ class FinTS_MariaDB_Banking(object):
             dataframe = DataFrame(data)
             BuiltPandasBox(title=title, dataframe=dataframe)
 
-    def _isin_table(self):
-
-        self._delete_footer()
-        isin_name = ''
-        title = ' '.join([MENU_TEXT['Database'], MENU_TEXT['ISIN Table']])
-        while True:
-            self._show_informations()
-            isin = Isin(title, self.mariadb,
-                        self.shelve_app[KEY_ALPHA_VANTAGE], isin_name=isin_name)
-            if isin.button_state == WM_DELETE_WINDOW:
-                self._show_informations()
-                return
-            if isin.button_state == MENU_TEXT['Prices']:
-                title_prices = ' '.join(
-                    [MENU_TEXT['Download'], MENU_TEXT['Prices'], isin.field_dict[DB_name]])
-                self._import_prices_run(
-                    self.mariadb, title_prices, [isin.field_dict[DB_name]], BUTTON_APPEND)
-            if isin.button_state == FORMS_TEXT['Adjust Prices']:
-                while True:
-                    adjustments = Adjustments(
-                        self.mariadb, isin.field_dict[DB_ISIN])
-                    if adjustments.button_state == WM_DELETE_WINDOW:
-                        break
-            if isin.field_dict:
-                isin_name = isin.field_dict[DB_name]
-
     def sepa_credit_transfer(self, bank_code, account):
 
         self._delete_footer()
@@ -1828,6 +1782,10 @@ class FinTS_MariaDB_Banking(object):
     def _reset(self):
 
         if shelve_exist(BANK_MARIADB_INI):
+            key_list = shelve_get_keylist(BANK_MARIADB_INI)
+            for key in key_list:
+                if key not in APP_SHELVE_KEYS:
+                    shelve_del_key(BANK_MARIADB_INI, key)
             GEOMETRY_DICT = {}
             shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
         self.footer.set(MESSAGE_TEXT['TASK_DONE'])
@@ -1954,15 +1912,23 @@ class FinTS_MariaDB_Banking(object):
                 bank_code = dict_get_first_key(self.bank_names, bank_name)
                 bank_balances = self._show_balances_get(
                     bank_code, owner_name=None)
+                max_entry_date = ''
                 if bank_balances:
                     dataframe = DataFrame(bank_balances, columns=[KEY_ACC_BANK_CODE, KEY_ACC_ACCOUNT_NUMBER,
                                                                   KEY_ACC_PRODUCT_NAME, DB_entry_date,
                                                                   DB_closing_status, DB_closing_balance, DB_closing_currency,
                                                                   DB_opening_status, DB_opening_balance, DB_opening_currency])
                     total_df.append(dataframe)
+                    entry_date = dataframe[DB_entry_date].max()
+                    if max_entry_date:
+                        if entry_date > max_entry_date:
+                            max_entry_date = entry_date
+                    else:
+                        max_entry_date = entry_date
             if total_df:
+                # BuiltPandasBox.CELLWIDTH_FIXED[title] = True
                 PandasBoxBalancesAllBanks(
-                    title=title, dataframe=total_df, mode=CURRENCY_SIGN, cellwidth_resizeable=False)
+                    title=' '.join([title, date_days.convert(max_entry_date)]), dataframe=total_df, mode=CURRENCY_SIGN)
             else:
                 self.footer.set(
                     ' '.join([message, MESSAGE_TEXT['DATA_NO'].format('', '')]))
@@ -1980,8 +1946,7 @@ class FinTS_MariaDB_Banking(object):
                                                           KEY_ACC_PRODUCT_NAME, DB_entry_date,
                                                           DB_closing_status, DB_closing_balance, DB_closing_currency,
                                                           DB_opening_status, DB_opening_balance, DB_opening_currency])
-            # ignore F_keys because Columns  dropped in PandasBoxBalances
-            PandasBoxBalances(title=title, dataframe=dataframe, dataframe_sum=[
+            PandasBoxBalances(title=' '.join([title, date_days.convert(date.today())]), dataframe=dataframe, dataframe_sum=[
                               DB_closing_balance, DB_opening_balance], mode=CURRENCY_SIGN,
                               cellwidth_resizeable=False)
         else:
@@ -2080,35 +2045,29 @@ class FinTS_MariaDB_Banking(object):
 
         self._delete_footer()
         iban = account[KEY_ACC_IBAN]
+        bank_name = self._bank_name(bank_code)
+        selection_name = ' '.join(
+            [MENU_TEXT['Show'], bank_name, MENU_TEXT['Statement']])
         label = account[KEY_ACC_PRODUCT_NAME]
         if not label:
             label = account[KEY_ACC_ACCOUNT_NUMBER]
-        bank_name = self._bank_name(bank_code)
-        title = ' '.join([MENU_TEXT['Show'], bank_name,
-                          MENU_TEXT['Statement'], label])
-        field_list = TABLE_FIELDS[STATEMENT]
-        from_date = date(datetime.now().year, 1, 1)
-        to_date = date(datetime.now().year, 12, 31)
+        title = ' '.join([selection_name, label])
+        data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
+            datetime.now().year, 12, 31)}
         while True:
-            date_field_list = InputDateFieldlist(title=title,
-                                                 from_date=date.today() - timedelta(days=30),
-                                                 standard=MENU_TEXT['Show'] +
-                                                 MENU_TEXT['Statement'],
-                                                 field_list=TABLE_FIELDS[STATEMENT])
-            if date_field_list.button_state == WM_DELETE_WINDOW:
-                break
-            from_date = date_field_list.field_dict[FN_FROM_DATE]
-            to_date = date_field_list.field_dict[FN_TO_DATE]
-            field_list = date_field_list.field_list
-            for field in [DB_iban, DB_entry_date, DB_counter]:
-                if field not in field_list:
-                    field_list.append(field)
+            date_statement = InputDateTable(
+                title=title, data_dict=data_dict, table=STATEMENT, selection_name=selection_name)
+            if date_statement.button_state == WM_DELETE_WINDOW:
+                return
+            data_dict = date_statement.field_dict
+            selected_check_button = list(
+                filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
             message = None
-            period = ' '.join([from_date, '-', to_date])
-            title_period = ' '.join([title, period])
+            period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
             data = self.mariadb.select_table(
-                STATEMENT, field_list, result_dict=True,
-                date_name=DB_date, iban=iban, period=(from_date, to_date))
+                STATEMENT, selected_check_button, result_dict=True,
+                date_name=DB_date, iban=iban, period=period)
+            title_period = ' '.join([title, str(period)])
             if data:
                 while True:
                     table = PandasBoxStatementTable(
@@ -2118,96 +2077,48 @@ class FinTS_MariaDB_Banking(object):
                         break
             else:
                 self.footer.set(
-                    MESSAGE_TEXT['DATA_NO'].format(title, period))
+                    MESSAGE_TEXT['DATA_NO'].format(title_period, selected_check_button))
                 break
 
     def _show_transactions(self, bank_code, account):
 
         self._delete_footer()
         iban = account[KEY_ACC_IBAN]
-        field_list = TABLE_FIELDS[TRANSACTION_VIEW]
-        from_date = date(2000, 1, 1)
-        to_date = date.today()
         label = account[KEY_ACC_PRODUCT_NAME]
         if not label:
             label = account[KEY_ACC_ACCOUNT_NUMBER]
         bank_name = self._bank_name(bank_code)
-        default_texts = []
-        title = ' '.join(
-            [MENU_TEXT['Show'], bank_name, MENU_TEXT['Holding'], label, TRANSACTION.upper()])
+        title = ' '.join([MENU_TEXT['Show'], bank_name,
+                          MENU_TEXT['Transactions'], label])
+        data_dict = {FN_FROM_DATE: date_days.subtract(
+            date.today(), 360), FN_TO_DATE: date.today()}
         while True:
-            date_field_list = InputDateFieldlist(title=title,
-                                                 from_date=from_date, to_date=to_date,
-                                                 default_texts=default_texts,
-                                                 standard=MENU_TEXT['Prices ISINs'], field_list=field_list)
-            if date_field_list.button_state == WM_DELETE_WINDOW:
+            date_transaction_view = InputDateTable(
+                title=title, data_dict=data_dict, table=TRANSACTION_VIEW)
+            if date_transaction_view.button_state == WM_DELETE_WINDOW:
                 return
-            default_texts = date_field_list.field_list
-            from_date = date_field_list.field_dict[FN_FROM_DATE]
-            to_date = date_field_list.field_dict[FN_TO_DATE]
-            data_list = self.mariadb.select_table(
-                TRANSACTION_VIEW, date_field_list.field_list, result_dict=True, date_name=DB_price_date,
-                iban=iban, period=(from_date, to_date))
-
-            title_period = ' '.join(
-                [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
-            if data_list:
-                dataframe_sum = []
-                if DB_posted_amount in date_field_list.field_list:
-                    dataframe_sum.append(DB_posted_amount)
-                if DB_acquisition_amount in date_field_list.field_list:
-                    dataframe_sum.append(DB_acquisition_amount)
+            data_dict = date_transaction_view.field_dict
+            selected_check_button = list(
+                filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
+            message = None
+            period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
+            data = self.mariadb.select_table(
+                TRANSACTION_VIEW, selected_check_button, result_dict=True,
+                date_name=DB_price_date, iban=iban, period=period, order=DB_price_date)
+            title_period = ' '.join([title, str(period)])
+            if data:
                 while True:
-                    table = PandasBoxHoldingTransaction(
-                        title=title_period, dataframe=data_list, dataframe_sum=dataframe_sum, mode=NO_CURRENCY_SIGN)
+                    table = PandasBoxTransactionTableShow(
+                        title_period, data, self.mariadb, iban, message, mode=EDIT_ROW)
+                    message = table.message
                     if table.button_state == WM_DELETE_WINDOW:
                         break
             else:
                 self.footer.set(
-                    MESSAGE_TEXT['DATA_NO'].format(title_period, ''))
+                    MESSAGE_TEXT['DATA_NO'].format(title_period, selected_check_button))
+                break
 
     def _show_holdings(self, bank_code, account):
-
-        self._delete_footer()
-        iban = account[KEY_ACC_IBAN]
-        field_list = TABLE_FIELDS[HOLDING_VIEW]
-
-        label = account[KEY_ACC_PRODUCT_NAME]
-        if not label:
-            label = account[KEY_ACC_ACCOUNT_NUMBER]
-        bank_name = self._bank_name(bank_code)
-        title = ' '.join(
-            [MENU_TEXT['Show'], bank_name, MENU_TEXT['Holding'], label])
-        max_price_date, _ = self._date_init(iban, timedelta_days=0)
-        if not max_price_date:
-            self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, ''))
-            return
-        date_ = max_price_date
-        default_texts = []
-        while True:
-            date_field_list = InputDateFieldlistHolding(title=title, date=date_,
-                                                        field_list=field_list,
-                                                        default_texts=default_texts,
-                                                        mariadb=self.mariadb, iban=iban)
-            if date_field_list.button_state == WM_DELETE_WINDOW:
-                return
-            default_texts = date_field_list.field_list
-            date_ = date_field_list.field_dict[FN_DATE]
-            data_date_ = self.mariadb.select_holding_data(
-                field_list=date_field_list.field_list, iban=iban, price_date=date_)
-            if data_date_:
-                data_list = sorted(data_date_,
-                                   key=lambda i: (i[DB_name]))
-                title_period = ' '.join(
-                    [title, date_])
-                while True:
-                    table = PandasBoxHolding(title=title_period, dataframe=(data_list, date_field_list.field_list), dataframe_sum=[
-                                             DB_total_amount, DB_acquisition_amount, FN_PROFIT], mode=NO_CURRENCY_SIGN,
-                                             cellwidth_resizeable=False)
-                    if table.button_state == WM_DELETE_WINDOW:
-                        break
-
-    def _show_holdings_perc(self, bank_code, account):
 
         self._delete_footer()
         iban = account[KEY_ACC_IBAN]
@@ -2217,22 +2128,22 @@ class FinTS_MariaDB_Banking(object):
         bank_name = self._bank_name(bank_code)
         title = ' '.join(
             [MENU_TEXT['Show'], bank_name, MENU_TEXT['Holding'] + '%', label])
-        from_date = (date.today() - timedelta(days=1))
-        to_date = date.today()
+        data_dict = {FN_FROM_DATE: (
+            date.today() - timedelta(days=1)), FN_TO_DATE: date.today()}
+        shelve_del_key(BANK_MARIADB_INI, title)
         while True:
-            input_date = InputDateHoldingPerc(title=title, from_date=from_date,
-                                              to_date=to_date,
-                                              mariadb=self.mariadb, iban=iban)
-            if input_date.button_state == WM_DELETE_WINDOW:
+            input_period = InputDateHolding(title=title, data_dict=data_dict,
+                                            mariadb=self.mariadb, container_dict={DB_iban: iban})
+            if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            from_date = input_date.field_dict[FN_FROM_DATE]
+            data_dict = input_period.field_dict
             data_from_date = self.mariadb.select_holding_data(
-                iban=iban, price_date=from_date)
-            to_date = input_date.field_dict[FN_TO_DATE]
+                iban=iban, price_date=data_dict[FN_FROM_DATE])
+            to_date = input_period.field_dict[FN_TO_DATE]
             data_to_date = self.mariadb.select_holding_data(
                 iban=iban, price_date=to_date)
             title_period = ' '.join(
-                [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
+                [title, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
             while True:
                 table = PandasBoxHoldingPercent(title=title_period, dataframe=(
                     data_to_date, data_from_date), mode=CURRENCY_SIGN,
@@ -2243,18 +2154,16 @@ class FinTS_MariaDB_Banking(object):
     def _transactions_pieces(self, bank_name, iban):
 
         self._delete_footer()
-        from_date = date(2000, 1, 1)
-        to_date = date.today()
         title = ' '.join([bank_name, MENU_TEXT['Check Transactions Pieces']])
+        data_dict = {FN_FROM_DATE: START_DATE_TRANSACTIONS,
+                     FN_TO_DATE: date.today()}
         while True:
-            input_date = InputDate(title=title, header=MESSAGE_TEXT['SELECT'],
-                                   from_date=from_date, to_date=to_date)
-            if input_date.button_state == WM_DELETE_WINDOW:
+            input_period = InputPeriod(title=title, data_dict=data_dict)
+            if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            from_date = input_date.field_dict[FN_FROM_DATE]
-            to_date = input_date.field_dict[FN_TO_DATE]
+            data_dict = input_period.field_dict
             result = self.mariadb.transaction_portfolio(
-                iban=iban, period=(from_date, to_date))
+                iban=iban, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
             if result:
                 dataframe = DataFrame(list(result), columns=['ORIGIN',
                                                              DB_ISIN, DB_name, DB_pieces])
@@ -2271,19 +2180,17 @@ class FinTS_MariaDB_Banking(object):
     def _transactions_profit(self, bank_name, iban):
 
         self._delete_footer()
-        from_date = date(2000, 1, 1)
-        to_date = date.today()
         title = ' '.join(
             [bank_name, MENU_TEXT['Profit of closed Transactions']])
+        data_dict = {FN_FROM_DATE: START_DATE_TRANSACTIONS,
+                     FN_TO_DATE: date.today()}
         while True:
-            input_date = InputDate(title=title,
-                                   header=MESSAGE_TEXT['SELECT'],
-                                   from_date=from_date, to_date=to_date)
-            if input_date.button_state == WM_DELETE_WINDOW:
+            input_period = InputPeriod(title=title, data_dict=data_dict)
+            if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            from_date = input_date.field_dict[FN_FROM_DATE]
-            to_date = input_date.field_dict[FN_TO_DATE]
-            self._transactions_profit_closed(title, iban, from_date, to_date)
+            data_dict = input_period.field_dict
+            self._transactions_profit_closed(
+                title, iban, data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
 
     def _transactions_profit_closed(self, title, iban, from_date, to_date):
 
@@ -2307,23 +2214,20 @@ class FinTS_MariaDB_Banking(object):
     def _transactions_profit_all(self, bank_name, iban):
 
         self._delete_footer()
-        from_date = date(2000, 1, 1)
-        to_date = date.today()
         title = ' '.join(
             [bank_name, MENU_TEXT['Profit Transactions incl. current Depot Positions']])
+        data_dict = {FN_FROM_DATE: START_DATE_TRANSACTIONS,
+                     FN_TO_DATE: date.today()}
         while True:
-            input_date = InputDate(title=title,
-                                   header=MESSAGE_TEXT['SELECT'],
-                                   from_date=from_date, to_date=to_date, cellwidth_resizeable=False)
-            if input_date.button_state == WM_DELETE_WINDOW:
+            input_period = InputPeriod(title=title, data_dict=data_dict)
+            if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            from_date = input_date.field_dict[FN_FROM_DATE]
-            to_date = input_date.field_dict[FN_TO_DATE]
+            data_dict = input_period.field_dict
             result = self.mariadb.transaction_profit_all(
-                iban=iban, period=(from_date, to_date))
+                iban=iban, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
             if result:
                 title_period = ' '.join(
-                    [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
+                    [title, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
                 while True:
                     table = PandasBoxTransactionProfit(
                         title=title_period, dataframe=list(result), mode=NO_CURRENCY_SIGN,
@@ -2332,47 +2236,9 @@ class FinTS_MariaDB_Banking(object):
                         break
             else:
                 MessageBoxInfo(title=title,
-                               message=MESSAGE_TEXT['TRANSACTION_NO'].format(from_date, to_date))
+                               message=MESSAGE_TEXT['TRANSACTION_NO'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
                 self._transactions_profit_closed(
-                    bank_name, iban, from_date, to_date)
-
-    def _transactions_table(self, bank_name, iban):
-
-        self._delete_footer()
-        title = ' '.join([bank_name, MENU_TEXT['Transactions Table']])
-        field_list = TABLE_FIELDS[TRANSACTION_VIEW]
-        from_date = date(2000, 1, 1)
-        to_date = date(datetime.now().year, 12, 31)
-        period = (from_date, to_date)
-        name_isin_dict = dict(self.mariadb.select_table(
-            ISIN, [DB_name, DB_ISIN], order=DB_name))
-        isin = ''
-        name = ''
-        while True:
-            input_isin = InputISIN(
-                title=MESSAGE_TEXT['TRANSACTION_TITLE'].format(bank_name, ''),
-                default_values=(name, isin, from_date, to_date),
-                names=name_isin_dict)
-            if input_isin.button_state == WM_DELETE_WINDOW:
-                return
-            isin = input_isin.field_dict[DB_ISIN]
-            name = input_isin.field_dict[DB_name]
-            from_date = input_isin.field_dict[FN_FROM_DATE]
-            to_date = input_isin.field_dict[FN_TO_DATE]
-            _title = ' '.join([name, isin, from_date, '-', to_date])
-            while True:
-                data = self.mariadb.select_table(TRANSACTION_VIEW, field_list, order=[
-                                                 DB_price_date, DB_counter], result_dict=True, iban=iban, isin_code=isin)
-                if data:
-                    transaction_table = PandasBoxTransactionTable(
-                        title + _title, '', bank_name, iban, isin, name, period, data, self.mariadb, mode=EDIT_ROW)
-
-                    if transaction_table.button_state == WM_DELETE_WINDOW:
-                        return
-                else:
-                    self.footer.set(
-                        MESSAGE_TEXT['DATA_NO'].format(title, _title))
-                    break
+                    bank_name, iban, data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
 
     def _update_holding_total_amount_portfolio(self, bank_name, iban):
         """
@@ -2380,20 +2246,19 @@ class FinTS_MariaDB_Banking(object):
         """
         title = ' '.join(
             [bank_name, iban, MENU_TEXT['Update Portfolio Total Amount']])
-        from_date = date.today()
-        to_date = date.today()
+        data_dict = {}
+        data_dict[FN_FROM_DATE] = date.today()
+        data_dict[FN_TO_DATE] = date.today()
         while True:
-            input_date = InputDate(
-                title=title, from_date=from_date, to_date=to_date)
-            if input_date.button_state == WM_DELETE_WINDOW:
+            input_period = InputPeriod(title=title, data_dict=data_dict)
+            if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            from_date = input_date.field_dict[FN_FROM_DATE]
-            to_date = input_date.field_dict[FN_TO_DATE]
-            period = (from_date, to_date)
+            data_dict = input_period.feld_dict
+            period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
             self.mariadb.update_total_holding_amount(iban=iban, period=period)
             self.footer.set(' '.join(
                 [MESSAGE_TEXT['TASK_DONE'],  "\n", MENU_TEXT['Update Portfolio Total Amount'],
-                 "\n", bank_name, iban,   MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
+                 "\n", bank_name, iban,   MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
             )
 
     def _websites(self, site):
@@ -2412,18 +2277,19 @@ class FinTS_MariaDB_Banking(object):
         self._delete_footer()
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Balances']])
-        input_date = InputDate(title=title, from_date=date(
-            date.today().year, 1, 1), to_date=date(date.today().year, 12, 31))
-        if input_date.button_state == WM_DELETE_WINDOW:
+        data_dict = {FN_FROM_DATE: date(
+            date.today().year, 1, 1), FN_TO_DATE: date(date.today().year, 12, 31)}
+        input_period = InputPeriod(title=title, data_dict=data_dict)
+        if input_period.button_state == WM_DELETE_WINDOW:
             return
-        from_date = input_date.field_dict[FN_FROM_DATE]
-        to_date = input_date.field_dict[FN_TO_DATE]
+        data_dict = input_period.field_dict
         ledger_coa = self.mariadb.select_table(
             LEDGER_COA, [DB_account, DB_name, DB_iban, DB_portfolio], order=DB_account, result_dict=True)
-        data = self._ledger_balance_table(from_date, to_date, ledger_coa)
+        data = self._ledger_balance_table(
+            data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE], ledger_coa)
         if data:
             title = ' '.join(
-                [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
+                [title, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
             BuiltPandasBox(title=title, dataframe=DataFrame(
                 data), mode=NO_CURRENCY_SIGN, cellwidth_resizeable=False)
         else:
@@ -2553,48 +2419,82 @@ class FinTS_MariaDB_Banking(object):
                          MENU_TEXT['Check Bank Statement']])
         self._ledger_account(title=title, iban_clause=True)
 
+    def _ledger_account_category(self):
+        '''
+        Account grouped by category with sum Rows
+        '''
+        self._delete_footer()
+        title = ' '.join([MENU_TEXT['Ledger'],
+                         MENU_TEXT['Account Category']])
+        data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
+            datetime.now().year, 12, 31)}
+        while True:
+            select_ledger_account = SelectLedgerAccountCategory(
+                title=title, mariadb=self.mariadb, data_dict=data_dict)
+            if select_ledger_account.button_state == WM_DELETE_WINDOW:
+                return
+            data_dict = select_ledger_account.field_dict
+            period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
+            account_name = data_dict[DB_account][5:]
+            account = data_dict[DB_account][:4]
+            field_list = [DB_id_no, DB_entry_date, DB_date, DB_purpose_wo_identifier, DB_amount,
+                          DB_currency, DB_category, DB_credit_account, DB_debit_account, DB_applicant_name]
+            while True:
+                title_period = '  '.join(
+                    [title, account, account_name, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                data = self.mariadb.select_ledger_account(
+                    field_list, account, result_dict=True, date_name=DB_entry_date, period=period)
+                if data:
+                    table = PandasBoxLedgerAccountCategory(
+                        title=title_period, dataframe=data, mode=NUMERIC)
+                    if table.button_state == WM_DELETE_WINDOW:
+                        break
+                else:
+                    self.footer.set(
+                        MESSAGE_TEXT['DATA_NO'].format(' ', title_period))
+                    break
+
     def _ledger_account(self, title=None, iban_clause=False):
 
         self._delete_footer()
         if title is None:
             title = ' '.join([MENU_TEXT['Ledger'],
                              MENU_TEXT['Account']])
-        field_list = TABLE_FIELDS[LEDGER_VIEW]
-        from_date = date(datetime.now().year, 1, 1)
-        to_date = date(datetime.now().year, 12, 31)
-        period = (from_date, to_date)
+        data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
+            datetime.now().year, 12, 31)}
+        selected_row = 0
         while True:
-            input_account = InputAccount(
-                self.mariadb, title=title, period=period, iban_clause=iban_clause)
-            if input_account.button_state == WM_DELETE_WINDOW:
+            select_ledger_account = SelectLedgerAccount(
+                title=title, mariadb=self.mariadb, data_dict=data_dict)
+            if select_ledger_account.button_state == WM_DELETE_WINDOW:
                 return
-            from_date = input_account.field_dict[FN_FROM_DATE]
-            to_date = input_account.field_dict[FN_TO_DATE]
-            period = (from_date, to_date)
-            account_name = input_account.field_dict[DB_account]
-            account = account_name[:4]
-            message = None
+            data_dict = select_ledger_account.field_dict
+            period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
+            account_name = data_dict[DB_account][5:]
+            account = data_dict[DB_account][:4]
+            data_dict[DB_id_no] = 1
+            field_list = list(filter(lambda x: data_dict[x] == 1, list(
+                data_dict.keys())))  # filter selected check_buttons
             while True:
                 title_period = '  '.join(
-                    [title, account_name[5:], MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
+                    [title, account, account_name, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
                 if title.startswith(' '.join([MENU_TEXT['Ledger'], MENU_TEXT['Check Bank Statement']])):
                     # caller is _ledger_statement_check
                     data = self.mariadb.select_ledger_account(
                         field_list, account, result_dict=True, date_name=DB_entry_date, period=period, bank_statement_checked=False)
-                    if data:
-                        table = PandasBoxLedgerTable(
-                            title_period, data, self.mariadb, message, mode=EDIT_ROW)
-                        message = table.message
-                        if table.button_state == WM_DELETE_WINDOW:
-                            return
                 else:
                     data = self.mariadb.select_ledger_account(
                         field_list, account, result_dict=True, date_name=DB_entry_date, period=period)
+                if data:
                     table = PandasBoxLedgerTable(
-                        title_period, data, self.mariadb, message, mode=EDIT_ROW)
-                    message = table.message
+                        title_period, data, self.mariadb, None, mode=EDIT_ROW, selected_row=selected_row)
+                    selected_row = table.selected_row
                     if table.button_state == WM_DELETE_WINDOW:
-                        return
+                        break
+                else:
+                    self.footer.set(
+                        MESSAGE_TEXT['DATA_NO'].format(' ', title_period))
+                    break
 
     def _ledger_journal(self):
 
@@ -2602,25 +2502,26 @@ class FinTS_MariaDB_Banking(object):
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Journal']])
         field_list = TABLE_FIELDS[LEDGER_VIEW]
-        from_date = date(datetime.now().year, 1, 1)
-        to_date = date(datetime.now().year, 12, 31)
+        data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
+            datetime.now().year, 12, 31)}
         while True:
-            input_date = InputDate(
-                title=title, from_date=from_date, to_date=to_date)
-            if input_date.button_state == WM_DELETE_WINDOW:
+            input_period = InputPeriod(title=title, data_dict=data_dict)
+            if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            from_date = input_date.field_dict[FN_FROM_DATE]
-            to_date = input_date.field_dict[FN_TO_DATE]
-            title_period = ' '.join([title, from_date, '-', to_date])
+            data_dict = input_period.field_dict
+            title_period = ' '.join(
+                [title, data_dict[FN_FROM_DATE], '-', data_dict[FN_TO_DATE]])
             message = None
+            selected_row = 0
             while True:
                 data = self.mariadb.select_table(
                     LEDGER_VIEW, field_list, result_dict=True,
-                    date_name=DB_entry_date, period=(from_date, to_date))
+                    date_name=DB_entry_date, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
                 if data:
                     table = PandasBoxLedgerTable(
-                        title_period, data, self.mariadb, message, mode=EDIT_ROW)
+                        title_period, data, self.mariadb, message, mode=EDIT_ROW, selected_row=selected_row)
                     message = table.message
+                    selected_row = table.selected_row
                     if table.button_state == WM_DELETE_WINDOW:
                         break
                 else:
@@ -2635,119 +2536,13 @@ class FinTS_MariaDB_Banking(object):
                          MENU_TEXT['Chart of Accounts']])
         field_list = TABLE_FIELDS[LEDGER_COA]
         message = None
+        selected_row = 0
         while True:
             data = self.mariadb.select_table(
                 LEDGER_COA, field_list, result_dict=True)
             ledger_coa_table = PandasBoxLedgerCoaTable(
-                title, data, self.mariadb, message, mode=EDIT_ROW)
+                title, data, self.mariadb, message, mode=EDIT_ROW, selected_row=selected_row)
             message = ledger_coa_table.message
+            selected_row = ledger_coa_table.selected_row
             if ledger_coa_table.button_state == WM_DELETE_WINDOW:
                 return
-
-
-class Data_ISIN_Period(object):
-    """
-    Get ISIN and period for table query
-    ARGS
-            title        message-key of title
-            header       message-key header text
-            table        MARIA DB table/view
-            mariadb      MARIA DB connector
-    """
-
-    def __init__(self, title=MESSAGE_TITLE, header_key='SELECT', mariadb=None, table=TRANSACTION_VIEW,
-                 bank_name='', iban=None, button2_text=None):
-
-        self.header_key = header_key
-        self.mariadb = mariadb
-        self.table = table
-        self.bank_name = bank_name
-        self.iban = iban
-        self.footer = ''
-        if button2_text == BUTTON_NEW:
-            transaction_isin = self.mariadb.select_dict(ISIN, DB_name, DB_ISIN)
-        elif not iban:
-            transaction_isin = self.mariadb.select_dict(
-                self.table, DB_name, DB_ISIN, )
-        else:
-            transaction_isin = self.mariadb.select_dict(
-                self.table, DB_name, DB_ISIN, iban=self.iban)
-        if transaction_isin == {}:
-            self.footer = MESSAGE_TEXT['DATA_NO'].format(
-                self.bank_name, self.iban)
-        else:
-            names_list = list(transaction_isin.keys())
-            name_ = names_list[0]
-            from_date = date(2000, 1, 1)
-            to_date = date.today() + timedelta(days=360)
-            while True:
-                self.title = title
-                input_isin = InputISIN(
-                    title=self.title, header=MESSAGE_TEXT[self.header_key],
-                    default_values=(name_, transaction_isin[name_], from_date,
-                                    to_date),
-                    names=transaction_isin)
-                if input_isin.button_state == WM_DELETE_WINDOW:
-                    return
-                self.name_, self.isin, from_date, to_date = tuple(
-                    list(input_isin.field_dict.values()))
-                name_ = self.name_
-                self.period = (from_date, to_date)
-                self.title = ' '.join([title, self.name_])
-                self._data_processing()
-
-    def _data_processing(self):
-
-        pass
-
-
-class DataTransactionDetail(Data_ISIN_Period):
-    """
-    Show transactions of ISIN in period
-    """
-
-    def _data_processing(self):
-
-        field_list = 'price_date, counter, transaction_type, price, pieces, posted_amount'
-
-        if self.iban:
-            select_isin_transaction = self.mariadb.select_transactions_data(
-                field_list=field_list, iban=self.iban, isin_code=self.isin, period=self.period)
-        else:
-            select_isin_transaction = self.mariadb.select_transactions_data(
-                field_list=field_list, isin_code=self.isin, period=self.period)
-        if select_isin_transaction:
-            count_transactions = len(select_isin_transaction)
-            if self.iban:
-                select_holding_ibans = [self.iban]
-            else:
-                select_holding_ibans = self.mariadb.select_holding_fields(
-                    field_list=DB_iban)
-            for iban in select_holding_ibans:
-                select_isin_transaction = self._data_transaction_add_portfolio(
-                    iban, select_isin_transaction)
-            from_date, to_date = self.period
-            title_period = ' '.join(
-                [self.title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
-            while True:
-                table = PandasBoxTransactionDetail(title=title_period, dataframe=(
-                    count_transactions, select_isin_transaction), mode=NO_CURRENCY_SIGN)
-                if table.button_state == WM_DELETE_WINDOW:
-                    break
-        else:
-            self.footer = MESSAGE_TEXT['DATA_NO'].format(
-                self.bank_name, self.iban)
-
-    def _data_transaction_add_portfolio(self, iban, select_isin_transaction):
-
-        # add portfolio position, adds not realized profit/loss to transactions
-        select_holding_last = self.mariadb.select_holding_last(
-            iban, self.isin, self.period, field_list='price_date, market_price, pieces, total_amount')
-        if select_holding_last:
-            if select_holding_last[0] < select_isin_transaction[-1][0]:
-                return select_isin_transaction
-            self.period = (self.period[0], select_holding_last[0])
-            select_holding_last = (
-                select_holding_last[0], 0, TRANSACTION_DELIVERY,  *select_holding_last[1:])
-            select_isin_transaction.append(select_holding_last)
-        return select_isin_transaction

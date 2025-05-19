@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-# -*- coding: latin-1 -*-
+# -*- coding: ISO-8859-15 -*-
 """
 Created on 27.06.2021
-__updated__ = "2025-01-10"
+__updated__ = "2025-05-19"
 @author: Wolfgang Kramer
 
   Attention! new Scraper Class, see     Module: mariadb.py
@@ -17,39 +17,35 @@ from io import StringIO
 from threading import Thread
 from pandas import read_html
 from selenium import webdriver
-from selenium.common import exceptions
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.edge.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
 from banking.declarations import (
     ALPHA_VANTAGE_DOCUMENTATION,
     BANK_MARIADB_INI, BMW_BANK_CODE,
-    DEBIT, CREDIT, EURO,
+    DEBIT, CREDIT,
     HTTP_CODE_OK,
     KEY_ALPHA_VANTAGE_FUNCTION, KEY_ALPHA_VANTAGE_PARAMETER,
     KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_SERVER, KEY_BANK_NAME, KEY_ACCOUNTS,
     MESSAGE_TEXT, MENU_TEXT, PNS,
-    SCRAPER_BANKDATA, SHELVE_KEYS
+    SCRAPER_BANKDATA, SHELVE_KEYS,
+    WARNING,
 )
-from banking.formbuilts import MessageBoxInfo, MessageBoxError, MessageBoxTermination, WM_DELETE_WINDOW
+from banking.declarations_mariadb import (
+    STATEMENT,
+    DB_entry_date, DB_date, DB_amount, DB_posting_text, DB_purpose, DB_purpose_wo_identifier, DB_status,
+    DB_closing_balance, DB_closing_entry_date, DB_closing_status,
+    DB_opening_balance, DB_opening_entry_date, DB_opening_status
+)
+from banking.formbuilts import MessageBoxInfo, MessageBoxError, WM_DELETE_WINDOW
 from banking.forms import InputPIN
 from banking.utils import (
-    dec2, find_pattern, http_error_code, shelve_get_key, exception_error, shelve_put_key
+    dec2, http_error_code, shelve_get_key, exception_error, shelve_put_key
 )
-
-
-def amount_to_decimal(amount):
-
-    amount = amount.replace(u'\xa0' + EURO, '')
-    amount = amount.replace('.', '')
-    amount = dec2.convert(amount.replace(',', '.'))
-    status = CREDIT
-    if amount < 0:
-
-        amount = amount * -1
-        status = DEBIT
-    return amount, status
 
 
 def convert_date(date_):
@@ -203,16 +199,20 @@ class AlphaVantage(object):
 class BmwBank(object):
     """
     BMW Bank
+    savings and daily transactions
     """
 
-    def __init__(self):
+    def __init__(self, mariadb):
 
+        self.mariadb = mariadb
         self.bank_code = BMW_BANK_CODE
         self.server, self.identifier_delimiter, self.storage_period = SCRAPER_BANKDATA[
             BMW_BANK_CODE]
         self.scraper = True
         self.user_id = None
         shelve_file = shelve_get_key(self.bank_code, SHELVE_KEYS)
+        self.bank_name = shelve_file[KEY_BANK_NAME]
+        self.title = self.bank_name
         try:
             self.user_id = shelve_file[KEY_USER_ID]
             if KEY_PIN in shelve_file.keys() and shelve_file[KEY_PIN] not in ['', None]:
@@ -220,7 +220,7 @@ class BmwBank(object):
             self.bic = shelve_file[KEY_BIC]
             self.server = shelve_file[KEY_SERVER]
         except KeyError as key_error:
-            MessageBoxError(title=shelve_file[KEY_BANK_NAME],
+            MessageBoxError(title=self.title,
                             message=MESSAGE_TEXT['LOGIN'].format(self.bank_code, key_error))
             return   # thread checking
         # Checking / Installing FINTS server connection
@@ -229,7 +229,6 @@ class BmwBank(object):
             MessageBoxError(message=MESSAGE_TEXT['HTTP'].format(http_code,
                                                                 self.bank_code, self.server))
             return  # thread checking
-        self.bank_name = shelve_file[KEY_BANK_NAME]
         self.accounts = shelve_file[KEY_ACCOUNTS]
         # Setting Dialog Variables
         self.iban = None
@@ -240,28 +239,42 @@ class BmwBank(object):
         self.opened_bank_code = None
         self.warning_message = False
         self.period_message = False
-        self.driver = setup_driver(shelve_file[KEY_BANK_NAME])
+        self.driver = setup_driver(self.bank_name)
+        self.wait = WebDriverWait(self.driver, 20)
 
-    def _get_url(self, url, bank):
-
-        try:
-            url = self.server + url
-            if self.driver.current_url != url:
-                self.driver.get(url)
-            return True
-        except Exception:
-            page = self.driver.page_source
-            self._logoff()
-            MessageBoxTermination(info=page, bank=bank)
-            return False  # thread checking
-
-    def _logoff(self):
+    def logoff(self):
 
         self.opened_bank_code = None
         try:
             self.driver.find_element(By.LINK_TEXT, "Abmelden").click()
         except Exception:
             pass
+
+    def _exception_handling_logoff(self, no, error):
+
+        if error:
+            # Print detailed selenium error information
+            print("An error occurred:")
+            print(f"Error type: {type(error).__name__}")
+            print(f"Error message: {error.msg}")
+        exception_error()
+        MessageBoxError(title=self.title,
+                        message=MESSAGE_TEXT['SCRAPER_PAGE_ERROR'])
+        self.logoff()
+
+    def _wait_ready_state(self, seconds=20):
+        '''
+        wait until page is loaded
+        '''
+        try:
+            WebDriverWait(self.driver, seconds).until(
+                lambda driver: driver.execute_script(
+                    'return document.readyState') == 'complete'
+            )
+            return True
+        except WebDriverException as error:
+            self._exception_handling_logoff('01 _wait_ready_state', error)
+            return False
 
     def credentials(self):
 
@@ -271,119 +284,171 @@ class BmwBank(object):
                     if self.bank_code not in PNS.keys():
                         inputpin = InputPIN(self.bank_code, self.bank_name)
                         if inputpin.button_state == WM_DELETE_WINDOW:
-                            return False
+                            MessageBoxInfo(
+                                message=MESSAGE_TEXT['LOGIN_ABORTED'])
+                            return None
                         PNS[self.bank_code] = inputpin.pin
-                    self.driver.get(self.server + "Public/content/Login")
-                    self.driver.set_window_size(500, 500)
+                    self.driver.get(self.server)
+                    self.driver.fullscreen_window()
                     self.driver.find_element(
-                        By.ID, "id783308527_username").send_keys(self.user_id)
+                        By.ID, "contentForm:Benutzerkennung").send_keys(self.user_id)
                     self.driver.find_element(
-                        By.ID, "id783308527_password").send_keys(PNS[self.bank_code])
+                        By.ID, "contentForm:password").send_keys(PNS[self.bank_code])
                     self.driver.find_element(
-                        By.CSS_SELECTOR, ".button-login").click()
-                    if self.driver.current_url == self.server + "Welcome/content/Welcome":
-                        header_info = self.driver.find_element(
-                            By.CLASS_NAME, 'mainHeadline')
-                        self.owner_name = ' '.join(
-                            header_info.text.split(' ')[2:])
+                        By.ID, "contentForm:submitLogin").click()
+                    try:
+                        WebDriverWait(self.driver, 60).until(EC.title_is(
+                            'BMW Bank - Finanzstatus - Finanzstatus'))
+                        self.opened_bank_code = self.bank_code
                         return True
-                    else:
-                        self.driver.close()
+                    except TimeoutException:
+                        MessageBoxInfo(title=self.title,
+                                       message=MESSAGE_TEXT['SCRAPER_TIMEOUT'])
                         return False
-                except exceptions.InvalidSessionIdException:
-                    MessageBoxInfo(message=MESSAGE_TEXT['BANK_LOGIN'].format(
-                        'Invalid Session Id', self.server, PNS[self.bank_code], self.user_id))
-                    del PNS[self.bank_code]
-                except Exception:
-                    exception_error()
+                    except WebDriverException as error:
+                        self._exception_handling_logoff(
+                            '01 credentials', error)
+                        return False
+                except WebDriverException as error:
+                    self._exception_handling_logoff('02 credentials', error)
                     del PNS[self.bank_code]
                     return False
         else:
             return True
 
-    def get_accounts(self, bank):
-
+    def get_accounts(self):
+        '''
+        get account data for all accounts (list of tuples):
+            account_product_name, account_owner_name, iban, account_number
+        '''
         if not self.credentials():
             return []
-        if not self._get_url(
-                "Overview/content/BankAccounts/Overview?$event=init", bank):
-            return []
-        dataframe = read_html(StringIO(self.driver.page_source))[0]
-        shape = dataframe.shape
-        accounts = []
-        for i in range(0, shape[0]):
-            cell = dataframe.iat[i, 0]
-            if isinstance(cell, str):
-                cell = cell.replace(u'\xa0', '')
-                cell = cell.strip()
-            iban_end = find_pattern(cell, 'Kontodetails')
-            if iban_end is not None:
-                iban_start = find_pattern(cell, 'DE')
-                if iban_start is not None:
-                    account_product_name = cell[0:iban_start]
-                    account_owner_name = self.owner_name
-                    account_iban = cell[iban_start:iban_end]
-                    account_iban = account_iban[0:22]
-                    account_number = account_iban[12:22]
-                    accounts.append(
-                        (account_product_name, account_owner_name, account_iban, account_number))
-        self._logoff()
+        # find down arrow to view account details
+        locator = "//a[contains(@class, 'accordion-container__header collapsed')]"
+        self.wait.until(EC.presence_of_element_located((By.XPATH, locator)))
+        result = self.driver.find_elements(By.XPATH, locator)
+        if result:
+            accounts = []
+            for item in result:
+                item.click()  # open account_details display
+                class_text_list = item.text.split("\n")
+                account_product_name = class_text_list[0]
+                iban = class_text_list[1].replace(' ', '')
+                account_number = iban[12:22]
+                # find account_owber name in account detasis
+                locator = "//div[contains(@class, 'col-sm-7')]"
+                result_arrow_down = self.wait.until(
+                    EC.presence_of_element_located((By.XPATH, locator)))
+                if result_arrow_down:
+                    account_owner_name = result_arrow_down.text
+                else:
+                    account_owner_name = 'NA'
+                accounts.append(
+                    (account_product_name, account_owner_name, iban, account_number))
+                item.click()  # # close account_details display
+                self._wait_ready_state()
         return accounts
 
-    def download_statements(self, bank):
-
-        if not self.credentials():
+    def download_statements(self):
+        '''
+        Only dailyTransfers and savingTransfers (list of dicts)
+        '''
+        title = ' '.join([self.bank_name, self.account_product_name])
+        result = self.credentials()
+        if result is None:  # login aborted
             return None
-        url = "FinanceState/content/FinanceStatePrivate/BankAccounts?$event=accountOverviewChangeTurnOverSearch&preAccNo=" + bank.account_number
-        if not self._get_url(url, bank):
+        elif not result:  # selenium error
+            self._exception_handling_logoff('01 download_statements', None)
+            return None
+        if self.account_product_name == 'BMW Online-Tagesgeld':
+            url = self.server + "/pages/konten/daily_transactions.jsf"
+        elif self.account_product_name == 'BMW Online-Sparkonto':
+            url = self.server + "/pages/konten/savings_transactions.jsf"
+        else:
+            print("Account Produktname >",
+                  self.account_product_name, "< not found")
             return []
-        self.driver.find_element(By.ID, "id-2103151465_slDateRange").click()
-        dropdown = self.driver.find_element(By.ID, "id-2103151465_slDateRange")
-        dropdown.find_element(
-            By.XPATH, "//option[. = 'letzten 360 Tage']").click()
-        self.driver.find_element(By.ID, "submitButton").click()
-        if self.driver.page_source.find('keine Ums') != -1:
-            return None
-        dataframe = read_html(StringIO(self.driver.page_source))
+        self.driver.get(url)
+        if not self._wait_ready_state():
+            return []
         try:
-            dataframe = dataframe[5]
-            shape = dataframe.shape
-            for i in range(0, shape[0] - 1):
-                if isinstance(dataframe.iat[i, 4], str):
-                    dataframe.iat[i, 4] = dataframe.iat[i, 4].replace(
-                        u'\xa0EUR', '')  # Betrag
-                    dataframe.iat[i, 4] = dataframe.iat[i, 4].strip()
-                    dataframe.iat[i, 5] = dataframe.iat[i,
-                                                        # Saldo
-                                                        5].replace(u'\xa0EUR', '')
-                    dataframe.iat[i, 5] = dataframe.iat[i, 5].strip()
-        except IndexError:
-            return None
-        dataframe.columns = ["entry_date", "date",
-                             "posting_text", "purpose", "amount", "closing_balance"]
-        dataframe.head(1)
-        dataframe_list = list(dataframe.itertuples(index=False))
-        statements = []
-        for tuple_ in dataframe_list:
-            statement = dict(tuple_._asdict())
-            statement['entry_date'] = convert_date(statement['entry_date'])
-            statement['date'] = convert_date(statement['date'])
-            statement['amount'], statement['status'] = amount_to_decimal(
-                statement['amount'])
-            statement['closing_balance'], statement['closing_status'] = amount_to_decimal(
-                statement['closing_balance'])
-            statement['closing_entry_date'] = statement['entry_date']
-            statement['opening_entry_date'] = statement['entry_date']
-            if statement['status'] == CREDIT:
-                statement['opening_balance'] = dec2.subtract(
-                    statement['closing_balance'], statement['amount'])
+            transactions = read_html(
+                StringIO(self.driver.page_source))
+        except ValueError:
+            self._exception_handling_logoff(
+                '02 download_statements', None)
+            return False
+        # get dataframe of transactions
+        dataframe = transactions[0]
+        dataframe.reset_index()
+        dataframe[DB_entry_date] = dataframe['Buchungstag / Valutatag'].apply(
+            lambda x: convert_date(x.split()[-1][0:10]))
+        dataframe[DB_date] = dataframe['Buchungstag / Valutatag'].apply(
+            lambda x: convert_date(x.split()[-1][10:20]))
+        dataframe.drop(
+            columns='Buchungstag / Valutatag', inplace=True)
+        dataframe.rename(columns={
+            'Umsatzart': DB_posting_text, 'Verwendungszweck': DB_purpose, 'Betrag': DB_amount}, inplace=True)
+        dataframe[DB_posting_text] = dataframe[DB_posting_text].apply(
+            lambda x: x.replace('Umsatzart  ', ''))
+        dataframe[DB_purpose] = dataframe[DB_purpose].apply(
+            lambda x: x.replace('Verwendungszweck  ', ''))
+        dataframe[DB_purpose_wo_identifier] = dataframe[DB_purpose]
+        dataframe[DB_status] = dataframe[DB_amount].apply(
+            lambda x: CREDIT if x.split()[-3] == '+' else DEBIT)
+        dataframe[DB_amount] = dataframe[DB_amount].apply(
+            lambda x: x.split()[-2])
+        dataframe[DB_amount] = dataframe[DB_amount].apply(
+            lambda x: dec2.convert(x.replace('.', '').replace(',', '.')))
+        dataframe[DB_opening_status] = CREDIT
+        dataframe[DB_opening_entry_date] = dataframe[DB_entry_date]
+        dataframe[DB_closing_status] = CREDIT
+        dataframe[DB_closing_entry_date] = dataframe[DB_entry_date]
+        statements = dataframe.to_dict(orient='records')
+        # get last stored traansaction
+        result_dict = self.mariadb.select_table_first_or_last(
+            STATEMENT, [DB_entry_date, DB_purpose, DB_amount,
+                        DB_closing_balance], result_dict=True, iban=self.iban,
+            order=' '.join([DB_entry_date, 'DESC']))
+        if result_dict:
+            entry_date = result_dict[DB_entry_date]
+            mariadb_closing_balance = result_dict[DB_closing_balance]
+            # delete statements already stored in mariadb
+            idx = len(statements) - 1
+            while idx >= 0 and statements[idx][DB_entry_date] <= entry_date:
+                del statements[idx]
+                idx -= 1
+            if not statements:
+                MessageBoxInfo(title=title, message=MESSAGE_TEXT['SCRAPER_NO_TRANSACTION_TO_STORE'].format(
+                    self.account_product_name, self.iban))
+                return statements
+        # get last closing balance of transactions; Verfügbarer Betrag
+        locator = "//span[contains(@class, 'xl:text-2xl')]"
+        '''
+        element = self.driver.find_element(
+            By.XPATH, locator)  # find end  closing_balance
+        '''
+        element = self.wait.until(
+            EC.presence_of_element_located((By.XPATH, locator)))
+        amount_available = element.text.split()[-2]
+        amount_available = dec2.convert(
+            amount_available.replace('.', '').replace(',', '.'))
+        # calculate opening and closing balance for each transactions
+        idx = len(statements)-1
+        closing_balance = amount_available
+        while idx >= 0:
+            statements[idx][DB_closing_balance] = closing_balance
+            amount = dec2.convert(statements[idx][DB_amount])
+            if statements[idx][DB_status] == CREDIT:
+                statements[idx][DB_opening_balance] = dec2.subtract(
+                    closing_balance, amount)
             else:
-                statement['opening_balance'] = dec2.add(
-                    statement['closing_balance'], statement['amount'])
-            statement['opening_status'] = CREDIT
-            statement['opening_entry_date'] = statement['entry_date']
-            if statement['opening_balance'] < 0:
-                statement['opening_status'] = DEBIT
-            statements.append(statement)
-        self._logoff()
+                statements[idx][DB_opening_balance] = dec2.add(
+                    closing_balance, amount)
+            closing_balance = statements[idx][DB_opening_balance]
+            idx -= 1
+        # check if last closing balance of database with opening balance of transactions
+        if statements and result_dict and mariadb_closing_balance != statements[0][DB_opening_balance]:
+            MessageBoxInfo(
+                title=title, message=MESSAGE_TEXT['SCRAPER_BALANCE'], information=WARNING)
         return statements

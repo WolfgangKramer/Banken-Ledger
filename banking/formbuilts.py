@@ -1,6 +1,6 @@
 """
 Created on 28.01.2020
-__updated__ = "2025-02-13"
+__updated__ = "2025-05-19"
 @author: Wolfgang Kramer
 """
 
@@ -8,6 +8,8 @@ import inspect
 import re
 import sys
 
+from time import sleep
+from inspect import stack
 from pathlib import Path
 from collections import namedtuple
 from datetime import date, timedelta
@@ -16,7 +18,7 @@ from tkinter import (
     W, E, filedialog, BOTH, BOTTOM, TOP, HORIZONTAL, Canvas,
     END, DISABLED)
 from tkinter.ttk import (
-    Entry, Frame, Label, Radiobutton, Checkbutton, Scrollbar, Progressbar)
+    Entry, Frame, Label, Radiobutton, Checkbutton, Separator, Scrollbar, Progressbar)
 from tkinter.font import Font
 from keyboard import add_hotkey
 from pandas import to_numeric, ExcelWriter, DataFrame
@@ -24,6 +26,7 @@ from pandastable import config, TableModel
 from tkcalendar import DateEntry
 
 from banking.declarations_mariadb import (
+    HOLDING, HOLDING_VIEW, PRICES, PRICES_ISIN_VIEW, STATEMENT, TRANSACTION, TRANSACTION_VIEW,
     TABLE_FIELDS, TABLE_FIELDS_PROPERTIES, DATABASE_FIELDS_PROPERTIES,
     TINYINT, INTEGER, DATABASE_TYP_DECIMAL,
     DB_currency, DB_status, DB_price_date,
@@ -32,19 +35,19 @@ from banking.declarations_mariadb import (
     DB_acquisition_price, DB_total_amount,
     DB_total_amount_portfolio, DB_amount, DB_amount_currency, DB_closing_balance,
     DB_closing_currency, DB_price,
+    DB_iban, DB_entry_date, DB_symbol, DB_counter, DB_ISIN, DB_id_no
 )
 from banking.declarations import (
 
     BANK_MARIADB_INI,
     Caller, ToolbarSwitch, Informations,
     EURO, ERROR, EDIT_ROW,
-    FN_COLUMNS_EURO, FN_COLUMNS_PERCENT,
+    FN_COLUMNS_EURO, FN_COLUMNS_PERCENT, FN_FROM_DATE, FN_TO_DATE,
     HEIGHT_TEXT,
     INFORMATION,
     KEY_GEOMETRY, KEY_PIN, KEY_DIRECTORY,
     MESSAGE_TEXT, MESSAGE_TITLE,
     NO_CURRENCY_SIGN, NUMERIC,
-    OPERATORS,
 )
 from banking.pandastable_extension import Table, TableRowEdit
 from banking.utils import (
@@ -55,6 +58,7 @@ from banking.utils import (
 ENTRY = 'Entry'
 COMBO = 'ComboBox'
 CHECK = 'CheckButton'
+TEXT = 'Text'
 
 BUTTON_ALPHA_VANTAGE = 'ALPHA_VANTAGE'
 BUTTON_APPEND = 'APPEND'
@@ -65,8 +69,8 @@ BUTTON_DEBIT = 'SHOW DEBIT'
 BUTTON_DELETE = 'DELETE'
 BUTTON_DELETE_ALL = 'DELETE ALL'
 BUTTON_DATA = 'DATA'
-BUTTON_FIELDLIST = 'FIELDLIST'
 BUTTON_INIT = 'INIT'
+BUTTON_PRICES_IMPORT = 'IMPORT PRICES'
 BUTTON_NEXT = 'NEXT'
 BUTTON_NEW = 'NEW'
 BUTTON_OK = 'OK'
@@ -116,7 +120,6 @@ LIGHTBLUE = 'LIGHTBLUE'
 UNDEFINED = 'UNDEFINED'
 FONTSIZE = 8
 MAX_FIELD_LENGTH = 65
-
 
 re_amount = re.compile(r"\d+\.\d+")
 re_amount_int = re.compile(r"\d+")
@@ -208,24 +211,14 @@ def field_validation(name, field_def):
                     return MESSAGE_TEXT['DATE'].format(name)
             else:
                 return MESSAGE_TEXT['DATE'].format(name)
-        if (field_def.allowed_values
-                and field_value not in field_def.allowed_values):
+        # if combo_list contains extended values e.g. DB_credit_account in class BuitlTableBoxRow Ledger
+        combo_values = [
+            field_value for item in field_def.combo_values if item.startswith(field_value)]
+        if (field_def.definition == COMBO and not field_def.combo_insert_value  # means insert not allowed
+                and not combo_values):
             return MESSAGE_TEXT['NOTALLOWED'].format(
-                name, field_def.allowed_values)
+                name, field_def.combo_values)
     return ''
-
-
-'''
-def _get_geometry_values(geometry):
-
-    geometry = geometry.replace('x', ' ')
-    geometry = geometry.replace('+', ' ')
-    geometry_values = geometry.split()
-    if len(geometry_values) == 4:
-        return geometry_values  # returns [width, height, x, y]
-    else:
-        return None
-'''
 
 
 def extend_message_len(title, message):
@@ -396,29 +389,28 @@ class FieldDefinition(object):
     >min_length<          Integer     Min. Length of EntryField
     >mandatory<           Boolean     True: Input is Mandatory
     >protected<           Boolean     True: No Input allowed
-    >selected<            Boolean     True: User selects an element
+    >selected<            Boolean     True: User selects an element.
+                                         Method self.comboboxselected_action excuted(class BuiltEnterBox)
     >readonly<            Boolean     True: Only selection allowed
-    >allowed_values<      List        List of Allowed Values (optional) (same effect if combo_positioning True and combo_insert_value False)
     >default_value<                   Default Value (optional)
     >combo_values<        List        List of ComboBox Values;
                                       generates ComboBoxEntryField if not empty
     >combo_positioning<   Boolean     True: positions in >combo_values< during input
-                                            if combo_insert_value is False, only allows input values of >combo_values<
     >combo_insert_value<  Boolean     True: allows input of value outside of >combo_values<,
-                                            only considered if combo_positioning True
     >validate<            String      None or ALL (validate Option)
     >textvariable<                    None or StringVar()
     >focus_in<            Boolean     True: Action if Field got Focus
     >focus_out<           Boolean     True: Action if Field lost Focus
+    >separator<           Boolean     True: insert separator Line after Widget
     """
 
     def __init__(self, definition=ENTRY,
                  name=UNDEFINED, lformat=FORMAT_VARIABLE, length=0, typ=TYP_ALPHANUMERIC,
-                 min_length=0, mandatory=True, protected=False, readonly=False, allowed_values=[],
+                 min_length=0, mandatory=True, protected=False, readonly=False,
                  default_value='', combo_values=[],
                  combo_positioning=True, combo_insert_value=False,
                  focus_out=False, focus_in=False,
-                 upper=False, selected=False, checkbutton_text=''):
+                 upper=False, selected=False, checkbutton_text='', separator=False):
 
         self.definition = definition
         self.name = name
@@ -429,9 +421,6 @@ class FieldDefinition(object):
         self.mandatory = mandatory
         self.protected = protected
         self.readonly = readonly
-        self.allowed_values = []
-        for item in allowed_values:
-            self.allowed_values.append(str(item))
         self.default_value = default_value
         self.selected = selected
         self.combo_values = []
@@ -444,6 +433,7 @@ class FieldDefinition(object):
         self.upper = upper
         self.widget = None
         self.textvar = None
+        self.separator = separator
         self.checkbutton_text = checkbutton_text
 
     @property
@@ -455,7 +445,7 @@ class FieldDefinition(object):
         self._definition = value
         if self._definition not in [ENTRY, COMBO, CHECK]:
             MessageBoxTermination(
-                info='Field Definition Definiton not ENTRY (EntryField) or COMBO (ComboBoxField) or CHECK(CheckButtonField')
+                info='Field Definition Definiton not ENTRY (EntryField), COMBO (ComboBoxField), CHECK(CheckButtonField)')
 
     @property
     def lformat(self):
@@ -625,10 +615,15 @@ class BuiltBox(object):
         Caller.caller = self.caller = self.__class__.__name__
         self.button_state = None
         self._box_window_top = Toplevel()
-        self._box_window_top.resizable(0, 0)
+        #self._box_window_top.resizable(1, 1)
         if check_main_thread():
             self.header = header
-            self._columnspan = columnspan
+            button_counter = 6 - [button1_text, button2_text, button3_text,
+                                  button4_text, button5_text, button6_text].count(None)
+            if button_counter < columnspan:
+                self.columnspan = columnspan
+            else:
+                self.columnspan = button_counter
             self._button1_text = button1_text
             self._button2_text = button2_text
             self._button3_text = button3_text
@@ -645,9 +640,9 @@ class BuiltBox(object):
                 # -------------------- scrollable frame with widgets -------------------------
                 # create form grid layout
                 frame = Frame(self._box_window_top)
-                frame.grid(row=self._row, columnspan=6)
-                self._box_window_top.columnconfigure(0, weight=1)
-                self._box_window_top.rowconfigure(0, weight=5)
+                frame.grid(row=self._row, columnspan=self.columnspan)
+                #self._box_window_top.columnconfigure(0, weight=1)
+                #self._box_window_top.rowconfigure(0, weight=5)
                 # create scrollable canvas frame
                 canvas = Canvas(frame)
                 # create form in canvas grid layout
@@ -662,8 +657,8 @@ class BuiltBox(object):
                 scrollbar.grid(row=self._row, column=1, sticky="ns")
                 self._box_window.bind("<Configure>", lambda x: canvas.configure(
                     scrollregion=canvas.bbox("all")))
-                self._box_window.columnconfigure(0, weight=1)
-                self._box_window.rowconfigure(0, weight=4)
+                #self._box_window.columnconfigure(0, weight=1)
+                #self._box_window.rowconfigure(0, weight=4)
             else:
                 # -------------------- window of entry  widgets -------------------------
                 self._box_window = self._box_window_top
@@ -681,7 +676,7 @@ class BuiltBox(object):
             self._create_buttons()
             # ------------------ Keyboard Events ------------------------------
             self._keyboard()
-            # ----------------------------------------------------            self.set_geometry()ometry()ry()
+            self.set_geometry()
             self._box_window_top.protocol(
                 WM_DELETE_WINDOW, self._wm_deletion_window)
             self._box_window_top.mainloop()
@@ -695,8 +690,11 @@ class BuiltBox(object):
         if self.caller == 'AppCustomizing':
             return BUILTBOX_WINDOW_POSITION
         GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-        if self.caller in GEOMETRY_DICT:
-            geometry = GEOMETRY_DICT[self.caller]
+        if GEOMETRY_DICT:
+            if self.caller in GEOMETRY_DICT:
+                geometry = GEOMETRY_DICT[self.caller]
+            else:
+                geometry = BUILTBOX_WINDOW_POSITION
         else:
             geometry = BUILTBOX_WINDOW_POSITION
         self._box_window_top.geometry(geometry)
@@ -718,7 +716,7 @@ class BuiltBox(object):
         header_widget = Label(
             self._box_window_top, width=self._width, text=self.header)
         header_widget.grid(
-            row=self._row, columnspan=self._columnspan, padx='3m', pady='3m')
+            row=self._row, columnspan=self.columnspan, padx='3m', pady='3m')
         self._row += 1
 
     def _create_footer(self):
@@ -727,45 +725,52 @@ class BuiltBox(object):
         self.message_widget = Label(self._box_window_top, width=self._width, textvariable=self.footer,
                                     foreground='RED')
         self.message_widget.grid(
-            row=self._row, columnspan=self._columnspan, padx='3m', pady='3m')
+            row=self._row, columnspan=self.columnspan, padx='3m', pady='3m')
         self._row += 1
 
     def _create_buttons(self):
         button_frame = Frame(self._box_window_top, width=self._width)
-        button_frame.grid(row=self._row, column=1, columnspan=5, sticky=W)
+        button_frame.grid(row=self._row, column=0,
+                          columnspan=self.columnspan, sticky=W)
+        button_column = 0
         if self._button1_text is not None:
             button1 = ttk.Button(button_frame, text=self._button1_text)
-            button1.grid(row=0, column=0, sticky=E, padx='3m',
+            button1.grid(row=0, column=button_column, sticky=E, padx='3m',
                          pady='3m', ipadx='2m', ipady='1m')
             button1.bind('<Return>', self.button_1_button1)
             button1.bind('<Button-1>', self.button_1_button1)
+            button_column += 1
         if self._button2_text is not None:
             button2 = ttk.Button(button_frame, text=self._button2_text,)
-            button2.grid(row=0, column=1, sticky=E, padx='3m',
+            button2.grid(row=0, column=button_column, sticky=E, padx='3m',
                          pady='3m', ipadx='2m', ipady='1m')
             button2.bind('<Return>', self.button_1_button2)
             button2.bind('<Button-1>', self.button_1_button2)
+            button_column += 1
         if self._button3_text is not None:
             button3 = ttk.Button(button_frame, text=self._button3_text)
-            button3.grid(row=0, column=2, sticky=E, padx='3m',
+            button3.grid(row=0, column=button_column, sticky=E, padx='3m',
                          pady='3m', ipadx='2m', ipady='1m')
             button3.bind('<Return>', self.button_1_button3)
             button3.bind('<Button-1>', self.button_1_button3)
+            button_column += 1
         if self._button4_text is not None:
             button4 = ttk.Button(button_frame, text=self._button4_text)
-            button4.grid(row=0, column=3, sticky=E, padx='3m',
+            button4.grid(row=0, column=button_column, sticky=E, padx='3m',
                          pady='3m', ipadx='2m', ipady='1m')
             button4.bind('<Return>', self.button_1_button4)
             button4.bind('<Button-1>', self.button_1_button4)
+            button_column += 1
         if self._button5_text is not None:
             button5 = ttk.Button(button_frame, text=self._button5_text)
-            button5.grid(row=0, column=4, sticky=E, padx='3m',
+            button5.grid(row=0, column=button_column, sticky=E, padx='3m',
                          pady='3m', ipadx='2m', ipady='1m')
             button5.bind('<Return>', self.button_1_button5)
             button5.bind('<Button-1>', self.button_1_button5)
+            button_column += 1
         if self._button6_text is not None:
             button6 = ttk.Button(button_frame, text=self._button6_text)
-            button6.grid(row=0, column=5, sticky=E, padx='3m',
+            button6.grid(row=0, column=button_column, sticky=E, padx='3m',
                          pady='3m', ipadx='2m', ipady='1m')
             button6.bind('<Return>', self.button_1_button6)
             button6.bind('<Button-1>', self.button_1_button6)
@@ -789,22 +794,28 @@ class BuiltBox(object):
         """
         put window geometry
         """
-        caller = Caller.caller
-        if caller == 'AppCustomizing':
+        if self.caller == 'AppCustomizing':
             return
-        if window.winfo_exists():
-            width = window.winfo_width()
-            height = window.winfo_height()
-            geometry = ''.join([str(width), 'x', str(
-                height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
-            GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-            GEOMETRY_DICT[caller] = geometry
-            shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
+        if not GEOMETRY_DICT:
+            GEOMETRY_DICT = {}
+        if window.winfo_exists():  # window exists
+            if self.caller in GEOMETRY_DICT:
+                width = window.winfo_width()
+                height = window.winfo_height()
+                geometry = ''.join([str(width), 'x', str(
+                    height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
+                GEOMETRY_DICT[self.caller] = geometry
+            else:
+                GEOMETRY_DICT[self.caller] = BUILTBOX_WINDOW_POSITION
+        else:
+            GEOMETRY_DICT[self.caller] = BUILTBOX_WINDOW_POSITION
+        shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
 
     def button_1_button1(self, event):
 
         self.button_state = self._button1_text
-        if self.footer.get() == '':
+        if not self.footer.get():
             self.quit_widget()
 
     def button_1_button2(self, event):
@@ -1081,12 +1092,11 @@ class BuiltEnterBox(BuiltBox):
                     widget_entry = DateEntry(self._box_window, width=16, background="magenta3",
                                              textvariable=field_def.textvar,
                                              foreground="white", bd=2, locale='de_de',
-                                             date_pattern='yyyy-mm-dd',
-                                             validate=None)
+                                             date_pattern='yyyy-mm-dd')
                     widget_entry.myId = field_def.name
                 else:
                     if field_def.length < MAX_FIELD_LENGTH:
-                        widget_entry = Entry(self._box_window, width=field_def.length + 1,
+                        widget_entry = Entry(self._box_window, width=field_def.length,
                                              textvariable=field_def.textvar)
                     else:
                         widget_entry = Entry(self._box_window, width=MAX_FIELD_LENGTH,
@@ -1100,7 +1110,7 @@ class BuiltEnterBox(BuiltBox):
                 widget_entry.myId = field_def.name
             else:
                 widget_entry = ttk.Combobox(self._box_window, values=field_def.combo_values,
-                                            width=field_def.length + 1,
+                                            width=field_def.length,
                                             textvariable=field_def.textvar)
                 widget_entry.myId = field_def.name
                 widget_entry.bind('<KeyRelease>', self.combo_position)
@@ -1134,8 +1144,13 @@ class BuiltEnterBox(BuiltBox):
                     else:
                         field_def.textvar.set('')
             widget_entry.grid(row=self._row, column=1,
-                              columnspan=2, sticky=W, padx='3m', pady='1m')
+                              columnspan=self.columnspan, sticky=W, padx='3m', pady='1m')
             self._row += 1
+            if field_def.separator:
+                separator = Separator(self._box_window, orient='horizontal')
+                separator.grid(row=self._row, columnspan=self.columnspan,
+                               sticky=(W, E), pady=5)
+                self._row += 1
             field_def.widget = widget_entry
         self._field_defs[0].widget.focus_set()
 
@@ -1143,7 +1158,7 @@ class BuiltEnterBox(BuiltBox):
 
         self.button_state = self._button1_text
         self.validation()
-        if self.footer.get() == '':
+        if not self.footer.get():
             self.quit_widget()
 
     def button_1_button2(self, event):
@@ -1151,10 +1166,14 @@ class BuiltEnterBox(BuiltBox):
         self.button_state = self._button2_text
         for field_def in self._field_defs:
             if field_def.definition == CHECK:
-                pass
-            elif field_def.default_value is not None:
-                field_def.widget.delete(0, "end")
-                field_def.widget.insert(0, field_def.default_value)
+                if field_def.default_value:
+                    field_def.textvar.set(1)
+                else:
+                    field_def.textvar.set(0)
+            else:
+                field_def.widget.delete(0, END)
+                if field_def.default_value is not None:
+                    field_def.widget.insert(0, field_def.default_value)
 
     def validation(self):
 
@@ -1196,40 +1215,27 @@ class BuiltEnterBox(BuiltBox):
         pass
 
     def combo_position(self, event):
-        """
+        """FZ
         positioning combolist on key release
         only combo_values selectable
         """
 
         try:
             field_attr = getattr(self._field_defs, event.widget.myId)
+            combo_positioning = field_attr.combo_positioning
             definition = field_attr.definition
-            if definition == COMBO and field_attr.combo_positioning:
+            if definition == COMBO and combo_positioning:
                 field_attr.widget.delete(
                     field_attr.widget.index(INSERT), END)
                 get = field_attr.widget.get()
                 if field_attr.upper:
                     get = get.upper()
                 item, index = list_positioning(field_attr.combo_values, get)
-                if not field_attr.combo_insert_value:
-                    # no insertion of new values
+                if item.startswith(get.upper()):
                     event.widget.current(index)
                     self.comboboxselected_action(event)
-                elif item.startswith(get):
-                    # positioned to match the input
-                    event.widget.current(index)
-                    self.comboboxselected_action(event)
-                if field_attr.combo_insert_value:
-                    # CLEARS INPUT FIELDS WITH NEW VALUEE
-                    self.clear_form_fields()
         except Exception:
             pass
-
-    def clear_form_fields(self):
-        """
-        Deleting the form fields if no field in the combo list fits
-        """
-        pass
 
     def focus_out_action(self, event):
 
@@ -1240,6 +1246,171 @@ class BuiltEnterBox(BuiltBox):
         pass
 
 
+class BuiltSelectBox(BuiltEnterBox):
+    """
+    TOP-LEVEL-WINDOW        EnterBox of Selction Criteria
+
+     selection_name --> Storage name for last used selection values 
+     data_dict --> default values of select_data
+     upper --> list of fields with upper_in field_property
+     separator --> list of fields followed by a separator
+     data_container --> contains additional data from caller  
+
+
+    """
+    Field_Row = namedtuple(
+        'FieldRow', ['name', 'definition', 'length', 'typ', 'comment'])
+
+    def __init__(self, title=MESSAGE_TITLE, header=None, table=None, mariadb=None,
+                 button1_text=BUTTON_OK, button2_text=BUTTON_RESTORE,
+                 button3_text=None, button4_text=None,
+                 selection_name=None,
+                 data_dict={},
+                 upper=[], separator=[],
+                 container_dict={}
+                 ):
+
+        Caller.caller = self.__class__.__name__
+        self.title = title
+        self.header = header
+        self.table = table
+        self.selection_name = selection_name
+        self.data_dict = data_dict
+        self.get_selection()
+        self.mariadb = mariadb
+        self.check_button_exist = False
+        self.upper = upper
+        self.separator = separator
+        self.container_dict = container_dict
+        field_defs = self.create_field_defs()
+        if len(field_defs) > 25:
+            scrollable = True
+        else:
+            scrollable = False
+        if self.check_button_exist:
+            button3_text = BUTTON_SELECT_ALL
+            button4_text = BUTTON_DELETE_ALL
+        super().__init__(title=title, header=header, field_defs=field_defs,
+                         button1_text=button1_text, button2_text=button2_text,
+                         button3_text=button3_text, button4_text=button4_text,
+                         scrollable=scrollable)
+
+    def get_selection(self):
+        '''
+        initializes the selection fields with the used values of last session
+        '''
+
+        if not self.selection_name:
+            self.selection_name = self.title
+        result = shelve_get_key(BANK_MARIADB_INI, self.selection_name)
+        if result:
+            self.data_dict = result
+
+    def create_check_field(self, name, comment):
+
+        if ((self.table == STATEMENT and name in [DB_iban, DB_entry_date, DB_counter])
+                or (self.table in [HOLDING, HOLDING_VIEW] and name in [DB_iban, DB_price_date, DB_ISIN])
+                or (self.table in [PRICES, PRICES_ISIN_VIEW] and name in [DB_symbol, DB_price_date])
+                or (self.table in [TRANSACTION, TRANSACTION_VIEW] in [DB_iban, DB_ISIN, DB_price_date, DB_counter])
+                or name == DB_id_no
+            ):
+            self.data_dict[name] = 1
+            field_def = FieldDefinition(definition=CHECK, name=name,
+                                        checkbutton_text=comment, protected=True)
+        else:
+            field_def = FieldDefinition(definition=CHECK, name=name,
+                                        checkbutton_text=comment)
+        self.check_button_exist = True
+        return field_def
+
+    def create_date_field(self, name):
+
+        field_def = FieldDefinition(definition=ENTRY, name=name,
+                                    length=16,
+                                    typ=TYP_DATE)
+        return field_def
+
+    def create_combo_field(self, name, length, typ, combo_list):
+
+        field_def = FieldDefinition(definition=COMBO, name=name,
+                                    length=length,
+                                    typ=typ,
+                                    combo_values=combo_list)
+        if name in self.upper:
+            field_def.upper = True
+        return field_def
+
+    def create_entry_field(self, name, length, typ):
+
+        field_def = FieldDefinition(definition=ENTRY, name=name,
+                                    length=length,
+                                    typ=typ,
+                                    )
+        if name in self.upper:
+            field_def.upper = True
+        return field_def
+
+    def create_field_defs_list(self):
+
+        field_defs_list = []
+        # call self.create_..._field()
+        return field_defs_list
+
+    def create_field_defs(self):
+        '''
+        Creates attributes of form fields
+        '''
+        field_defs_list = self.create_field_defs_list()
+        field_name_list = []
+        for field_def in field_defs_list:
+            field_name_list.append(field_def.name)
+            if field_def.name in self.data_dict.keys():
+                field_def.default_value = self.data_dict[field_def.name]
+            else:
+                if field_def.typ == TYP_DECIMAL:
+                    field_def.default_value = 0
+                else:
+                    field_def.default_value = ''
+        FieldNames = namedtuple('FieldNames', field_name_list)
+        field_defs_tuple = FieldNames(*field_defs_list)
+        return field_defs_tuple
+
+    def button_1_button1(self, event):
+
+        self.button_state = self._button1_text
+        self.validation()
+        if not self.footer.get():
+            if self.selection_name:
+                shelve_put_key(BANK_MARIADB_INI,
+                               (self.selection_name, self.field_dict))
+            self.quit_widget()
+
+    def button_1_button3(self, event):
+
+        self.button_state = self._button3_text
+        for field_def in self._field_defs:
+            if field_def.definition == CHECK:
+                getattr(self._field_defs, field_def.name).textvar.set('1')
+
+    def button_1_button4(self, event):
+
+        self.button_state = self._button3_text
+        for field_def in self._field_defs:
+            if field_def.definition == CHECK:
+                getattr(self._field_defs, field_def.name).textvar.set('0')
+
+    def validation_all_addon(self, field_defs):
+
+        if hasattr(field_defs, FN_FROM_DATE) and hasattr(field_defs, FN_TO_DATE):
+            from_date = getattr(field_defs, FN_FROM_DATE).widget.get()
+            to_date = getattr(field_defs, FN_TO_DATE).widget.get()
+            if (from_date > to_date):
+                self.footer.set(MESSAGE_TEXT['DATE'].format(
+                    getattr(field_defs, FN_FROM_DATE).name))
+                getattr(self._field_defs, FN_TO_DATE).textvar.set(
+                    from_date)  # adjusted date returned
+
+
 class BuiltTableRowBox(BuiltEnterBox):
     """
     TOP-LEVEL-WINDOW        EnterBox Table Values
@@ -1248,14 +1419,20 @@ class BuiltTableRowBox(BuiltEnterBox):
      table_view --> form fields
      combo_dict --> dictionary af combo fields, key: field_name, value: combo_list
      combo_positioning_dict   --> dictionary af combo fields, key: field_name, value: combo_list
-                                  only values of combo_list are allowed
+                                  only values of combo_list are allowed if combo_field_name not in combo_insert_value
+     combo_insert_value --> list of combo fields which allows new items                             
      protected --> list of protected fields
      mandatory --> list of mandatory fields
+     focus_in --> list of fields with focus_in field_property
+     focus_out --> list of fields with focus_out field_property
+     upper --> list of fields with upper_in field_property
+
 
     """
 
     def __init__(self, table, table_view, data_row_dict, mariadb,
-                 combo_dict={}, combo_positioning_dict={}, combo_insert_value=[], protected=[], mandatory=[],
+                 combo_dict={}, combo_positioning_dict={}, combo_insert_value=[],
+                 protected=[], mandatory=[], focus_in=[], focus_out=[], upper=[],
                  title=MESSAGE_TITLE, header=None,
                  button1_text=BUTTON_SAVE, button2_text=BUTTON_RESTORE,
                  button3_text=None, button4_text=None):
@@ -1272,10 +1449,17 @@ class BuiltTableRowBox(BuiltEnterBox):
         self.combo_insert_value = combo_insert_value
         self.protected = protected
         self.mandatory = mandatory
-        self.field_name_list = list(TABLE_FIELDS[table_view])
+        self.focus_out = focus_out
+        self.focus_in = focus_in
+        self.upper = upper
+        if isinstance(table_view, list):
+            self.field_name_list = table_view
+        else:
+            self.field_name_list = TABLE_FIELDS[table_view]
+
         # create form field definitions
         field_defs = self.create_field_defs()
-        if len(TABLE_FIELDS[table]) > 25:
+        if len(self.field_name_list) > 25:
             scrollable = True
         else:
             scrollable = False
@@ -1289,62 +1473,61 @@ class BuiltTableRowBox(BuiltEnterBox):
         Creates attributes of form fields
         '''
         check_fields = []
-        fields_properties = TABLE_FIELDS_PROPERTIES[self.table_view]
+        if isinstance(self.table_view, list):
+            fields_properties = TABLE_FIELDS_PROPERTIES[self.table]
+        else:
+            fields_properties = TABLE_FIELDS_PROPERTIES[self.table_view]
         for column in fields_properties.keys():
             if fields_properties[column].data_type == TINYINT:
                 check_fields.append(column)
         field_defs = []
         for field_name in self.field_name_list:
-            # protected, mandatory, default_value
-            if field_name in self.protected:
-                protected = True
-            else:
-                protected = False
-            if field_name in self.mandatory:
-                mandatory = True
-            else:
-                mandatory = False
             if field_name in self.combo_insert_value:
                 combo_insert_value = True
             else:
                 combo_insert_value = False
-            if field_name in self.data_row_dict:
-                default_value = self.data_row_dict[field_name]
-            else:
-                if fields_properties[field_name].typ == TYP_DECIMAL:
-                    default_value = 0
-                else:
-                    default_value = ''
             # create field_defs
             if field_name in check_fields:
                 field_def = FieldDefinition(definition=CHECK, name=field_name,
-                                            mandatory=mandatory, protected=protected,
-                                            default_value=default_value,
                                             checkbutton_text=fields_properties[field_name].comment)
             elif field_name in self.combo_dict.keys():
+                # combo field without positioning, new items allowed
                 field_def = FieldDefinition(definition=COMBO, name=field_name,
-                                            length=fields_properties[field_name].length + 1,
+                                            length=fields_properties[field_name].length,
                                             typ=fields_properties[field_name].typ,
-                                            mandatory=mandatory, protected=protected,
-                                            default_value=default_value,
                                             combo_positioning=False,
                                             combo_values=self.combo_dict[field_name])
             elif field_name in self.combo_positioning_dict.keys():
+                # combo field with positioning, new items allowed if fieldname in self.combo_insert_value
                 field_def = FieldDefinition(definition=COMBO, name=field_name,
-                                            length=fields_properties[field_name].length + 1,
+                                            length=fields_properties[field_name].length,
                                             typ=fields_properties[field_name].typ,
-                                            mandatory=mandatory, protected=protected,
-                                            default_value=default_value,
                                             combo_insert_value=combo_insert_value,
                                             combo_positioning=True,
                                             combo_values=self.combo_positioning_dict[field_name])
             else:
                 field_def = FieldDefinition(definition=ENTRY, name=field_name,
-                                            length=fields_properties[field_name].length + 1,
+                                            length=fields_properties[field_name].length,
                                             typ=fields_properties[field_name].typ,
-                                            mandatory=mandatory, protected=protected,
-                                            default_value=default_value,
                                             )
+            if field_name in self.protected:
+                field_def.protected = True
+            if field_name not in self.mandatory:
+                field_def. mandatory = False  # standard is mandatory
+            if field_name in self.focus_in:
+                field_def.focus_in = True
+            if field_name in self.focus_out:
+                field_def.focus_out = True
+            if field_name in self.upper:
+                field_def.upper = True
+            if field_name in self.data_row_dict:
+                field_def.default_value = self.data_row_dict[field_name]
+            else:
+                if fields_properties[field_name].typ == TYP_DECIMAL:
+                    field_def.default_value = 0
+                else:
+                    field_def.default_value = ''
+
             field_def = self.set_field_def(field_def)
             field_defs.append(field_def)
         FieldNames = namedtuple('FieldNames', self.field_name_list)
@@ -1354,186 +1537,6 @@ class BuiltTableRowBox(BuiltEnterBox):
     def set_field_def(self, field_def):
 
         return field_def
-
-
-class BuiltColumnBox(BuiltBox):
-    """
-    TOP-LEVEL-WINDOW        EnterColumnBox (1-n Entry Rows and 1-n, Entry Columns)
-
-    PARAMETER:
-        field_defs          Array of Field Definitions (see Class FieldDefintion)
-    INSTANCE ATTRIBUTES:
-        button_state        Text of selected Button
-        array               list of tuples; each row one tuple in list
-    """
-
-    def __init__(
-            self,
-            header='Enter Values: ', title=MESSAGE_TITLE,
-            button1_text=BUTTON_OK, button2_text=None, button3_text=None,
-            button4_text=None, button5_text=None, width=WIDTH_WIDGET,
-            array_def=[
-            [FieldDefinition(definition=COMBO,
-                             name='COL1', length=8, default_value='ROW 1', protected=True),
-             FieldDefinition(definition=COMBO,
-                             name='COL2', length=10, mandatory=False, combo_values=OPERATORS,
-                             allowed_values=OPERATORS),
-             FieldDefinition(name='COL3', lformat='F', length=10)],
-            [FieldDefinition(length=8, default_value='ROW 2', protected=True),
-             FieldDefinition(definition=COMBO,
-                             name='ROW1', length=10, mandatory=False, combo_values=OPERATORS,
-                             allowed_values=OPERATORS),
-             FieldDefinition(name='ROW2', length=40)]
-            ]):
-
-        self.array = []
-        self._array_def = array_def
-        columnspan = 1
-        if self._array_def:
-            columnspan = len(self._array_def[0])
-        super().__init__(title=title, header=header, columnspan=columnspan, width=width,
-                         button1_text=button1_text, button2_text=button2_text,
-                         button3_text=button3_text, button4_text=button4_text,
-                         button5_text=button5_text)
-
-    def create_fields(self):
-
-        self._row += 2
-        if self._array_def:
-            for icx, field_def in enumerate(self._array_def[0]):
-                if field_def.name != UNDEFINED:
-                    widget_lab = Label(self._box_window, width=len(field_def.name) + 2,
-                                       text=field_def.name, anchor=W, style='OPT.TLabel')
-                    widget_lab.grid(row=self._row, column=icx,
-                                    sticky=W, padx='3m', pady='1m')
-        self._row += 2
-        for row_def in self._array_def:
-            for field_def in row_def:
-                if field_def.definition == CHECK:
-                    field_def.textvar = IntVar()
-                    field_def.textvar.set('0')
-                else:
-                    field_def.textvar = StringVar()
-                    field_def.textvar.set('')
-        for irx, row_def in enumerate(self._array_def):
-            for icx, field_def in enumerate(row_def):
-                if field_def.definition == ENTRY:
-                    if field_def.typ == TYP_DATE:
-                        DateEntry(locale='de_de')
-                        widget_entry = DateEntry(self._box_window, width=16, background="magenta3",
-                                                 textvariable=field_def.textvar,
-                                                 foreground="white", bd=2, locale='de_de',
-                                                 date_pattern='yyyy-mm-dd')
-                    else:
-                        width = int(field_def.length * 0.8 + 2)
-                        widget_entry = Entry(self._box_window, width=width,
-                                             textvariable=field_def.textvar)
-                    widget_entry.grid(row=self._row, column=icx,
-                                      sticky=W, padx='3m', pady='1m')
-                    field_def.widget = widget_entry
-                elif field_def.definition == CHECK:
-                    widget_entry = Checkbutton(self._box_window, text=field_def.checkbutton_text,
-                                               variable=field_def.textvar)
-                    widget_entry.grid(row=self._row, column=icx,
-                                      sticky=W, padx='3m', pady='1m')
-                    field_def.widget = widget_entry
-                else:
-                    widget_entry = ttk.Combobox(self._box_window, values=field_def.combo_values,
-                                                width=int(
-                                                    field_def.length * 0.8 + 2),
-                                                textvariable=field_def.textvar)
-                    widget_entry.grid(row=self._row, column=icx,
-                                      sticky=W, padx='3m', pady='1m')
-                    field_def.widget = widget_entry
-                    if field_def.selected:
-                        widget_entry.bind(
-                            "<<ComboboxSelected>>", self.comboboxselected_action)
-                    if field_def.readonly:
-                        widget_entry.config(state='readonly')
-                if field_def.focus_out:
-                    widget_entry.bind("<FocusOut>", self.focus_out_action)
-                if field_def.focus_in:
-                    widget_entry.bind("<FocusIn>", self.focus_in_action)
-                row_def[icx] = field_def
-                if field_def.protected:
-                    widget_entry.config(state=DISABLED)
-                if field_def.definition == CHECK:
-                    if field_def.default_value:
-                        field_def.textvar.set(1)
-                    else:
-                        field_def.textvar.set(0)
-                else:
-                    if field_def.default_value:
-                        field_def.textvar.set(field_def.default_value)
-                    else:
-                        field_def.textvar.set('')
-
-            self._array_def[irx] = row_def
-            self._row += 1
-
-    def button_1_button1(self, event):
-
-        self.button_state = self._button1_text
-        self.validation()
-        if self.footer.get() == '':
-            self.quit_widget()
-
-    def validation(self):
-
-        for row_def in self._array_def:
-            for field_def in row_def:
-                if field_def.typ == TYP_DECIMAL and not field_def.protected:
-                    _decimal = field_def.widget.get().replace(',', '.')
-                    field_def.widget.delete(0, END)
-                    field_def.widget.insert(0, _decimal)
-        self.footer.set('')
-        self.array = []
-        for irx, row_def in enumerate(self._array_def):
-            row = []
-            for icx, field_def in enumerate(row_def):
-                if not field_def.protected:
-                    name = 'Row' + str(irx + 1) + ' / ' + \
-                        self._array_def[0][icx].name
-                    self.footer.set(field_validation(name, field_def))
-                    if self.footer.get():
-                        return
-
-                    self.validation_addon(field_def)
-                    if self.footer.get():
-                        return
-                    if field_def.definition == CHECK:
-                        row.append(field_def.textvar.get())
-                    else:
-                        row.append(field_def.widget.get())
-                else:
-                    if field_def.definition == CHECK:
-                        row.append(field_def.textvar.set(
-                            field_def.default_value))
-                    else:
-                        row.append(field_def.default_value)
-            self.array.append(tuple(row))
-
-        self.validation_all_addon(self._array_def)
-
-    def validation_addon(self, field_def):
-
-        pass
-
-    def validation_all_addon(self, array_def):
-
-        pass
-
-    def comboboxselected_action(self, event):
-
-        pass
-
-    def focus_out_action(self, event):
-
-        pass
-
-    def focus_in_action(self, event):
-
-        pass
 
 
 class BuiltText(object):
@@ -1681,9 +1684,10 @@ class BuiltPandasBox(Frame):
 
     def __init__(self, title='MESSAGE_TITLE', root=None,
                  dataframe=None, dataframe_sum=[], dataframe_typ=TYP_ALPHANUMERIC,
-                 message=None, name=PANDAS_NAME_SHOW, mode=NO_CURRENCY_SIGN,
-                 cellwidth_resizeable=True
+                 message=None, mode=NO_CURRENCY_SIGN,
+                 cellwidth_resizeable=True, selected_row=0
                  ):
+
         Caller.caller = self.caller = self.__class__.__name__
         self.title = title
         self.button_state = None
@@ -1698,8 +1702,8 @@ class BuiltPandasBox(Frame):
         self.dataframe_sum = dataframe_sum
         self.dataframe_typ = dataframe_typ
         self.mode = mode
-        # activates F1-,  F2-, F3_keys to change cellwidth
         self.cellwidth_resizeable = cellwidth_resizeable
+        self.selected_row = selected_row
         self.dataframe_window = Toplevel()
         self.dataframe_window.bind_all("<F1>", self._increase_col_width)
         self.dataframe_window.bind_all("<F2>", self._decrease_col_width)
@@ -1707,9 +1711,6 @@ class BuiltPandasBox(Frame):
         self.dataframe_window.title(title)
         self.create_dataframe()
         self.create_dataframe_append_sum()
-        self.name = name
-        self.selected_row = None
-        self.negative = re.compile('-')
         if message is not None:
             message_widget = Label(self.dataframe_window,
                                    text=message, foreground='RED')
@@ -1717,6 +1718,10 @@ class BuiltPandasBox(Frame):
         Frame.__init__(self)
         self.frame_widget = Frame(self.dataframe_window)
         self.frame_widget.pack(side=BOTTOM, fill=BOTH, expand=True)
+        self.selected_row_dict = {}  # selected pandastable row
+        if not isinstance(self.dataframe, DataFrame):
+            quit_widget(self.dataframe_window)
+            return
         if mode == EDIT_ROW:
             self.pandas_table = TableRowEdit(
                 title=title, root=self, parent=self.frame_widget, dataframe=self.dataframe)
@@ -1724,6 +1729,7 @@ class BuiltPandasBox(Frame):
             self.pandas_table = Table(
                 title=title, root=self, parent=self.frame_widget, dataframe=self.dataframe,
                 mode=mode)
+        # self.pandas_table.setSelectedRow(self.selected_row)
         self.pandas_table.fontsize = FONTSIZE
         self.font = Font(family=self.pandas_table.font,
                          size=self.pandas_table.fontsize)
@@ -1737,12 +1743,46 @@ class BuiltPandasBox(Frame):
         self.set_row_format()
         self.pandas_table.updateModel(TableModel(self.dataframe))
         self.pandas_table.show()
+        self._move_to_selection()
         self.pandas_table.rowheader.bind('<Button-1>', self.handle_click)
         # --------------------------------------------------------------
         self.dataframe_window.protocol(
             WM_DELETE_WINDOW, self._wm_deletion_window)
         self.dataframe_window.mainloop()
         destroy_widget(self.dataframe_window)
+
+    def __move_to_selection(self):
+        '''
+        Table without a vertical scroll bar:
+            Positions the row to the beginning of the displayed rows
+            after a row has been changed,
+            because pandastable only displays the rows before the changed row
+            when the frame size is subsequently changed.       
+
+        Table with vertical scroll bar:
+            Positions the changed row to the beginning of the displayed rows.
+            Special case for the first and last displayed rows:
+                Does not change the row position,
+                because pandastable only displays the rows before the changed row
+                when the frame size is subsequently changed.
+        '''
+        self.pandas_table.redraw()  # must before movetoSelection
+        sleep(1)
+        print('self.pandas_table.visiblerows', self.pandas_table.visiblerows)
+        last_visible_row = self.pandas_table.visiblerows[-1]
+        last_row = self.pandas_table.rows
+        if last_visible_row != 0 and last_row > last_visible_row:
+            self.pandas_table.movetoSelection(row=self.selected_row)
+        print('self.pandas_table.visiblerows', type(
+            self.pandas_table.visiblerows), self.pandas_table.visiblerows)
+        print('last_visible_row', last_visible_row, 'last_row',
+              last_row, 'self.selected_row', self.selected_row)
+        pass
+
+    def _move_to_selection(self):
+
+        self.pandas_table.redraw()
+        self.pandas_table.movetoSelection(row=self.selected_row)
 
     def _standard_col_width(self, event):
 
@@ -1823,7 +1863,10 @@ class BuiltPandasBox(Frame):
                 self.dataframe_window.geometry(geometry)
                 return
         cellwidth = self.pandas_table.maxcellwidth / 2
-        width = int(cellwidth * self.pandas_table.cols)
+        width = int(cellwidth * (self.pandas_table.cols + 1))
+        window_width = self.dataframe_window.winfo_screenwidth()
+        if width > window_width:
+            width = window_width - 10
         height = self._get_pandastable_height()
         geometry = ''.join([str(width), 'x', str(height),
                            BUILTPANDASBOX_WINDOW_POSITION])
@@ -1850,27 +1893,33 @@ class BuiltPandasBox(Frame):
     def quit_widget(self):
 
         self._geometry_put(self.dataframe_window)
+        if stack()[1].function == 'del_row':
+            self.selected_row = 0
+        else:
+            self.selected_row = self.pandas_table.getSelectedRow()
         quit_widget(self.dataframe_window)
 
     def _geometry_put(self, window):
         """
         put window geometry
         """
-        caller = Caller.caller
-        if caller == 'AppCustomizing':
+        if self.caller == 'AppCustomizing':
             return
         if window.winfo_exists():
-            width = window.winfo_width()
-            height = window.winfo_height()
-            geometry = ''.join([str(width), 'x', str(
-                height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
-            GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-            if not GEOMETRY_DICT:
-                GEOMETRY_DICT = {}
-            GEOMETRY_DICT[caller] = geometry
-            GEOMETRY_DICT[''.join([caller, '_CELLWIDTH', ])
-                          ] = self.column_width
-            shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+            try:
+                width = window.winfo_width()
+                height = window.winfo_height()
+                geometry = ''.join([str(width), 'x', str(
+                    height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
+                GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
+                if not GEOMETRY_DICT:
+                    GEOMETRY_DICT = {}
+                GEOMETRY_DICT[self.caller] = geometry
+                GEOMETRY_DICT[''.join([self.caller, '_CELLWIDTH', ])
+                              ] = self.column_width
+                shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+            except AttributeError:
+                pass  # column_with used in subclasses
 
     def handle_click(self, event):
         """
@@ -1879,6 +1928,11 @@ class BuiltPandasBox(Frame):
         self.selected_row = self.pandas_table.get_row_clicked(
             event)  # starts with 0
         self.processing()
+
+    def insert_row(self, row_dict):
+        self.df = self.df._append(row_dict, ignore_index=True)
+        self.table.model.df = self.df
+        self.table.redraw()
 
     def get_selected_row(self):
         """
@@ -1900,25 +1954,25 @@ class BuiltPandasBox(Frame):
         """
         Append Sum Row for columns in self.dataframe_sum
         """
-        self.dataframe_append_sum(self.dataframe, self.dataframe_sum)
+        self.dataframe_append_sum()
 
-    def dataframe_append_sum(self, dataframe, dataframe_sum):
+    def dataframe_append_sum(self,):
         """
         Append Sum Row for columns in dataframe_sum
         """
         sum_row = {}
-        for column in dataframe_sum:
-            dataframe[column] = dataframe[column].apply(
+        for column in self.dataframe_sum:
+            self.dataframe[column] = self.dataframe[column].apply(
                 lambda x: Amount(x).to_decimal())
-            if column in dataframe.columns:
+            if column in self.dataframe.columns:
                 sum_row[column] = to_numeric(
-                    dataframe[column]).sum()
+                    self.dataframe[column]).sum()
                 sum_row[column] = dec2.convert(sum_row[column])
         if sum_row != {}:
             sum_row[DB_price_currency] = EURO
             sum_row[DB_amount_currency] = EURO
             sum_row[DB_currency] = EURO
-            dataframe.loc[len(dataframe.index)] = sum_row
+            self.dataframe.loc[len(self.dataframe.index)] = sum_row
 
     def processing(self):
 

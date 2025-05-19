@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-02-11"
+__updated__ = "2025-05-19"
 @author: Wolfgang Kramer
 """
 
@@ -20,11 +20,15 @@ PNS = {}
 """
 -------------------------- Date Constants -----------------------------------------------
 """
+# Start Currency EUR
+START_CURRENCY_EUR = '2002-01-01'
 # Start date  download in MariaDB database
 # e.g. start www download of prices e.g. from https://www.alphavantage.co
-START_DATE_PRICES = '1990-01-01'
-# start download of statemants from bank; attention check storage_period of your bank
+START_DATE_PRICES = '2000-01-01'
+# start download of statements from bank; attention check storage_period of your bank
 START_DATE_STATEMENTS = date(2010, 1, 1)
+# start date transaction date
+START_DATE_TRANSACTIONS = date(2000, 1, 1)
 # start date holding_data
 START_DATE_HOLDING = date(2010, 1, 1)
 # start date transfer statements to ledger
@@ -45,7 +49,6 @@ OUTPUTSIZE_FULL = 'full'
 """
 NOT_ASSIGNED = 'NA'
 VALIDITY_DEFAULT = '9999-01-01'
-PRICE_ADJUSTMENT_LIMIT = 3  # % threshold price in tables TRANSACTION/PRICES
 """
 --------------------------- WebSites --------------------------------------------------
 """
@@ -70,9 +73,6 @@ FINTS_SERVER = " \n\nContains German Bank FINTS Server Address \nRegistrate to g
 --------------------------- Messages --------------------------------------------------
 """
 MESSAGE_TITLE = 'BANK ARCHIVE'
-FORMS_TEXT = {
-    'Adjust Prices': 'Adjustments'
-}
 MENU_TEXT = {
     'Ledger': 'Ledger',
     'Show': 'Show',
@@ -82,6 +82,7 @@ MENU_TEXT = {
     'Customize': 'Customize',
 
     'Account': 'Account',
+    'Account Category': 'Account Category',
     'All_Banks': 'All_Banks',
     'Alpha Vantage': 'Alpha Vantage Query',
     'Alpha Vantage Symbol Search': 'Alpha Vantage Symbol Search',
@@ -96,10 +97,10 @@ MENU_TEXT = {
     'Check Upload': 'Check Upload',
     'Check Bank Statement': 'Check Bank Statement',
     'Delete Bank': 'Delete Bank',
-    'Historical Prices': 'Historical Close Price',
     'Holding': 'Holding',
     'Holding Performance': 'Holding Performance',
     'Holding ISIN Comparision': 'Holding ISIN Comparision',
+    'Holding ISIN Comparision %': 'Holding ISIN Comparision %',
     'Holding Table': 'Holding Table',
     'Import Bankidentifier CSV-File': 'Bankidentifier CSV-File',
     'Import Server CSV-File': 'Server CSV-File',
@@ -123,7 +124,7 @@ MENU_TEXT = {
     'Transaction Detail': 'Transaction Detail',
     'Transactions Table': 'Transactions Table',
     'Update': 'Update',
-    'Update Holding Prices': 'Update Holding Prices',
+    'Update Holding Market Price by Closing Price': 'Update Holding Market Price by Closing Price',
     'Update Portfolio Total Amount': 'Update Portfolio Total Amount',
     'WebSites': 'WebSites',
     'Frankfurter Boerse': 'Frankfurter Boerse',
@@ -169,6 +170,8 @@ MESSAGE_TEXT = {
     'BANK_DELETE_failed': 'DELETE BANK {} failed!! \n IBAN of bank exists in table {}',
     'BANK_LOGIN': 'Bank Scraper Login failed \nException: {} \nURL: {}\nPassword: {}\nUserName: {}',
     'BANK_PERIOD': '{} ({}) \n Bank Account: {} {}      \n Account Postings only available from {} onwards',
+    'BMW_ZFA2': 'Please confirm the login process with your BMW Bank 2FA app',
+    'BMW_ZFA2_REJECTED': 'login process not confirmed with your BMW Bank 2FA app; Login rejected',
     'CREDENTIALS': '{} Login failed',
     'CREDENTIALS_CHECK': '{} Checking Credentials',
     'CHECKBOX': 'Select at least one of the Check Box Icons',
@@ -188,6 +191,7 @@ MESSAGE_TEXT = {
     'DECIMAL': 'Invalid Decimal Format Field {} e.g. 12345.00',
     'DOWNLOAD_BANK':  'BANK: {}    Download Bank Data started',
     'DOWNLOAD_ACCOUNT': 'Bank: {} {}\n Bank Account: {}  {}       \n     Download Bank Data of Iban {}',
+    'DOWNLOAD_ACCOUNT_NOT_ACTIVATED': 'Bank: {} {}\n Bank Account: {}  {}       \n     Download Bank Data of Iban {} not activated in LEDGER_COA',
     'DOWNLOAD_DONE': 'BANK: {}   Data downloading finished',
     'DOWNLOAD_NOT_DONE': 'BANK: {}   Data downloading finished with E R R O R ',
     'DOWNLOAD_REPEAT': 'Download {} canceled by User! \n\nStart Download once more!',
@@ -195,6 +199,7 @@ MESSAGE_TEXT = {
     'EXCEL': 'Excel File {} created, sheet added',
     'ENTRY': 'Enter Data',
     'ENTRY_DATE': 'Entry_date missed',
+    'FIELDLIST_MIN': 'Select at least {} positions in fieldlist',
     'FIXED': '{} MUST HAVE {} Characters ',
     'HITAN6': 'Bank: {} \n Bank Account: {}  {}       \n     Could not find HITAN6 task_reference',
     'HIUPD_EXTENSION': 'Bank: {} \n Bank Account: {}  {}       \n     IBAN {} received Bank Information: \n     {}',
@@ -216,6 +221,7 @@ MESSAGE_TEXT = {
     'LOGGING_FILE': 'OS Error Logging_file',
     'LOGIN': 'LOGIN Data incomplete.   \nCustomizing e.g. synchronization LOGIN Data must be done \nBank_Code: {} (Key Error: {})',
     'LOGIN_SCRAPER': 'LOGIN Data incomplete.   \nCustomizing LOGIN Data/Scraping must be done \nBank: {} ({})',
+    'LOGIN_ABORTED': 'LOGIN ABORTED',
     'MANDATORY': '{} is mandatory',
     'MARIADB_DUPLICATE': 'Duplicate Entry ignored\nSQL Statement: \n{} \n Error: \n{} \n Vars: \n{}',
     'MARIADB_ERROR_SQL': 'SQL_Statement\n {} \n\nVars\n {}',
@@ -224,19 +230,22 @@ MESSAGE_TEXT = {
     'NAME_INPUT': 'Enter Query Name (Name of Stored Procedure, allowed Chars [alphanumeric and _): ',
     'NAMING': 'Fix Naming. Allowed Characters: A-Z, a-z, 0-9, _',
     'NO_TURNOVER': 'Bank: {} \n Bank Account: {}  {}       \n     No new turnover',
-    'NOTALLOWED': '{} is not allowed {}',
+    'NOTALLOWED': 'Value not allowed, select from list',
     'OS_ERROR': 'Shelve File  {} not found',
     'PAIN': 'SEPA Format pain.001.001.03 not found/allowed\nBank: {}',
     'PERIOD':               'Period ({}, {})',
     'PIN': 'PIN missing! \nBank: {} ({})',
     'PIN_INPUT': 'Enter PIN   {} ({}) ',
-    'PRICE_ADJUSTMENT_DONE': 'Historical close price adjustment done',
     'PRICES_DELETED': '{}:  Prices deleted\n\n Used Ticker Symbol {} \n ISIN: {}',
     'PRICES_LOADED': '{}:  Price loaded for Period {}\n\n Used Ticker Symbol {} \n ISIN: {}',
     'PRICES_NO': '{}:  No new Prices found\n\n Used Ticker Symbol {} {}\n ISIN: {}  {}',
     'PRODUCT_ID': 'Product_ID missing, No Bank Access possible\n Get your Product_Id: https://www.hbci-zka.de/register/prod_register.htm',
     'RADIOBUTTON': 'Select one of SELECT the RadioButtons',
     'RESPONSE': 'Got unvalid response from bank',
+    'SCRAPER_BALANCE': 'Last closing balance from database: {} \n Opening balance from the transaction overview: {}',
+    'SCRAPER_NO_TRANSACTION_TO_STORE': 'All transactions already saved in database',
+    'SCRAPER_PAGE_ERROR': 'Connection interrupted!',
+    'SCRAPER_TIMEOUT': 'Connection TimeOut',
     'SCROLL': 'Scroll forward: CTRL+RIGHT   Scroll backwards: CTRL+LEFT',
     'SEGMENT_VERSION': 'Segment {}{} Version {} not implemented',
     'SELECT': 'Enter your Selection',
@@ -449,9 +458,10 @@ ERROR = 'ERROR:       '
 LIGHTBLUE = 'LIGHTBLUE'
 SHOW_MESSAGE = [INFORMATION, WARNING, ERROR]
 FN_ACCOUNT_NAME = 'ACCOUNT_NAME'
+FN_COMPARATIVE = 'COMPARATIVE_VALUE'
 FN_DATE = 'DATE'
 FN_TO_DATE = 'TO_DATE'
-FN_FROM_DATE = 'FROM_Date'
+FN_FROM_DATE = 'FROM_DATE'
 FN_BANK_NAME = 'BANK_NAME'
 FN_FIELD_NAME = 'Field_Name'
 FN_PROCUDURE_NAME = 'Procedure_Name'
@@ -466,7 +476,7 @@ FN_TOTAL_PERCENT = '% TOTAL'
 FN_PERIOD_PERCENT = 'PERIOD'
 FN_DAILY_PERCENT = 'Day'
 FN_PROFIT = 'Profit'
-FN_PROFIT_LOSS = 'PROFIT&LOSS'
+FN_PROFIT_LOSS = 'PROFIT_LOSS'
 FN_PROFIT_CUM = 'PERFORMANCE'
 FN_PIECES_CUM = 'CUM_PIECES'
 FN_SOLD_PIECES = 'sold_pieces'
@@ -564,7 +574,7 @@ COUNTER_MT536 = '100'  # downloaded transactions, Format MT 536
 BMW_BANK_CODE = '70220300'
 # value: [>login Link<, >identifier_delimiter<, >storage_period<]
 SCRAPER_BANKDATA = {BMW_BANK_CODE: [
-    'https://banking.bmwbank.de/privat/banking/', '+', 360]}
+    'https://ebanking.bmwbank.de/eBankingClient', '+', 360]}
 EXPLORER = ['Edge', ]
 """
 ----------------------------- Named Tuples ------------

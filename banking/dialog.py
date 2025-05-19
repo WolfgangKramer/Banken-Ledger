@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-02-03"
+__updated__ = "2025-04-19"
 @author: Wolfgang Kramer
 """
 
@@ -90,12 +90,13 @@ class Dialogs(object):
     def __init__(self, mariadb):
 
         self.mariadb = mariadb
+        self.messages = Messages(mariadb)
         self._show_message = shelve_get_key(BANK_MARIADB_INI, KEY_SHOW_MESSAGE)
         self._logging = shelve_get_key(BANK_MARIADB_INI, KEY_LOGGING)
         if not self._show_message:
             self._show_message = ERROR
 
-    def _start_dialog(self, bank, msg=Messages()):
+    def _start_dialog(self, bank):
 
         if bank.opened_bank_code != bank.bank_code:
             bank.opened_bank_code = None
@@ -112,7 +113,7 @@ class Dialogs(object):
                         return None
                     PNS[bank.bank_code] = input_pin.pin
                 response, _ = self._send_msg(
-                    bank, msg.msg_dialog_init(bank), dialog_init=True)
+                    bank, self.messages.msg_dialog_init(bank), dialog_init=True)
                 if response is not None:
                     for seg in response.find_segments(HIUPD6):
                         if bank.iban == seg.iban and seg.extension:
@@ -133,7 +134,7 @@ class Dialogs(object):
                 MessageBoxInfo(message=MESSAGE_TEXT['HITAN6'].format(
                     bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
             bank.task_reference = seg.task_reference
-            response, _ = self._get_tan(bank, msg, response)
+            response, _ = self._get_tan(bank, response)
             if response:
                 bank.opened_bank_code = bank.bank_code
                 return response
@@ -142,20 +143,20 @@ class Dialogs(object):
         else:
             return True  # thread checking
 
-    def _end_dialog(self, bank, msg=Messages()):
+    def _end_dialog(self, bank):
 
-        self._send_msg(bank, msg.msg_dialog_end(bank))
+        self._send_msg(bank, self.messages.msg_dialog_end(bank))
         bank.message_number = 1
         bank.opened_bank_code = None
 
-    def _get_tan(self, bank, msg, response):
+    def _get_tan(self, bank, response):
 
         hirms_codes = []
         for seg in response.find_segments(HIRMS2):
             for hirms in seg.responses:
                 if hirms.code == CODE_0030:
                     bank.tan_process = 2
-                    message = msg.msg_tan(bank)
+                    message = self.messages.msg_tan(bank)
                     if message:
                         response, hirms_codes = self._send_msg(bank, message)
                     else:
@@ -321,7 +322,7 @@ class Dialogs(object):
                     bank.accounts.append(acc)
             shelve_put_key(bank.bank_code, (KEY_ACCOUNTS, bank.accounts))
 
-    def _receive_msg(self, bank, msg, response, hirms_codes):
+    def _receive_msg(self, bank, response, hirms_codes):
 
         if CODE_0030 in hirms_codes:
             seg = response.find_segment_first(HITAN6)
@@ -331,7 +332,7 @@ class Dialogs(object):
                 return [], hirms_codes
             if check_main_thread():
                 bank.task_reference = seg.task_reference
-                response, hirms_codes = self._get_tan(bank, msg, response)
+                response, hirms_codes = self._get_tan(bank, response)
             else:
                 MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
                     bank.bank_name, bank.account_number, bank.account_product_name), bank=bank, information=WARNING)
@@ -396,27 +397,28 @@ class Dialogs(object):
         error = False
         for response in segment.responses:
             codes.append(response.code)
+            message = ' ' .join(['Code', response.code, response.text])
             if response.code == '3076':      # SCA not required
                 bank.sca = False
             if response.code[0] in ['0', '1']:
                 if self._show_message == INFORMATION:
-                    message = ' ' .join(['Code', response.code, response.text])
-                    bankdata_informations_append(INFORMATION, ' ' .join(
-                        ['Code', response.code, response.text]))
+                    bankdata_informations_append(INFORMATION, message)
             elif response.code[0] == '3':
                 if response.code == '3010':    # no entries found
                     MessageBoxInfo(message=MESSAGE_TEXT['NO_TURNOVER'].format(
                         bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
                 if self._show_message in [INFORMATION, WARNING]:
-                    bankdata_informations_append(WARNING, ' ' .join(
-                        ['Code', response.code, response.text]))
+                    bankdata_informations_append(WARNING, message)
                     bank.warning_message = True
             else:
                 error = True
-                bankdata_informations_append(WARNING, ' ' .join(
-                    ['Code', response.code, '- Bezugssegment', response.reference_element]))
-                bankdata_informations_append(ERROR, ' ' .join(
-                    [response.text, '- Parameters', response.parameters]))
+                bankdata_informations_append(WARNING, message)
+                if response.reference_element:
+                    bankdata_informations_append(WARNING, ' ' .join(
+                        ['- Bezugssegment', response.reference_element]))
+                if response.parameters:
+                    bankdata_informations_append(ERROR, ' ' .join(
+                        ['- Parameters', response.parameters]))
 
         return error, codes
 
@@ -701,19 +703,19 @@ class Dialogs(object):
 
         return mt940
 
-    def anonymous(self, bank, msg=Messages()):
+    def anonymous(self, bank):
         ' HITANS >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>'
         bank.message_number = 1
         bank.dialog_id = DIALOG_ID_UNASSIGNED
         response, _ = self._send_msg(
-            bank, msg.msg_dialog_anonymous(bank))
+            bank, self.messages.msg_dialog_anonymous(bank))
         self._store_bpd_shelve(bank, response)
 
-    def sync(self, bank, msg=Messages()):
+    def sync(self, bank):
         ' HISYN >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>'
         bank.message_number = 1
         bank.dialog_id = DIALOG_ID_UNASSIGNED
-        response, _ = self._send_msg(bank, msg.msg_dialog_syn(bank))
+        response, _ = self._send_msg(bank, self.messages.msg_dialog_syn(bank))
         self._store_sync_shelve(bank, response)
         self._end_dialog(bank)
 
@@ -725,15 +727,15 @@ class Dialogs(object):
                 self._store_upd_shelve(bank, response)
                 self._end_dialog(bank)
 
-    def holdings(self, bank, msg=Messages()):
+    def holdings(self, bank):
 
         holdings = []
         if self._start_dialog(bank):
             bank.tan_process = 4
             response, hirms_codes = self._send_msg(
-                bank, msg.msg_holdings(bank))
+                bank, self.messages.msg_holdings(bank))
             response, hirms_codes = self._receive_msg(
-                bank, msg, response, hirms_codes)
+                bank, response, hirms_codes)
             if not response:
                 return holdings
             hiwpd = self._get_segment(bank, 'WPD')
@@ -758,15 +760,15 @@ class Dialogs(object):
             holdings = self._mt535_listdict(holding_str)
         return holdings
 
-    def statements(self, bank, msg=Messages()):
+    def statements(self, bank):
 
         statements = []
         if self._start_dialog(bank):
             bank.tan_process = 4
             response, hirms_codes = self._send_msg(
-                bank, msg.msg_statements(bank))
+                bank, self.messages.msg_statements(bank))
             response, hirms_codes = self._receive_msg(
-                bank, msg, response, hirms_codes)
+                bank, response, hirms_codes)
             if not response:
                 return statements  # no statements found or SCA in threading mode
             if CODE_3010 in hirms_codes:
@@ -799,18 +801,18 @@ class Dialogs(object):
             self._end_dialog(bank)
         return statements
 
-    def transfer(self, bank, msg=Messages()):
+    def transfer(self, bank):
 
         if self._start_dialog(bank):
             bank.tan_process = 4
             response, _ = self._send_msg(
-                bank, msg.msg_transfer(bank))
+                bank, self.messages.msg_transfer(bank))
             seg = response.find_segment_first(HITAN6)
             if not seg:
                 MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
                 return False  # thread checking
             bank.task_reference = seg.task_reference
-            response, _ = self._get_tan(bank, msg, response)
+            response, _ = self._get_tan(bank, response)
             if response:
                 self._end_dialog(bank)
             else:
@@ -818,18 +820,18 @@ class Dialogs(object):
         else:
             return None
 
-    def date_transfer(self, bank, msg=Messages()):
+    def date_transfer(self, bank):
 
         if self._start_dialog(bank):
             bank.tan_process = 4
             response, _ = self._send_msg(
-                bank, msg.msg_date_transfer(bank))
+                bank, self.messages.msg_date_transfer(bank))
             seg = response.find_segment_first(HITAN6)
             if not seg:
                 MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
                 return False  # thread checking
             bank.task_reference = seg.task_reference
-            response, _ = self._get_tan(bank, msg, response)
+            response, _ = self._get_tan(bank, response)
             if response:
                 self._end_dialog(bank)
             else:

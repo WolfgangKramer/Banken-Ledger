@@ -1,6 +1,6 @@
 '''
 Created on 26.11.2019
-__updated__ = "2025-02-06"
+__updated__ = "2025-05-19"
 @author: Wolfgang Kramer
 '''
 
@@ -11,7 +11,6 @@ from re import compile
 from itertools import chain
 from datetime import date
 from inspect import stack
-from json import dumps, loads
 from collections import namedtuple
 
 from banking.declarations_mariadb import (
@@ -20,12 +19,12 @@ from banking.declarations_mariadb import (
     TABLE_FIELDS_PROPERTIES,
     DATABASE_FIELDS_PROPERTIES,
     FieldsProperty,
-
-    DATABASES,
+    DB_account,
     DB_id_no, DB_iban,
     DB_entry_date,
     DB_name, DB_counter, DB_price_date, DB_ISIN,
     DB_purpose_wo_identifier,
+    DB_total_amount, DB_acquisition_amount,
     DB_status, DB_symbol,
     BANKIDENTIFIER,
     CREATE_TABLES,
@@ -38,10 +37,10 @@ from banking.declarations_mariadb import (
 from banking.declarations import (
     BANK_MARIADB_INI,
     CREDIT, DEBIT,
-    TRUE, FALSE,
     HoldingAcquisition,
     Informations,
     ERROR,
+    FN_PROFIT_LOSS,
     INFORMATION,
     KEY_ACC_IBAN, KEY_ACC_ACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_PRODUCT_NAME, KEY_ACC_OWNER_NAME,
     KEY_LEDGER,
@@ -60,6 +59,7 @@ from banking.formbuilts import (
 )
 from banking.ledger import transfer_statement_to_ledger
 from banking.utils import dec2, date_days, date_yyyymmdd, shelve_get_key, remove_obsolete_iban_rows, bankdata_informations_append
+
 
 # statement begins with SELECT or is a Selection via CTE and begins with WITH
 select_statement = compile(r'^SELECT|^WITH')
@@ -110,6 +110,7 @@ class MariaDB(object):
     Retrieve Records from MARIADB Tables
     Insert and Modify Records of MARIADB Tables
     '''
+    DATABASES = []
 
     def __init__(self, user, password, database):
 
@@ -128,7 +129,7 @@ class MariaDB(object):
             cur.execute(sql_statement)
             for databases in cur:
                 if databases[0] not in ['information_schema', 'mysql', 'performance_schema']:
-                    DATABASES.append(databases[0])
+                    MariaDB.DATABASES.append(databases[0])
             conn = connect(user=self.user, password=self.password, host=self.host,
                            database=self.database)
             self.cursor = conn.cursor()
@@ -332,7 +333,7 @@ class MariaDB(object):
         if bank.scraper:
             bank.to_date = ''.join(str(bank.to_date))
             bank.from_date = ''.join(str(bank.from_date))
-            statements = bank.download_statements(bank)
+            statements = bank.download_statements()
         else:
             statements = bank.dialogs.statements(bank)
         if statements:
@@ -368,7 +369,7 @@ class MariaDB(object):
 
         kwargs:      >database_fieldname<=>value< AND ....  >database_fieldname< IN >list<  ...
         clause:      additional >AND< >OR< condition parts
-        date_name:   date field_name of period key
+        date_name:   date field_name of period key, standard is price_date
 
         result:  where    WHERE >database_fieldname<=? AND .... AND '
                  vars_    (>value<, ..>list<, .....)
@@ -415,36 +416,38 @@ class MariaDB(object):
 
         holdings: ignores holdings if False
         '''
-        message = ' '.join(
-            [MESSAGE_TEXT['DOWNLOAD_BANK'].format(bank.bank_name), '\n\n'])
-        bankdata_informations_append(INFORMATION, message)
         for account in bank.accounts:
             bank.account_number = account[KEY_ACC_ACCOUNT_NUMBER]
             bank.account_product_name = account[KEY_ACC_PRODUCT_NAME]
             bank.iban = account[KEY_ACC_IBAN]
             bank.owner_name = account[KEY_ACC_OWNER_NAME]
-            information = MESSAGE_TEXT['DOWNLOAD_ACCOUNT'].format(
-                bank.bank_name, bank.owner_name, bank.account_number, bank.account_product_name, bank.iban)
-            if bank.scraper:
-                if 'HKKAZ' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                    bankdata_informations_append(INFORMATION, information)
-                    if self._statements(bank) is None:
-                        bankdata_informations_append(
-                            WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
-                        return
+            if self.row_exists(LEDGER_COA, iban=bank.iban, download=False):
+                information = MESSAGE_TEXT['DOWNLOAD_ACCOUNT_NOT_ACTIVATED'].format(
+                    bank.bank_name, bank.owner_name, bank.account_number, bank.account_product_name, bank.iban)
+                bankdata_informations_append(WARNING, information)
             else:
-                if 'HKWPD' in account[KEY_ACC_ALLOWED_TRANSACTIONS] and holdings:
-                    bankdata_informations_append(INFORMATION, information)
-                    if self._holdings(bank) is None:
-                        bankdata_informations_append(
-                            WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
-                        return
-                if 'HKKAZ' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                    bankdata_informations_append(INFORMATION, information)
-                    if self._statements(bank) is None:
-                        bankdata_informations_append(
-                            WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
-                        return
+                information = MESSAGE_TEXT['DOWNLOAD_ACCOUNT'].format(
+                    bank.bank_name, bank.owner_name, bank.account_number, bank.account_product_name, bank.iban)
+                if bank.scraper:
+                    if 'HKKAZ' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                        bankdata_informations_append(INFORMATION, information)
+                        if self._statements(bank) is None:
+                            bankdata_informations_append(
+                                WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
+                            return
+                else:
+                    if 'HKWPD' in account[KEY_ACC_ALLOWED_TRANSACTIONS] and holdings:
+                        bankdata_informations_append(INFORMATION, information)
+                        if self._holdings(bank) is None:
+                            bankdata_informations_append(
+                                WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
+                            return
+                    if 'HKKAZ' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                        bankdata_informations_append(INFORMATION, information)
+                        if self._statements(bank) is None:
+                            bankdata_informations_append(
+                                WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
+                            return
         bankdata_informations_append(
             INFORMATION, MESSAGE_TEXT['DOWNLOAD_DONE'].format(bank.bank_name) + '\n\n')
         if bank.scraper:
@@ -735,18 +738,6 @@ class MariaDB(object):
             return dict(result)
         return {}
 
-    def select_isin_adjustments(self):
-        '''
-        Return:  List of tuples (name, symbol, adjustments) of table ISIN with adjustments
-        '''
-        sql_statement = "SELECT name, symbol, adjustments FROM " + \
-            ISIN + "  WHERE adjustments <> '{}'"
-        result = self.execute(sql_statement)
-        names_list = list(map(lambda x: x[0], result))
-        names_symbol_dict = dict(list(map(lambda x: (x[0], x[1]), result)))
-        names_adjustment_dict = dict(list(map(lambda x: (x[0], x[2]), result)))
-        return names_list, names_symbol_dict, names_adjustment_dict
-
     def select_isin_with_ticker(self, field_list, order=None, **kwargs):
 
         where, vars_ = self._where_clause(**kwargs)
@@ -766,6 +757,34 @@ class MariaDB(object):
                          " FROM " + HOLDING + where)
         sql_statement = sql_statement + " GROUP BY price_date ORDER BY price_date ASC;"
         return self.execute(sql_statement, vars_=vars_)
+
+    def select_holding_comparision(self, iban, comparision_field, isin_codes, **kwargs):
+
+        where, vars_ = self._where_clause(**kwargs)
+        periods = []
+        for isin_code in isin_codes:
+            sql_statement = ("SELECT  MIN(price_date), MAX(price_date) from "
+                             + HOLDING + where + " AND  "
+                             + DB_ISIN + "='" + isin_code + "'")
+            result = self.execute(sql_statement, vars_=vars_)
+            if result:
+                periods.append(result[0])
+        from_date, to_date = zip(*periods)
+        from_date = max(from_date)
+        to_date = min(to_date)
+        if comparision_field == FN_PROFIT_LOSS:
+            db_fields = [DB_name, DB_price_date,
+                         ''.join([DB_total_amount, '-', DB_acquisition_amount, ' AS ', FN_PROFIT_LOSS])]
+        else:
+            db_fields = [DB_name, DB_price_date, comparision_field]
+        if iban:
+            selected_holding_data = self.select_holding_data(
+                field_list=db_fields, iban=iban, isin_code=isin_codes,
+                period=(from_date, to_date))
+        else:
+            selected_holding_data = self.select_holding_data(
+                field_list=db_fields, isin_code=isin_codes, period=(from_date, to_date))
+        return from_date, to_date, selected_holding_data
 
     def select_holding_total(self, **kwargs):
 
@@ -793,11 +812,16 @@ class MariaDB(object):
         else:
             return []
 
-    def select_holding_last(self, iban, isin, period,
+    def select_holding_last(self, iban, name, period,
                             field_list='price_date, market_price, pieces, total_amount, acquisition_amount'):
         '''
         returns tuple with last portfolio entries
         '''
+        isin = self.select_table(ISIN, DB_ISIN, name=name)
+        if isin:
+            isin = isin[0]
+        else:
+            return None
         last_download = self.select_max_column_value(
             HOLDING, DB_price_date, iban=iban, isin_code=isin, period=period)
         if last_download is not None:
@@ -967,10 +991,11 @@ class MariaDB(object):
         result = self.execute(sql_statement, vars_=vars_)
         return result[0][0]
 
-    def select_table_distinct(self, table, field_list, order=None, result_dict=False, date_name=None, **kwargs):
+    def select_table_distinct(self, table, field_list, order=None, clause=None, result_dict=False, date_name=None, **kwargs):
 
         if field_list:
-            where, vars_ = self._where_clause(date_name=date_name, **kwargs)
+            where, vars_ = self._where_clause(
+                date_name=date_name, clause=clause, **kwargs)
             if isinstance(field_list, list):
                 field_list = ','.join(field_list)
             sql_statement = "SELECT DISTINCT " + field_list + " FROM " + table + where
@@ -1033,7 +1058,7 @@ class MariaDB(object):
         else:
             return None
 
-    def select_total_amounts(self, **kwargs):
+    def _select_total_amounts(self, **kwargs):
 
         where, vars_ = self._where_clause(**kwargs)
         where = where.replace(DB_price_date, 'date')
@@ -1059,7 +1084,91 @@ class MariaDB(object):
         # remove IBANs of old ledger applications or deleted banks.
         result = remove_obsolete_iban_rows(result)
         first_row_statement = remove_obsolete_iban_rows(first_row_statement)
-        return first_row_statement + first_row_holding + result
+        total_amounts = first_row_statement + first_row_holding + result
+        '''
+        Returns Ledger Accounts of Asset Balances that have no entry in STATEMENT and HOLDING ergo no balances
+        e.g., fixed-term deposit accounts, cash registers, receivables, ..
+        '''
+        ledger_coa = self.select_table(
+            LEDGER_COA, DB_account, order=DB_account, asset_accounting=True, download=False)
+
+        for item in ledger_coa:
+            account, = item
+            sql_statement = ("WITH amounts AS ("
+                             "SELECT credit_account as iban, entry_date AS date, '" + CREDIT +
+                             "' AS status, amount AS saldo  FROM "
+                             + LEDGER + " WHERE credit_account='" + account + "'"
+                             " UNION "
+                             "SELECT debit_account as iban, entry_date AS date, '" + DEBIT +
+                             "' AS status, amount AS saldo  FROM "
+                             + LEDGER + " WHERE debit_account='" + account + "') "
+                             "SELECT iban, date, status, saldo FROM amounts " + where +
+                             " GROUP BY iban, date ")
+            ledger = self.execute(sql_statement, vars_=vars_)
+            total_amounts = total_amounts + ledger
+        return total_amounts
+
+    def select_total_amounts(self, **kwargs):
+        '''
+        returns total_amounts
+            List of tuples from the STATEMENT and HOLDING tables:
+                                (IBAN, date, closing balance)
+        returns ledger_amounts
+        List of tuples from the LEDGER table:
+                                (account number, date, amount)
+        '''
+
+        where, vars_ = self._where_clause(**kwargs)
+        where_entry_date = where.replace(DB_price_date, DB_entry_date)
+        from_date, _ = vars_
+        vars_ = vars_ + vars_
+        sql_statement = ("WITH total_amounts AS ("
+                         + " SELECT iban, price_date AS DATE, 'C'  AS status, total_amount_portfolio AS saldo  FROM holding where price_date>? AND price_date<=?"
+                         + " GROUP BY iban, price_date"
+                         + " UNION "
+                         + " SELECT iban, entry_date AS date, closing_status AS status, closing_balance from statement "
+                         + " JOIN "
+                         + " (SELECT iban, entry_date, max(counter) AS counter FROM statement where entry_date>? AND entry_date<=? GROUP BY iban, entry_date) AS t1"
+                         + " USING (iban, entry_date, counter)"
+                         + " )"
+                         + " SELECT iban, date, status, saldo FROM total_amounts"
+                         )
+        total_amounts = self.execute(sql_statement, vars_=vars_)
+        # remove IBANs of old ledger applications or deleted banks.
+        total_amounts = remove_obsolete_iban_rows(total_amounts)
+
+        # search first row if no statements/holding before period
+        sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(entry_date) AS max_date FROM " + STATEMENT + " WHERE entry_date <= '" + from_date + "' GROUP BY iban) "
+                         "SELECT iban, date('" + from_date + "'), closing_status AS status, closing_balance AS saldo FROM " + STATEMENT + ", max_date_rows WHERE iban = max_iban AND entry_date = max_date GROUP BY iban;")
+        first_row_statement = self.execute(sql_statement)
+        total_amounts = total_amounts + first_row_statement
+        # remove IBANs of old ledger applications or deleted banks.
+        first_row_statement = remove_obsolete_iban_rows(
+            first_row_statement)
+        sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(price_date) AS max_date FROM " + HOLDING + " WHERE price_date <= '" + from_date + "' GROUP BY iban) "
+                         "SELECT iban, date('" + from_date + "'), '" + CREDIT + "' AS status, total_amount_portfolio AS saldo FROM " + HOLDING + ", max_date_rows WHERE iban = max_iban AND price_date = max_date GROUP BY iban;")
+        first_row_holding = self.execute(sql_statement)
+        total_amounts = total_amounts + first_row_holding
+        '''
+        Returns Ledger Accounts of Asset Balances that have no entry in STATEMENT and HOLDING ergo no balances
+        e.g., fixed-term deposit accounts, cash registers, receivables, ..
+        '''
+        ledger_coa = self.select_table(
+            LEDGER_COA, DB_account, order=DB_account, asset_accounting=True, download=False)
+        for item in ledger_coa:
+            account, = item
+            sql_statement = ("WITH amounts AS ("
+                             "SELECT credit_account as iban, entry_date AS date, '" + CREDIT +
+                             "' AS status, amount AS saldo  FROM "
+                             + LEDGER + where_entry_date + " AND credit_account='" + account + "'" +
+                             " UNION "
+                             "SELECT debit_account as iban, entry_date AS date, '" + DEBIT +
+                             "' AS status, amount AS saldo  FROM "
+                             + LEDGER + where_entry_date + " AND debit_account='" + account + "'" + ") "
+                             "SELECT iban, date, status, saldo FROM amounts  GROUP BY iban, date ")
+            ledger = self.execute(sql_statement, vars_=vars_)
+            total_amounts = total_amounts + ledger
+        return total_amounts
 
     def select_max_column_value(self, table, column_name, **kwargs):
 
@@ -1124,15 +1233,16 @@ class MariaDB(object):
 
     def select_transactions_data(
             self,
-            field_list='price_date, counter, transaction_type, price_currency,\
-                          price, pieces, amount_currency, posted_amount, comments',
+            field_list='price_date, counter, transaction_type, price, pieces, posted_amount',
+            # field_list='price_date, counter, transaction_type, price_currency,\
+            #              price, pieces, amount_currency, posted_amount, comments',
             **kwargs):
         ''' returns a list of tuples '''
         where, vars_ = self._where_clause(**kwargs)
         if isinstance(field_list, list):
             field_list = ','.join(field_list)
         sql_statement = ("SELECT  " + field_list +
-                         " FROM " + TRANSACTION + where)
+                         " FROM " + TRANSACTION_VIEW + where)
         sql_statement = sql_statement + " ORDER BY price_date ASC, counter ASC;"
         return self.execute(sql_statement, vars_=vars_)
 
@@ -1247,30 +1357,6 @@ class MariaDB(object):
                 _, to_date = period
                 vars_ = vars_ + (to_date,)
                 sql_statement = sql_statement + " AND price_date>=? AND price_date<=?"
-        self.execute(sql_statement, vars_=vars_)
-
-    def update_prices_histclose(self, name, symbol, adjustments):
-
-        adjustments = loads(adjustments)
-        for to_date, adjustment in adjustments.items():
-            r_factor, used = adjustment
-            if used == FALSE:  # histclose not yet calculated
-                # calculate histclose
-                sql_statement = "UPDATE " + PRICES + \
-                    " SET histclose = close / " + r_factor + " WHERE symbol=? AND price_date<=?"
-                vars_ = (symbol, to_date)
-                self.execute(sql_statement, vars_=vars_)
-                # histclose calculated > set used
-                adjustments[to_date] = (r_factor, True)
-
-        sql_statement = "UPDATE " + PRICES + \
-            " SET histclose=close WHERE symbol=? AND histclose=0"
-        vars_ = (symbol)
-        self.execute(sql_statement, vars_=vars_)
-
-        adjustments[to_date] = (r_factor, TRUE)
-        sql_statement = "UPDATE " + ISIN + " SET adjustments=?  WHERE name=?"
-        vars_ = (dumps(adjustments), name)
         self.execute(sql_statement, vars_=vars_)
 
     def update_total_holding_amount(self, **kwargs):

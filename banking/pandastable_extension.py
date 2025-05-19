@@ -1,6 +1,6 @@
 """
 Created on 12.04.2021
-__updated__ = "2025-01-16"
+__updated__ = "2025-04-14"
 @author: Wolfgang Kramer
 
     Modified code of:
@@ -419,6 +419,14 @@ class Table(Table):
         self.currheight = self.parentframe.winfo_height()
         if hasattr(self, 'pf'):
             self.pf.updateData()
+        return
+
+    def plotSelected(self):
+
+        super().plotSelected()
+        self.pf.setOption(
+            'title', self.title)  # Plot title
+        self.pf.replot()
         return
 
     def popupMenu(self, event, rows=None, cols=None, outside=None):

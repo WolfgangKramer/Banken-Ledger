@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-02-03"
+__updated__ = "2025-05-19"
 @author: Wolfgang Kramer
 """
 
@@ -25,10 +25,9 @@ from datetime import date, timedelta, datetime
 from decimal import Decimal, getcontext, ROUND_HALF_EVEN, DivisionByZero
 
 from banking.declarations import (
-    BANK_MARIADB_INI,
     EURO,
     Informations,
-    KEY_ACCOUNTS, KEY_ACC_ACCOUNT_NUMBER, KEY_BANK_NAME, KEY_DIRECTORY,
+    KEY_ACCOUNTS, KEY_ACC_ACCOUNT_NUMBER, KEY_BANK_NAME,
     KEY_ACC_PRODUCT_NAME, KEY_ACC_IBAN,
     KEY_GEOMETRY,
     MESSAGE_TEXT, MESSAGE_TITLE,
@@ -133,16 +132,24 @@ def list_positioning(listing, pattern):
         Termination()
     if not listing:
         return listing, 0
-    item = ''
-    pattern = pattern.lower()
-    for _item in listing:
-        _item = str(_item)
-        if _item.startswith(pattern) or pattern <= _item[:len(pattern)].lower():
-            item = _item
-            break
-    if item == '' and len(listing) > 0:
-        item = listing[len(listing) - 1]
-    return item, listing.index(item)
+    lowercase_list = list(map(str.lower, listing))
+    lowercase_list.sort()
+    # get item starting with pattern
+    lowercase_result = [item for item in lowercase_list if item.startswith(
+        pattern.lower())]
+    if not lowercase_result:
+        # get next greater item
+        lowercase_result = [
+            item for item in lowercase_list if item > pattern.lower()]
+    if lowercase_result:
+        # get item from original listing
+        lowercase_result = lowercase_result[0]
+        listing_result = [
+            item for item in listing if item.lower().startswith(lowercase_result)]
+        listing_result = listing_result[0]
+        return listing_result, listing.index(listing_result)
+    else:
+        return listing[-1], len(listing)-1
 
 
 def max_len_item(item_list):
@@ -328,23 +335,37 @@ def delete_shelve_files(shelve_name):
         pass
 
 
-def shelve_filename(shelve_name):
-    return shelve_name
-    if shelve_name != BANK_MARIADB_INI:
-        shelve_name = shelve_get_key(
-            BANK_MARIADB_INI, KEY_DIRECTORY) + shelve_name
-    return shelve_name
-
-
 def shelve_exist(shelve_name):
     """ PARAMETER:     shelve_name
         RETURN:        True if shelve_file exists
     """
-    shelve_name = shelve_filename(shelve_name)
     if os.path.exists(shelve_name + '.dat') and os.path.exists(shelve_name + '.dir'):
         return True
     else:
         return False
+
+
+def shelve_get_keylist(shelve_name, flag='r'):
+    '''
+    returns all Keys of shelve_file
+    '''
+    with shelve.open(shelve_name, flag=flag, protocol=None, writeback=True) as shelve_file:
+        key_list = []
+        for key in shelve_file.keys():
+            key_list.append(key)
+        return key_list
+
+
+def shelve_del_key(shelve_name, key, flag='w'):
+    '''
+    Deletes key in shelve_file
+    '''
+    with shelve.open(shelve_name, flag=flag, protocol=None, writeback=True) as shelve_file:
+        try:
+            shelve_file.pop(key)
+        except KeyError:
+            pass
+    return
 
 
 def shelve_get_key(shelve_name, key, none=True, flag='r'):
@@ -357,7 +378,6 @@ def shelve_get_key(shelve_name, key, none=True, flag='r'):
 
     """
 
-    shelve_name = shelve_filename(shelve_name)
     if os.path.exists(shelve_name + '.dat') and os.path.exists(shelve_name + '.dir'):
         with shelve.open(shelve_name, flag=flag, protocol=None, writeback=False) as shelve_file:
             if isinstance(key, list):
@@ -405,7 +425,6 @@ def shelve_put_key(shelve_name, data, flag='w'):
             n    Always create a new, empty database, open for reading and writing
     """
 
-    shelve_name = shelve_filename(shelve_name)
     with shelve.open(shelve_name, flag=flag, protocol=None, writeback=True) as shelve_file:
         if isinstance(data, list):
             for tupl in data:

@@ -38,7 +38,7 @@ pip install -r requirements.txt
 3. Import FINTS Server Data or use TableContent.zip
 4. Create your Banks
 # Tested Banks
- * BMW Bank (not tested securities account data)
+ * BMW Bank (download of current daily transfer and savings transactions)
  * Consors 
  * Flatexdegiro Bank AG
  * VR Bank (not tested securities account data)

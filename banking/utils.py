@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-05-19"
+__updated__ = "2025-05-27"
 @author: Wolfgang Kramer
 """
 
@@ -68,10 +68,10 @@ def check_main_thread():
 
 
 def date_before_date(date_before, date_current):
-    '''
+    """
     returns True if date current is next weekday after date_before
     and not a weekend day
-    '''
+    """
     # Monday is 0 and Sunday is 6
     if isinstance(date_before, str):
         date_before = Datulate().convert(date_before)
@@ -98,9 +98,9 @@ def find_pattern(string, pattern):
 
 
 def list_move(listing, move, insert, after=True):
-    '''
+    """
     Moves >move< after/before >insert< in list >listing<
-    '''
+    """
     if isinstance(listing, list) and move in listing and insert in listing:
         _index_move = listing.index(move)
         _move = listing[_index_move]
@@ -113,11 +113,10 @@ def list_move(listing, move, insert, after=True):
 
 
 def list_delete_duplicates(listing):
-    '''
+    """
     Using Counter() + keys() to remove duplicated from list >listing<
     Keeps order of list
-    '''
-
+    """
     if isinstance(listing, list):
         result = Counter(listing)
         listing = [*result]
@@ -125,9 +124,9 @@ def list_delete_duplicates(listing):
 
 
 def list_positioning(listing, pattern):
-    '''
+    """
     Returns 1st item (and index) of listing or next greater or last one
-    '''
+    """
     if not isinstance(listing, list):
         Termination()
     if not listing:
@@ -336,7 +335,7 @@ def delete_shelve_files(shelve_name):
 
 
 def shelve_exist(shelve_name):
-    """ PARAMETER:     shelve_name
+    """ PARAMETER:     shelve_name = BANK_MARIADB_INI
         RETURN:        True if shelve_file exists
     """
     if os.path.exists(shelve_name + '.dat') and os.path.exists(shelve_name + '.dir'):
@@ -346,9 +345,9 @@ def shelve_exist(shelve_name):
 
 
 def shelve_get_keylist(shelve_name, flag='r'):
-    '''
-    returns all Keys of shelve_file
-    '''
+    """
+    returns all Keys of shelve_file BANK_MARIADB_INI
+    """
     with shelve.open(shelve_name, flag=flag, protocol=None, writeback=True) as shelve_file:
         key_list = []
         for key in shelve_file.keys():
@@ -357,9 +356,9 @@ def shelve_get_keylist(shelve_name, flag='r'):
 
 
 def shelve_del_key(shelve_name, key, flag='w'):
-    '''
+    """
     Deletes key in shelve_file
-    '''
+    """
     with shelve.open(shelve_name, flag=flag, protocol=None, writeback=True) as shelve_file:
         try:
             shelve_file.pop(key)
@@ -410,7 +409,8 @@ def shelve_get_key(shelve_name, key, none=True, flag='r'):
     else:
         # shelve-files incomplete or missing
         delete_shelve_files(shelve_name)
-        Termination(info=MESSAGE_TEXT['OS_ERROR'].format(shelve_name))
+        Termination(
+            info=MESSAGE_TEXT['SHELVE_NAME_MISSED'].format(shelve_name))
 
 
 def shelve_put_key(shelve_name, data, flag='w'):
@@ -438,72 +438,6 @@ def shelve_put_key(shelve_name, data, flag='w'):
             shelve_file.close()
             return
         value_error()
-
-
-def listbank_codes():
-
-    shelvefiles = glob.glob('*.dir')
-    bank_codes = []
-    for bank_code in shelvefiles:
-        bank_code = bank_code.strip('.dir')
-        if len(bank_code) == 8:
-            try:
-                int(bank_code)
-                bank_codes.append(bank_code)
-            except ValueError:
-                pass
-    return bank_codes
-
-
-def dict_all_ibans():
-    """
-    Returns a list of all ibans
-    """
-    dict_all_ibans = {}
-    bank_names = dictbank_names()
-    for bank_code in bank_names.keys():
-        accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
-        for account in accounts:
-            dict_all_ibans[account[KEY_ACC_IBAN]
-                           ] = account[KEY_ACC_PRODUCT_NAME]
-    return dict_all_ibans
-
-
-def remove_obsolete_iban_rows(row_list):
-    '''
-    Returns row list without rows with IBANs that are no longer available in the installed bank
-    '''
-    all_ibans = dict_all_ibans()
-    row_to_delete = []
-    for row in row_list:
-        if row[0] not in all_ibans.keys():
-            row_to_delete.append(row)
-    result = list(set(row_list) - set(row_to_delete))
-    return result
-
-
-def dictbank_names():
-    """
-    Returns customized BankNames, alternative BankCodes
-    """
-    bank_names = {}
-    for bank_code in listbank_codes():
-        bank_name = shelve_get_key(bank_code, KEY_BANK_NAME)
-        if bank_name:
-            bank_names[bank_code] = bank_name
-        else:
-            bank_names[bank_code] = bank_code
-    return bank_names
-
-
-def dictaccount(bank_code, account_number):
-    """
-    Returns Account Information from Shelve-File/HIUPD
-    """
-    accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
-    acc = next(
-        (acc for acc in accounts if acc[KEY_ACC_ACCOUNT_NUMBER] == account_number.lstrip('0')), None)
-    return acc
 
 
 def create_iban(bank_code=None, account_number=None):
@@ -696,11 +630,11 @@ class Calculate(object):
         return self._places(result)
 
     def percent(self, x, y):
-        '''
+        """
         returns percentage of x basis y
         e.g. x=39 y=46 returns 84.78
              x=46 y=39 returns 117.95
-        '''
+        """
         assert y != 0, 'Division by Zero {}/{}'.format(x, y)
         result = Decimal(x) / Decimal(y) * 100
         return result.quantize(Decimal('0.01'))
@@ -791,6 +725,21 @@ class Datulate(object):
             return True
         else:
             return False
+
+    def day_of_week(self, x):
+        """
+        returns
+        0    Monday
+        1    Tuesday
+        2    Wednesday
+        3    Thursday
+        4    Friday
+        5    Saturday
+        6    Sunday        
+        """
+        if isinstance(x, str):
+            x = self.convert(x)
+        return x.weekday()
 
     def today(self):
 

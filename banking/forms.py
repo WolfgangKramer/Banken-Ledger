@@ -61,7 +61,6 @@ from banking.declarations import (
     Informations,
     PERCENT,
     INFORMATION,
-    KEY_ACCOUNTS,
     KEY_ALPHA_VANTAGE, KEY_ALPHA_VANTAGE_PRICE_PERIOD,
     KEY_BANK_CODE, KEY_BANK_NAME, KEY_DIRECTORY, KEY_MAX_PIN_LENGTH,
     KEY_DOWNLOAD_ACTIVATED,
@@ -108,8 +107,6 @@ from banking.utils import (
     check_iban, Calculate,
     dec2,
     date_years, date_days,
-    dictbank_names,
-    listbank_codes,
     prices_informations_append,
     shelve_exist, shelve_get_key, shelve_put_key,
     http_error_code)
@@ -209,6 +206,7 @@ class AppCustomizing(BuiltEnterBox):
 
         Caller.caller = self.__class__.__name__
         self.shelve_app = shelve_app
+
         FieldNames = namedtuple('FieldNames', [
             KEY_PRODUCT_ID, KEY_ALPHA_VANTAGE, KEY_DIRECTORY, KEY_MARIADB_NAME, KEY_MARIADB_USER,
             KEY_MARIADB_PASSWORD, KEY_SHOW_MESSAGE,
@@ -360,9 +358,9 @@ class InputPeriodNew(InputPeriod):
     """
 
     def get_selection(self):
-        '''
+        """
         no initialization of the selection fields with the used values of last session
-        '''
+        """
 
         pass
 
@@ -442,18 +440,14 @@ class InputDateHolding(InputPeriod):
             return _date
 
 
-class InputDateIsins(BuiltSelectBox):
+class InputIsins(BuiltSelectBox):
     """
-    Selection: Period and Isins
+    Selection: Comparision Field  and Isins
     """
 
     def create_field_defs_list(self):
 
         field_defs_list = []
-        # from_date
-        field_defs_list.append(self.create_date_field(FN_FROM_DATE))
-        # to_date
-        field_defs_list.append(self.create_date_field(FN_TO_DATE))
         # comparision field_names
         combo_values = [DB_pieces, DB_market_price,
                         DB_total_amount, DB_acquisition_amount, FN_PROFIT_LOSS]
@@ -632,17 +626,17 @@ class InputPIN(BuiltEnterBox):
         pin
     """
 
-    def __init__(self, bank_code, bank_name=''):
+    def __init__(self, bank_code, mariadb, bank_name=''):
 
         self.pin = ''
         Caller.caller = self.__class__.__name__
         self._bank_code = bank_code
-        bank_names_dict = dictbank_names()
+        bank_names_dict = mariadb.dictbank_names()
         if bank_code in bank_names_dict:
             title = bank_names_dict[bank_code]
         else:
             title = MESSAGE_TITLE
-        pin_length = shelve_get_key(
+        pin_length = mariadb.shelve_get_key(
             bank_code, [KEY_MAX_PIN_LENGTH, KEY_MIN_PIN_LENGTH])
         pin_max_length = MAX_PIN_LENGTH
         if pin_length[KEY_MAX_PIN_LENGTH] is not None:
@@ -676,16 +670,16 @@ class InputTAN(BuiltEnterBox):
         tan
     """
 
-    def __init__(self, bank_code, bank_name):
+    def __init__(self, bank_code, bank_name, mariadb):
 
         Caller.caller = self.__class__.__name__
         self._bank_code = bank_code
-        bank_names_dict = dictbank_names()
+        bank_names_dict = mariadb.dictbank_names()
         if bank_code in bank_names_dict:
             title = bank_names_dict[bank_code]
         else:
             title = MESSAGE_TITLE
-        tan_max_length = shelve_get_key(bank_code, KEY_MAX_TAN_LENGTH)
+        tan_max_length = mariadb.shelve_get_key(bank_code, KEY_MAX_TAN_LENGTH)
         if not tan_max_length:
             tan_max_length = MAX_TAN_LENGTH
         while True:
@@ -724,7 +718,7 @@ class BankDataNew(BuiltEnterBox):
         field_defs = FieldNames(
             FieldDefinition(definition=COMBO,
                             name=KEY_BANK_CODE, length=8, lformat=FORMAT_FIXED,
-                            combo_values=self.bank_codes, selected=True),
+                            combo_values=self.bank_codes, selected=True, focus_out=True),
             FieldDefinition(name=KEY_BANK_NAME, length=70, protected=True),
             FieldDefinition(name=KEY_USER_ID, length=20),
             FieldDefinition(name=KEY_PIN, length=10, mandatory=False),
@@ -741,7 +735,7 @@ class BankDataNew(BuiltEnterBox):
     def validation_addon(self, field_def):
 
         if field_def.name == KEY_BANK_CODE:
-            if field_def.widget.get() in listbank_codes():
+            if field_def.widget.get() in self.mariadb.listbank_codes():
                 self.footer.set(MESSAGE_TEXT['BANK_CODE_EXIST'].
                                 format(field_def.widget.get()))
             else:
@@ -761,28 +755,36 @@ class BankDataNew(BuiltEnterBox):
         bank_code = getattr(self._field_defs, KEY_BANK_CODE).widget.get()
         field_dict = self.mariadb.select_table(
             BANKIDENTIFIER, [DB_name, DB_bic], result_dict=True, code=bank_code)
-        if field_dict:
-            if field_dict and DB_name in field_dict[0]:
-                getattr(self._field_defs, KEY_BANK_NAME).textvar.set(
-                    field_dict[0][DB_name])
-            else:
-                getattr(self._field_defs, KEY_BANK_NAME).textvar.set('')
-            if field_dict and DB_bic in field_dict[0]:
-                getattr(self._field_defs, KEY_BIC).textvar.set(
-                    field_dict[0][DB_bic])
-            else:
-                getattr(self._field_defs, KEY_BIC).textvar.set('')
-            field_dict = self.mariadb.select_table(
-                SERVER, [DB_server], result_dict=True, code=bank_code)
-            if field_dict and DB_server in field_dict[0]:
-                getattr(self._field_defs, KEY_SERVER).textvar.set(
-                    field_dict[0][DB_server])
-            else:
-                getattr(self._field_defs, KEY_SERVER).textvar.set('')
+        if field_dict and DB_name in field_dict[0]:
+            getattr(self._field_defs, KEY_BANK_NAME).textvar.set(
+                field_dict[0][DB_name])
         else:
             getattr(self._field_defs, KEY_BANK_NAME).textvar.set('')
+        if field_dict and DB_bic in field_dict[0]:
+            getattr(self._field_defs, KEY_BIC).textvar.set(
+                field_dict[0][DB_bic])
+        else:
             getattr(self._field_defs, KEY_BIC).textvar.set('')
+        field_dict = self.mariadb.select_table(
+            SERVER, [DB_server], result_dict=True, code=bank_code)
+        if field_dict and DB_server in field_dict[0]:
+            getattr(self._field_defs, KEY_SERVER).textvar.set(
+                field_dict[0][DB_server])
+        else:
             getattr(self._field_defs, KEY_SERVER).textvar.set('')
+
+    def focus_out_action(self, event):
+        if event.widget.myId == KEY_BANK_CODE:
+            bank_code = getattr(self._field_defs, KEY_BANK_CODE).widget.get()
+            field_dict = self.mariadb.select_table(
+                BANKIDENTIFIER, [DB_name, DB_bic], result_dict=True, code=bank_code)
+            if not field_dict:
+
+                getattr(self._field_defs, KEY_BANK_NAME).textvar.set('')
+
+                getattr(self._field_defs, KEY_BIC).textvar.set('')
+
+                getattr(self._field_defs, KEY_SERVER).textvar.set('')
 
 
 class BankDataChange(BuiltEnterBox):
@@ -838,16 +840,17 @@ class BankDelete(BuiltEnterBox):
         field               Selected ComoboBox Value
     """
 
-    def __init__(self,  title):
+    def __init__(self,  title, mariadb):
 
         Caller.caller = self.__class__.__name__
+        self.mariadb = mariadb
         FieldNames = namedtuple('FieldNames', [KEY_BANK_CODE, KEY_BANK_NAME])
         super().__init__(
             title=title, button1_text=BUTTON_DELETE,
             field_defs=FieldNames(
                 FieldDefinition(definition=COMBO,
                                 name=KEY_BANK_CODE, length=8, selected=True, readonly=True,
-                                combo_values=listbank_codes()),
+                                combo_values=self.mariadb.listbank_codes()),
                 FieldDefinition(name=KEY_BANK_NAME,
                                 length=70, protected=True)
             )
@@ -865,7 +868,7 @@ class BankDelete(BuiltEnterBox):
 
     def comboboxselected_action(self, event):
 
-        getattr(self._field_defs, KEY_BANK_NAME).textvar.set(shelve_get_key(
+        getattr(self._field_defs, KEY_BANK_NAME).textvar.set(self.mariadb.shelve_get_key(
             getattr(self._field_defs, KEY_BANK_CODE).widget.get(), KEY_BANK_NAME))
 
 
@@ -875,9 +878,9 @@ class IsinTableRowBox(BuiltTableRowBox):
     """
 
     def button_1_button3(self, event):
-        '''
+        """
         Import Prices
-        '''
+        """
         self.validation()
         BuiltEnterBox.button_1_button3(self, event)
 
@@ -1159,38 +1162,31 @@ class SepaCreditBox(BuiltEnterBox):
 
     def comboboxselected_action(self, event):
 
-        applicant_iban, applicant_bic, purpose = (
-            self.mariadb.select_sepa_transfer_creditor_data(
-                applicant_name=getattr(self._field_defs, SEPA_CREDITOR_NAME).widget.get()))
-        if applicant_bic is not None:
+        result = self.mariadb.select_sepa_transfer_creditor_data(
+            applicant_name=getattr(self._field_defs, SEPA_CREDITOR_NAME).widget.get())
+        if result:
+            applicant_iban, applicant_bic, purpose = result[0]
             getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set(
                 applicant_bic)
-        if applicant_iban is not None:
-            getattr(self._field_defs, SEPA_CREDITOR_IBAN).textvar.set(
-                applicant_iban)
             self._bankdata(applicant_iban)
-        if purpose is not None:
             getattr(self._field_defs, SEPA_PURPOSE_1).textvar.set(purpose[:70])
             getattr(self._field_defs, SEPA_PURPOSE_2).textvar.set(purpose[70:])
 
     def focus_out_action(self, event):
 
         if event.widget.myId == SEPA_CREDITOR_NAME:
-            applicant_iban, applicant_bic, purpose = (
-                self.mariadb.select_sepa_transfer_creditor_data(
-                    applicant_name=getattr(self._field_defs, SEPA_CREDITOR_NAME).widget.get()))
-            if applicant_bic is not None:
-                getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set(
-                    applicant_bic)
-            if applicant_iban is not None:
-                getattr(self._field_defs, SEPA_CREDITOR_IBAN).textvar.set(
-                    applicant_iban)
-                self._bankdata(applicant_iban)
-            if purpose is not None:
-                getattr(self._field_defs, SEPA_PURPOSE_1).textvar.set(
-                    purpose[:70])
-                getattr(self._field_defs, SEPA_PURPOSE_2).textvar.set(
-                    purpose[70:])
+            result = self.mariadb.select_sepa_transfer_creditor_data(
+                applicant_name=getattr(self._field_defs, SEPA_CREDITOR_NAME).widget.get())
+            if not result:
+                getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set('')
+                getattr(self._field_defs, SEPA_CREDITOR_IBAN).textvar.set('')
+                getattr(self._field_defs,
+                        SEPA_CREDITOR_BANK_NAME).textvar.set('')
+                getattr(self._field_defs,
+                        SEPA_CREDITOR_BANK_LOCATION).textvar.set('')
+                getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set('')
+                getattr(self._field_defs, SEPA_PURPOSE_1).textvar.set('')
+                getattr(self._field_defs, SEPA_PURPOSE_2).textvar.set('')
         if event.widget.myId == SEPA_CREDITOR_IBAN:
             iban = getattr(self._field_defs, SEPA_CREDITOR_IBAN).widget.get()
             iban = iban.replace(' ', '')
@@ -1382,7 +1378,7 @@ class PandasBoxHolding(BuiltPandasBox):
         self.dataframe = self.dataframe.drop(
             columns=[DB_amount_currency, DB_price_currency, DB_currency],
             axis=1, errors='ignore')
-        self.dataframe = self.dataframe.fillna(value='')
+        #self.dataframe = self.dataframe.fillna(value='')
         self.pandas_table.updateModel(TableModel(self.dataframe))
         self.pandas_table.redraw()
 
@@ -1416,15 +1412,19 @@ class PandasBoxHoldingPercent(BuiltPandasBox):
     def create_dataframe(self):
 
         data_to_date, data_from_date = self.dataframe
-        # delete complete sale and buy positions of to_date and from_date
+
         to_map_set = {*map(self._get_name, data_to_date)}
         from_map_set = {*map(self._get_name, data_from_date)}
-        removes = to_map_set.difference(from_map_set)
-        data_to_date = [
-            item for item in data_to_date if item[DB_name] not in removes]
+        # purchase positions: insert to data_from_date
+        inserts = to_map_set.difference(from_map_set)
+        data_to_date_insert = [
+            item for item in data_to_date if item[DB_name] in inserts]
+        data_from_date = data_from_date + data_to_date_insert
+        # sale position delete form data_from_date
         removes = from_map_set.difference(to_map_set)
         data_from_date = [
             item for item in data_from_date if item[DB_name] not in removes]
+
         data_to_date = sorted(data_to_date, key=lambda i: (i[DB_name]))
         data_from_date = sorted(data_from_date, key=lambda i: (i[DB_name]))
         # create dataframe
@@ -1696,26 +1696,41 @@ class PandasBoxIsinTable(BuiltPandasBox):
 
 class PandasBoxIsinComparision(BuiltPandasBox):
     """
-    TOP-LEVEL-WINDOW        Shows Comaprision of Isins prices, amounts, proft_looss
-
+    TOP-LEVEL-WINDOW        Shows market_prices, total_amounts, pieces, profit_loss of compared isin_codes
     PARAMETER:
         dataframe           data per price_date
     """
 
     def create_dataframe(self):
 
-        (db_field, data, sign) = self.dataframe
+        (db_field, data) = self.dataframe
+        dataframe = DataFrame(data)
+        dataframe = dataframe.dropna(how='all', axis=1)
+        self.dataframe = dataframe.pivot(
+            index='price_date', columns='name', values=db_field)
+
+
+class PandasBoxIsinComparisionPercent(BuiltPandasBox):
+    """
+    TOP-LEVEL-WINDOW        Shows market_prices, total_amounts, pieces, profit_loss of compared isin_codes
+                            Shows data of isin_codes with their the maximum common time interval
+    PARAMETER:
+        dataframe           data per price_date
+    """
+
+    def create_dataframe(self):
+
+        (db_field, data) = self.dataframe
         dataframe = DataFrame(data)
         dataframe = dataframe.dropna(how='all', axis=1)
         self.dataframe = dataframe.pivot(
             index='price_date', columns='name', values=db_field)
         columns = self.dataframe.columns
-        if sign == '%':
-            base_row = self.dataframe.head(1)
-            for idx, column, in enumerate(columns):
-                if base_row.iloc[0, idx] != 0:
-                    self.dataframe[column] = (
-                        self.dataframe[column] / base_row.iloc[0, idx] - 1) * 100
+        base_row = self.dataframe.head(1)
+        for idx, column, in enumerate(columns):
+            if base_row.iloc[0, idx] != 0:
+                self.dataframe[column] = (
+                    self.dataframe[column] / base_row.iloc[0, idx] - 1) * 100
 
 
 class PandasBoxStatementBalances(BuiltPandasBox):
@@ -1746,7 +1761,7 @@ class PandasBoxStatementBalances(BuiltPandasBox):
         if isinstance(self.dataframe, tuple):
             data, columns = self.dataframe
             self.dataframe = DataFrame(data=data, columns=columns)
-        names = list(self.dataframe.columns)
+        names = self.dataframe.columns.tolist()
         if DB_amount in names:
             self.dataframe[DB_amount] = self.dataframe[[DB_amount, DB_status]].apply(
                 lambda x: self._debit(*x), axis=1)
@@ -1765,7 +1780,7 @@ class PandasBoxStatementBalances(BuiltPandasBox):
                      DB_closing_currency, DB_closing_status, DB_amount_currency, DB_price_currency
                      ]
         )
-        self.dataframe = self.dataframe.fillna(value='')
+        #self.dataframe = self.dataframe.fillna(value='')
         self.pandas_table.updateModel(TableModel(self.dataframe))
         self.pandas_table.redraw()
 
@@ -2154,9 +2169,9 @@ class PandasBoxLedgerTable(BuiltPandasBox):
         self.quit_widget()
 
     def _update_ledger_statement(self, status, ledger_dict, row_dict):
-        '''
+        """
         Connect ledger row to credit or debit statement row
-        '''
+        """
 
         if status == CREDIT:
             ledger_account = ledger_dict[DB_credit_account]
@@ -2446,7 +2461,7 @@ class PandasBoxStatementTable(BuiltPandasBox):
     def create_dataframe(self):
 
         self.dataframe = DataFrame(data=self.data)
-        names = list(self.dataframe.columns)
+        names = self.dataframe.columns.tolist()
         if DB_amount in names:
             self.dataframe[DB_amount] = self.dataframe[[DB_amount, DB_status]].apply(
                 lambda x: self._debit(*x), axis=1)
@@ -2465,7 +2480,7 @@ class PandasBoxStatementTable(BuiltPandasBox):
                      DB_closing_currency, DB_closing_status, DB_amount_currency, DB_price_currency
                      ]
         )
-        self.dataframe = self.dataframe.fillna(value='')
+        #self.dataframe = self.dataframe.fillna(value='')
         self.pandas_table.updateModel(TableModel(self.dataframe))
         self.pandas_table.redraw()
 
@@ -2509,9 +2524,14 @@ class PandasBoxBalancesAllBanks(PandasBoxStatementBalances):
         dataframe           DataFrame object
     """
 
+    def __init__(self, title, dataframe, mode, bank_names):
+
+        Caller.caller = self.__class__.__name__
+        self.bank_names = bank_names
+        super().__init__(title=title, dataframe=dataframe, mode=mode)
+
     def create_dataframe(self):
 
-        bank_names = dictbank_names()
         dataframe_all = concat(self.dataframe)
         max_entry_date = dataframe_all[DB_entry_date].max()
         # total sum all Banks
@@ -2527,7 +2547,7 @@ class PandasBoxBalancesAllBanks(PandasBoxStatementBalances):
             dataframe[DB_entry_date] = max_entry_date
             dataframe[KEY_BANK_NAME] = ''
             dataframe.at[len(
-                dataframe)-1, KEY_BANK_NAME] = bank_names[dataframe.at[0, KEY_BANK_CODE]]
+                dataframe)-1, KEY_BANK_NAME] = self.bank_names[dataframe.at[0, KEY_BANK_CODE]]
             dataframes.append(dataframe)
         # append total sum all Bank
         dataframes.append(dataframe_all.tail(1))
@@ -2624,12 +2644,13 @@ class PandasBoxTotals(BuiltPandasBox):
         data           data_total_amounts (list of tuple: (iban/account, entry_date, sum)
     """
 
-    def __init__(self, title, data, mariadb):
+    def __init__(self, title, data, mariadb, portfolio=['DE81101308001002902112', 'DEXX504000000004414413']):
 
         Caller.caller = self.__class__.__name__
         self.title = title
         self.data = data
         self.mariadb = mariadb
+        self.portfolio = portfolio
         super().__init__(title=title, dataframe=data, mode=EDIT_ROW)
 
     def _debit(self, amount, status=CREDIT, places=2):
@@ -2638,61 +2659,45 @@ class PandasBoxTotals(BuiltPandasBox):
             amount = amount * -1
         return amount
 
-    def _dictaccount(self, bank_code, account_number):
-        """
-        Returns Account Information from Shelve-File/HIUPD
-        """
-        accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
-        if accounts:
-            acc = next(
-                (acc for acc in accounts if acc[KEY_ACC_ACCOUNT_NUMBER] == account_number.lstrip('0')), None)
-            return acc
-        else:
-            MessageBoxTermination(
-                info=MESSAGE_TEXT['BANK_DATA_ACCOUNTS_MISSED'].format(bank_code) + "\n")
-
-    def _acc_product_name(self, x):
-
-        acc_product_name = self._dictaccount(x[4:12], x[12:])[
-            KEY_ACC_PRODUCT_NAME]
-        acc_account_number = self._dictaccount(
-            x[4:12], x[12:])[KEY_ACC_ACCOUNT_NUMBER]
-        if acc_product_name:
-            return acc_product_name + acc_account_number
-        else:
-            return x[12:]
-
     def create_dataframe(self):
 
         self.dataframe = DataFrame(self.dataframe, columns=[
             DB_iban, DB_date, DB_status, DB_total_amount])
+        self.dataframe[DB_total_amount] = self.dataframe[[DB_total_amount, DB_status]].apply(
+            lambda x: self._debit(*x), axis=1)
+        self.dataframe = self.dataframe.sort_values([DB_iban, DB_date])
+        self.dataframe = self.dataframe.pivot_table(index=[DB_date], columns=[
+            DB_iban], values=[DB_total_amount])
+        self.ffill_dataframe()
+        self.dataframe[FN_TOTAL] = self.dataframe.sum(
+            axis=1).apply(lambda x: dec2.convert(x))
+        self.dataframe = self.dataframe.iloc[1:]
         iban_name_dict = self.mariadb.select_dict(LEDGER_COA, DB_iban, DB_name)
         account_name_dict = self.mariadb.select_dict(
             LEDGER_COA, DB_account, DB_name)
-        self.dataframe[DB_name] = self.dataframe.apply(
-            lambda row: iban_name_dict[row[DB_iban]] if row[DB_iban] in iban_name_dict else account_name_dict[row[DB_iban]], axis=1)
-        del self.dataframe[DB_iban]
-        self.dataframe[DB_total_amount] = self.dataframe[[DB_total_amount, DB_status]].apply(
-            lambda x: self._debit(*x), axis=1)
-        self.dataframe = self.dataframe.sort_values([DB_name, DB_date])
-        self.dataframe = self.dataframe.pivot_table(index=[DB_date], columns=[
-            DB_name], values=[DB_total_amount])
+        self.dataframe.columns = [col[1] for col in self.dataframe.columns]
+        self.dataframe = self.dataframe.rename(columns={col: iban_name_dict[col]
+                                                        if col in iban_name_dict else col
+                                                        for col in self.dataframe.columns})
+
+    def ffill_dataframe(self):
         '''
-        # Creating dictionary to map column names to their index
-        column_index_dict = {name: i for i,
-                             name in enumerate(self.dataframe.columns)}
-        # fills cell in next row if empty
-        last_row = None
-        for row in self.dataframe.itertuples(name='Row'):
-            for column_name in column_index_dict.keys():
-                column_index = column_index_dict[column_name]
-                if last_row and not self.dataframe.at[row.Index, column_index]:
-                    self.dataframe.at[row.Index,
-                                      column_index] = last_row[column_index]
-            last_row = row
+        ffill account columns 
         '''
-        self.dataframe[FN_TOTAL] = self.dataframe.sum(
-            axis=1).apply(lambda x: dec2.convert(x))
+        columns = self.dataframe.columns.to_list()
+        for column in columns:
+            _, iban = column
+            if iban in self.portfolio:
+                # index of first not empty cell
+                start_index = self.dataframe[column].first_valid_index()
+                # index of last not empty cell
+                end_index = self.dataframe[column].last_valid_index()
+                self.dataframe.loc[start_index:end_index,
+                                   column] = self.dataframe.loc[start_index:end_index, column].ffill()
+            else:
+                self.dataframe[column] = self.dataframe[column].ffill()
+                # self.dataframe[column] = self.dataframe[column].fillna(
+                #    method='ffill')
 
 
 class PandasBoxTransactionProfit(BuiltPandasBox):
@@ -2944,12 +2949,12 @@ class VersionTransaction(BuiltEnterBox):
         field_dict          Dictionary Of Version of Used Transactions
     """
 
-    def __init__(self, title, bank_code, transaction_versions):
+    def __init__(self, title, bank_code, transaction_versions, mariadb):
 
         Caller.caller = self.__class__.__name__
         self.bank_code = bank_code
-        transaction_version_allowed = shelve_get_key(self.bank_code,
-                                                     KEY_VERSION_TRANSACTION_ALLOWED)
+        transaction_version_allowed = mariadb.shelve_get_key(self.bank_code,
+                                                             KEY_VERSION_TRANSACTION_ALLOWED)
         if transaction_version_allowed:
             field_defs = [
                 FieldDefinition(definition=COMBO,

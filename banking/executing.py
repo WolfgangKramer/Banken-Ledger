@@ -1,6 +1,6 @@
 """
 Created on 09.12.2019
-__updated__ = "2025-05-19"
+__updated__ = "2025-06-14"
 Author: Wolfang Kramer
 """
 
@@ -34,6 +34,7 @@ from banking.declarations import (
     FN_DATE, FN_FROM_DATE, FN_TO_DATE,
     FN_PIECES_CUM, FN_ALL_BANKS,
     FN_CREDIT, FN_DEBIT, FN_BALANCE,
+    FN_PROFIT_LOSS,
     INFORMATION, Informations,
     JSON_KEY_ERROR_MESSAGE, JSON_KEY_META_DATA,
     KEY_ACCOUNTS, KEY_ACC_BANK_CODE, KEY_ACC_OWNER_NAME, KEY_ALPHA_VANTAGE_PRICE_PERIOD,
@@ -50,7 +51,7 @@ from banking.declarations import (
     KEY_USER_ID, KEY_VERSION_TRANSACTION,
     MENU_TEXT, MESSAGE_TEXT, MESSAGE_TITLE,
     NOT_ASSIGNED, NUMERIC, NO_CURRENCY_SIGN,
-    OUTPUTSIZE_FULL, OUTPUTSIZE_COMPACT, ORIGIN_PRICES, ORIGIN_INSERTED,
+    OUTPUTSIZE_FULL, OUTPUTSIZE_COMPACT, ORIGIN, ORIGIN_PRICES, ORIGIN_INSERTED,
     PERCENT,
     SCRAPER_BANKDATA,
     SEPA_AMOUNT, SEPA_CREDITOR_BIC,
@@ -64,9 +65,9 @@ from banking.declarations import (
     YAHOO,
 )
 from banking.declarations_mariadb import (
-    TABLE_FIELDS,
+    TABLE_FIELDS, TABLE_FIELDS_PROPERTIES,
 
-    DB_amount_currency, DB_amount, DB_account, DB_applicant_name,
+    DB_acquisition_amount, DB_amount_currency, DB_amount, DB_account, DB_applicant_name,
     DB_opening_balance, DB_opening_currency, DB_opening_status, DB_opening_entry_date,
     DB_closing_balance, DB_closing_currency, DB_closing_status, DB_closing_entry_date,
     DB_counter, DB_date, DB_category, DB_code, DB_currency, DB_credit_account,
@@ -79,14 +80,17 @@ from banking.declarations_mariadb import (
     DB_pieces, DB_portfolio, DB_purpose_wo_identifier,
     DB_total_amount, DB_price_date,
     DB_total_amount_portfolio, DB_transaction_type,
-    DB_symbol,
+    DB_symbol, DB_status,
     DB_open, DB_low, DB_high, DB_close, DB_adjclose, DB_volume, DB_dividends, DB_splits,
+
+    PRODUCTIVE_DATABASE_NAME,
 
     HOLDING, HOLDING_VIEW,
     BANKIDENTIFIER, LEDGER_STATEMENT,
     ISIN, PRICES_ISIN_VIEW, PRICES, SERVER, STATEMENT,
     TRANSACTION, TRANSACTION_VIEW,
     LEDGER, LEDGER_COA, LEDGER_VIEW,
+    SHELVES,
 
 )
 from banking.formbuilts import (
@@ -106,9 +110,9 @@ from banking.forms import (
     BankDataChange, BankDataNew, BankDelete,
     InputISIN,
     InputDate, InputPeriod, InputDateHolding,
-    InputDateIsins, InputDateTable, InputDateTransactions, InputDatePrices,
+    InputIsins, InputDateTable, InputDateTransactions, InputDatePrices,
     PandasBoxLedgerCoaTable, PandasBoxLedgerTable,
-    PandasBoxIsinComparision,
+    PandasBoxIsinComparision, PandasBoxIsinComparisionPercent,
     PandasBoxStatementTable, PandasBoxHoldingTable, PandasBoxIsinTable,
     PandasBoxBalancesAllBanks,
     PandasBoxHoldingPercent, PandasBoxTotals, PandasBoxTransactionDetail,
@@ -125,19 +129,18 @@ from banking.scraper import AlphaVantage, BmwBank
 from banking.sepa import SepaCreditTransfer
 from banking.utils import (
     date_days, date_years, dec2,
-    dictaccount, dict_get_first_key,
+    dict_get_first_key,
     exception_error,
     holding_informations_append,
-    listbank_codes,
     prices_informations_append,
     shelve_exist, shelve_put_key, shelve_get_key, shelve_get_keylist, shelve_del_key,
-    dictbank_names, delete_shelve_files,
+    delete_shelve_files,
 )
-from banking.declarations_mariadb import TABLE_FIELDS_PROPERTIES
 
-'''
+
+"""
 Ledger declaratives
-'''
+"""
 
 
 PRINT_LENGTH = 140
@@ -173,13 +176,13 @@ class FinTS_MariaDB_Banking(object):
             except Exception:
                 exception_error(message=MESSAGE_TEXT['CONN'].format(
                     MariaDBuser, MariaDBname))
+            self.bank_names = self.mariadb.dictbank_names()
         else:
             MariaDBname = UNKNOWN
             self.shelve_app = {}
         while True:
             self.wpd_iban = []
             self.kaz_iban = []
-            self.bank_names = dictbank_names()
             self.window = None
             self.window = Tk()
             self.progress = ProgressBar(self.window)
@@ -190,7 +193,11 @@ class FinTS_MariaDB_Banking(object):
             _canvas.pack(expand=True, fill='both')
             _canvas_image = PhotoImage(file=("background.gif"))
             _canvas.create_image(0, 0, anchor='nw', image=_canvas_image)
-            _canvas.create_text(300, 200, fill="lightblue", font=('Arial', 20, 'bold'),
+            if MariaDBname.lower() != PRODUCTIVE_DATABASE_NAME:
+                fill_colour = 'red'
+            else:
+                fill_colour = 'lightblue'
+            _canvas.create_text(300, 200, fill=fill_colour, font=('Arial', 20, 'bold'),
                                 text=MESSAGE_TEXT['DATABASE'].format(MariaDBname))
             self._def_styles()
             self.bank_owner_account = self._create_bank_owner_account()
@@ -279,10 +286,10 @@ class FinTS_MariaDB_Banking(object):
         self._delete_footer()
         CANCELED = ''
         if self.shelve_app[KEY_THREADING] == TRUE:
-            banks_credentials = listbank_codes()
+            banks_credentials = self.mariadb.listbank_codes()
             banks_download = []
             for bank_code in banks_credentials:
-                if shelve_get_key(bank_code, KEY_DOWNLOAD_ACTIVATED):
+                if self.mariadb.shelve_get_key(bank_code, KEY_DOWNLOAD_ACTIVATED):
                     # PIN input outside of Thread
                     bank = self._bank_init(bank_code)
                     if bank.scraper:
@@ -293,6 +300,7 @@ class FinTS_MariaDB_Banking(object):
                         else:
                             MessageBoxInfo(MESSAGE_TEXT['CREDENTIALS'].format(
                                 self.bank_names[bank_code]))
+                        bank.logoff()
                     else:
                         self.footer.set(MESSAGE_TEXT['CREDENTIALS_CHECK'].format(
                             self.bank_names[bank_code]))
@@ -310,15 +318,19 @@ class FinTS_MariaDB_Banking(object):
                 download_thread = Thread(
                     name=bank.bank_name, target=self.mariadb.all_accounts, args=(bank, self.holdings))
                 download_thread.start()
-                while download_thread.is_alive():
+                seconds = 0
+                while download_thread.is_alive() and seconds < 60:
                     sleep(1)
+                    seconds += 1
                     self.progress.update_progressbar()
+                if bank.scraper:
+                    bank.logoff()
             self.progress.stop()
             self.footer.set(
                 MESSAGE_TEXT['DOWNLOAD_DONE'].format(CANCELED, 10 * '!'))
         else:
-            for bank_code in listbank_codes():
-                if shelve_get_key(bank_code, KEY_DOWNLOAD_ACTIVATED):
+            for bank_code in self.mariadb.listbank_codes():
+                if self.mariadb.shelve_get_key(bank_code, KEY_DOWNLOAD_ACTIVATED):
                     self._all_accounts(bank_code)
         self._show_informations()
 
@@ -331,6 +343,8 @@ class FinTS_MariaDB_Banking(object):
                 MESSAGE_TEXT['DOWNLOAD_RUNNING'].format(bank.bank_name))
             self.progress.start()
             self.mariadb.all_accounts(bank, self.holdings)
+            if bank.scraper:
+                bank.logoff()
             self.progress.stop()
             self.footer.set(
                 MESSAGE_TEXT['DOWNLOAD_DONE'].format(bank.bank_name, 10 * '!'))
@@ -411,8 +425,8 @@ class FinTS_MariaDB_Banking(object):
         title = ' '.join([bank_name, MENU_TEXT['Customize'],
                           MENU_TEXT['Change Login Data']])
         try:
-            login_data = shelve_get_key(bank_code, [KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC,
-                                                    KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_DOWNLOAD_ACTIVATED])
+            login_data = self.mariadb.shelve_get_key(bank_code, [KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC,
+                                                                 KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_DOWNLOAD_ACTIVATED])
         except KeyError as key_error:
             MessageBoxInfo(
                 title=title, message=MESSAGE_TEXT['LOGIN'].format(bank_code, key_error))
@@ -436,7 +450,7 @@ class FinTS_MariaDB_Banking(object):
                     (KEY_DOWNLOAD_ACTIVATED,
                      bank_data_box.field_dict[KEY_DOWNLOAD_ACTIVATED]),
                     ]
-            shelve_put_key(bank_code, data)
+            self.mariadb.shelve_put_key(bank_code, data)
         except KeyError as key_error:
             exception_error(
                 message=MESSAGE_TEXT['LOGIN'].format(bank_code, key_error))
@@ -478,13 +492,13 @@ class FinTS_MariaDB_Banking(object):
                         (KEY_DOWNLOAD_ACTIVATED,
                          bank_data_box.field_dict[KEY_DOWNLOAD_ACTIVATED]),
                         ]
-                shelve_put_key(bank_code, data, flag='c')
+                self.mariadb.shelve_put_key(bank_code, data)
             except KeyError as key_error:
                 exception_error()
                 MessageBoxInfo(title=title,
                                message=MESSAGE_TEXT['LOGIN'].format(bank_code, key_error))
                 return
-            bank_name = shelve_get_key(bank_code, KEY_BANK_NAME)
+            bank_name = self.mariadb.shelve_get_key(bank_code, KEY_BANK_NAME)
             if bank_code in list(SCRAPER_BANKDATA.keys()):
                 if bank_code == BMW_BANK_CODE:
                     self._bank_data_scraper(BMW_BANK_CODE)
@@ -503,7 +517,7 @@ class FinTS_MariaDB_Banking(object):
 
         self._delete_footer()
         title = ' '.join([MENU_TEXT['Customize'], MENU_TEXT['Delete Bank']])
-        deletebank = BankDelete(title)
+        deletebank = BankDelete(title, self.mariadb)
         if deletebank.button_state == WM_DELETE_WINDOW:
             return
         bank_code = deletebank.field_dict[KEY_BANK_CODE]
@@ -513,7 +527,7 @@ class FinTS_MariaDB_Banking(object):
                 MessageBoxInfo(title=title, message=MESSAGE_TEXT['BANK_DELETE_failed'].format(
                     bank_name, table.upper()))
                 return
-        delete_shelve_files(bank_code)
+        self.mariadb.execute_delete(SHELVES, code=bank_code)
         MessageBoxInfo(
             title=title,
             message=MESSAGE_TEXT['BANK_DELETED'].format(bank_name, bank_code))
@@ -523,7 +537,6 @@ class FinTS_MariaDB_Banking(object):
 
         bank = self._bank_init(bank_code)
         get_accounts = bank.get_accounts()
-        bank.logoff()
         accounts = []
         for account in get_accounts:
             acc = {}
@@ -540,7 +553,7 @@ class FinTS_MariaDB_Banking(object):
                 (KEY_STORAGE_PERIOD, bank.storage_period),
                 (KEY_MIN_PIN_LENGTH, 6),
                 (KEY_MAX_PIN_LENGTH, 16)]
-        shelve_put_key(bank_code, data, flag='w')
+        self.mariadb.shelve_put_key(bank_code, data)
 
     def _bank_init(self, bank_code):
 
@@ -564,7 +577,7 @@ class FinTS_MariaDB_Banking(object):
     def _bank_show_shelve(self, bank_code):
 
         self._delete_footer()
-        shelve_data = shelve_get_key(bank_code, SHELVE_KEYS)
+        shelve_data = self.mariadb.shelve_get_key(bank_code, SHELVE_KEYS)
         shelve_text = MESSAGE_TEXT['SHELVE'].format(bank_code)
         for key in SHELVE_KEYS:
             if shelve_data[key]:
@@ -625,18 +638,18 @@ class FinTS_MariaDB_Banking(object):
         bank_name = self._bank_name(bank_code)
         title = ' '.join([bank_name, MENU_TEXT['Customize'],
                           MENU_TEXT['Change FinTS Transaction Version']])
-        transaction_versions = shelve_get_key(
+        transaction_versions = self.mariadb.shelve_get_key(
             bank_code, KEY_VERSION_TRANSACTION)
         try:
             transaction_version_box = VersionTransaction(
-                title, bank_code, transaction_versions)
+                title, bank_code, transaction_versions, self.mariadb)
             if transaction_version_box.button_state == WM_DELETE_WINDOW:
                 return
             for key in transaction_version_box.field_dict.keys():
                 transaction_versions[key[2:5]
                                      ] = transaction_version_box.field_dict[key]
             data = (KEY_VERSION_TRANSACTION, transaction_versions)
-            shelve_put_key(bank_code, data)
+            self.mariadb.shelve_put_key(bank_code, data)
         except KeyError as key_error:
             MessageBoxInfo(title=title, message=MESSAGE_TEXT['LOGIN'].format(
                 bank_name, key_error))
@@ -731,7 +744,7 @@ class FinTS_MariaDB_Banking(object):
             download_menu.add_cascade(
                 label=bank_name,
                 command=lambda x=bank_code: self._all_accounts(x))
-            accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
             if accounts:
                 for acc in accounts:
                     if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
@@ -742,22 +755,22 @@ class FinTS_MariaDB_Banking(object):
             download_menu.add_separator()
 
     def _create_menu_transfer(self, menu, menu_font):
-        '''
+        """
         TRANSFER Menu
-        '''
+        """
         transfer_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
         menu.add_cascade(label=MENU_TEXT['Transfer'], menu=transfer_menu)
         bank_names = {}
         for bank_name in self.bank_names.values():
             bank_code = dict_get_first_key(self.bank_names, bank_name)
-            accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
             if accounts:
                 for acc in accounts:
                     if 'HKCCS' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
                         bank_names[bank_code] = bank_name
         for bank_name in bank_names.values():
             bank_code = dict_get_first_key(bank_names, bank_name)
-            accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
             account_menu = Menu(transfer_menu, tearoff=0,
                                 font=menu_font, bg='Lightblue')
             if accounts:
@@ -784,7 +797,7 @@ class FinTS_MariaDB_Banking(object):
         bank_names = {}
         for bank_name in self.bank_names.values():
             bank_code = dict_get_first_key(self.bank_names, bank_name)
-            accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
             if accounts:
                 for acc in accounts:
                     if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
@@ -800,10 +813,10 @@ class FinTS_MariaDB_Banking(object):
                          self._data_holding_performance(x, y)))
             all_banks_menu.add_command(
                 label=MENU_TEXT['Holding ISIN Comparision'],
-                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision(x, '', '')))
+                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision(x, '')))
             all_banks_menu.add_command(
                 label=MENU_TEXT['Holding ISIN Comparision'] + '%',
-                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision(x, '', '%')))
+                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision_percent(x, '')))
             all_banks_menu.add_command(label=MENU_TEXT['Balances'],
                                        command=self._data_balances)
 
@@ -909,7 +922,7 @@ class FinTS_MariaDB_Banking(object):
                 account_menu = Menu(
                     typ_menu, tearoff=0, font=menu_font, bg='Lightblue')
                 bank_code = dict_get_first_key(self.bank_names, bank_name)
-                accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+                accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
                 if menu_text == MENU_TEXT['Show']:
                     accounts_exist = self._create_menu_show_accounts(
                         accounts, account_menu, bank_code, bank_name)
@@ -962,10 +975,10 @@ class FinTS_MariaDB_Banking(object):
                                  y=acc[KEY_ACC_IBAN]: self._data_holding_performance(x, y)))
                     account_menu.add_command(
                         label=MENU_TEXT['Holding ISIN Comparision'],
-                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y, '')))
+                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y)))
                     account_menu.add_command(
                         label=MENU_TEXT['Holding ISIN Comparision'] + '%',
-                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y, '%')))
+                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y)))
                     account_menu.add_command(
                         label=MENU_TEXT['Transaction Detail'],
                         command=(lambda x=bank_name,
@@ -1017,16 +1030,16 @@ class FinTS_MariaDB_Banking(object):
         return accounts_exist
 
     def _create_bank_owner_account(self):
-        '''
+        """
         create  multiple bank_owner_account hierarchy as dicts
         returns: dict : key--> bank_name: 
                             value/key--> owner:
                                 value --> list  accounts
                                     list_item  --> dict account_data
-        '''
+        """
         bank_owner_account = {}
         for bank_code in self.bank_names.keys():
-            accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
             account_product_names = []
             if accounts:
                 for acc in accounts:
@@ -1083,72 +1096,119 @@ class FinTS_MariaDB_Banking(object):
                 self.footer.set(
                     MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
 
-    def _data_holding_isin_comparision(self, bank_name, iban, sign):
+    def _data_holding_isin_comparision(self, bank_name, iban):
 
         self._delete_footer()
-
-        to_date = date.today()
-        while int(to_date.strftime('%w')) in [6, 0]:
-            to_date = to_date - timedelta(days=1)
-        if iban == '':
-            from_date = self.mariadb.select_max_column_value(
-                HOLDING, DB_price_date, period=(START_DATE_HOLDING, to_date - timedelta(days=90)))
-        else:
-            from_date = self.mariadb.select_max_column_value(
-                HOLDING, DB_price_date, iban=iban, period=(START_DATE_HOLDING, to_date - timedelta(days=90)))
-        if not from_date:
-            return None, None
-        while int(from_date.strftime('%w')) in [6, 0]:
-            from_date = from_date - timedelta(days=1)
-        if to_date < from_date:
-            to_date = from_date
-        if sign == '%':
-            title = ' '.join(
-                [bank_name, MENU_TEXT['Holding ISIN Comparision %']])
-        else:
-            title = ' '.join(
-                [bank_name, MENU_TEXT['Holding ISIN Comparision']])
-        if iban:
-            isin_dict = self.mariadb.select_dict(
-                HOLDING_VIEW, DB_ISIN, DB_name, iban=iban, order=DB_name)
-        else:
-            isin_dict = self.mariadb.select_dict(
-                HOLDING_VIEW, DB_ISIN, DB_name, period=(from_date, to_date), order=DB_name)
-        if not isin_dict:
-            MessageBoxInfo(title=title, message=(
-                MESSAGE_TEXT['DATA_NO'].format('', '')))
-            return
-        data_dict = {FN_FROM_DATE: from_date,
-                     FN_TO_DATE: to_date, FN_COMPARATIVE: DB_market_price}
-        for isin_code in isin_dict.keys():
-            data_dict[isin_code] = 0
+        title = ' '.join([bank_name, MENU_TEXT['Holding ISIN Comparision']])
+        data_dict_period = {
+            FN_FROM_DATE: date.today(),  FN_TO_DATE: date.today()}
         while True:
-            date_isins = InputDateIsins(table=isin_dict,
-                                        title=title, data_dict=data_dict, separator=[FN_TO_DATE, FN_COMPARATIVE])
-            if date_isins.button_state == WM_DELETE_WINDOW:
+            input_period = InputPeriod(
+                title=title, data_dict=data_dict_period, selection_name=title + 'A')
+            if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            data_dict = date_isins.field_dict
-            selected_isins = list(
-                filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
-            # more than one isin selected
-            if len(selected_isins) > 1:
-                from_date, to_date, data = self.mariadb.select_holding_comparision(
-                    iban, data_dict[FN_COMPARATIVE], selected_isins, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
-                if data:
+            data_dict_period = input_period.field_dict
+            period = (data_dict_period[FN_FROM_DATE],
+                      data_dict_period[FN_TO_DATE])
+            if iban:
+                isin_dict = self.mariadb.select_dict(
+                    HOLDING_VIEW, DB_ISIN, DB_name, iban=iban, period=period, order=DB_name)
+            else:
+                isin_dict = self.mariadb.select_dict(
+                    HOLDING_VIEW, DB_ISIN, DB_name, period=period, order=DB_name)
+            if isin_dict:
+                data_dict_isins = {FN_COMPARATIVE: DB_total_amount}
+                for isin_code in isin_dict.keys():
+                    data_dict_isins[isin_code] = 0
+                input_isins = InputIsins(table=isin_dict, selection_name=title + 'B',
+                                         title=title, data_dict=data_dict_isins, separator=[FN_COMPARATIVE])
+                if input_isins.button_state == WM_DELETE_WINDOW:
+                    return
+                data_dict_isins = input_isins.field_dict
+                selected_isins = list(
+                    filter(lambda x: data_dict_isins[x] == 1, list(data_dict_isins.keys())))
+                if data_dict_isins[FN_COMPARATIVE] == FN_PROFIT_LOSS:
+                    db_fields = [DB_name, DB_price_date,
+                                 ''.join([DB_total_amount, '-', DB_acquisition_amount, ' AS ', FN_PROFIT_LOSS])]
+                else:
+                    db_fields = [DB_name, DB_price_date,
+                                 data_dict_isins[FN_COMPARATIVE]]
+                if iban:
+                    selected_holding_data = self.mariadb.select_holding_data(
+                        field_list=db_fields, iban=iban, isin_code=selected_isins,
+                        period=period)
+                else:
+                    selected_holding_data = self.mariadb.select_holding_data(
+                        field_list=db_fields, isin_code=selected_isins, period=period)
+                if selected_holding_data:
                     self.footer.set('')
-                    title_period = ' '.join([data_dict[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
-                        from_date, to_date)])
+                    title_period = ' '.join([data_dict_isins[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
+                        period[0], period[1])])
                     while True:
                         table = PandasBoxIsinComparision(title=title_period, dataframe=(
-                            data_dict[FN_COMPARATIVE], data, sign),
+                            data_dict_isins[FN_COMPARATIVE], selected_holding_data),
                             dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
                         if table.button_state == WM_DELETE_WINDOW:
                             break
                 else:
-                    self.footer.set(
-                        MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
+                    self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
             else:
-                self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
+                self.footer.set(
+                    MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
+
+    def _data_holding_isin_comparision_percent(self, bank_name, iban):
+        """
+        Name, price_date, comparision_field of isins
+        in their maximum common time interval in a given period
+        """
+        self._delete_footer()
+        title = ' '.join([bank_name, MENU_TEXT['Holding ISIN Comparision %']])
+        data_dict_period = {
+            FN_FROM_DATE: date.today(),  FN_TO_DATE: date.today()}
+        while True:
+            input_period = InputPeriod(
+                title=title, data_dict=data_dict_period, selection_name=title + 'A')
+            if input_period.button_state == WM_DELETE_WINDOW:
+                return
+            data_dict_period = input_period.field_dict
+            period = (data_dict_period[FN_FROM_DATE],
+                      data_dict_period[FN_TO_DATE])
+            if iban:
+                isin_dict = self.mariadb.select_dict(
+                    HOLDING_VIEW, DB_ISIN, DB_name, iban=iban, period=period, order=DB_name)
+            else:
+                isin_dict = self.mariadb.select_dict(
+                    HOLDING_VIEW, DB_ISIN, DB_name, period=period, order=DB_name)
+            if isin_dict:
+                data_dict_isins = {FN_COMPARATIVE: DB_total_amount}
+                for isin_code in isin_dict.keys():
+                    data_dict_isins[isin_code] = 0
+                input_isins = InputIsins(table=isin_dict, selection_name=title + 'B',
+                                         title=title, data_dict=data_dict_isins, separator=[FN_COMPARATIVE])
+                if input_isins.button_state == WM_DELETE_WINDOW:
+                    return
+                data_dict_isins = input_isins.field_dict
+                selected_isins = list(
+                    filter(lambda x: data_dict_isins[x] == 1, list(data_dict_isins.keys())))
+                # more than one isin selected
+                if len(selected_isins) > 1:
+                    from_date, to_date, data = self.mariadb.select_holding_isins_interval(
+                        iban, data_dict_isins[FN_COMPARATIVE], selected_isins, period=period)
+                    if data:
+                        self.footer.set('')
+                        title_period = ' '.join([data_dict_isins[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
+                            from_date, to_date)])
+                        while True:
+                            table = PandasBoxIsinComparisionPercent(title=title_period, dataframe=(
+                                data_dict_isins[FN_COMPARATIVE], data),
+                                dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
+                            if table.button_state == WM_DELETE_WINDOW:
+                                break
+                else:
+                    self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
+            else:
+                self.footer.set(
+                    MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
 
     def _data_isin_table(self):
 
@@ -1203,11 +1263,11 @@ class FinTS_MariaDB_Banking(object):
                     self.footer.set(message)
 
     def _data_update_holding_prices(self, bank_name, iban):
-        '''
+        """
         For a working day:
         Replaces market_price (table HOLDING) by close price (table PRICES)
         If not existing: creates holding positions 
-        '''
+        """
         title = ' '.join(
             [bank_name, MENU_TEXT['Update Holding Market Price by Closing Price']])
         while True:
@@ -1264,10 +1324,10 @@ class FinTS_MariaDB_Banking(object):
         self._show_informations()
 
     def _data_update_holding_price(self, title, bank_name, iban, holding_dict):
-        '''
+        """
         Imports prices
         Updates market_price, total_amount
-        '''
+        """
         price = self.mariadb.select_table(
             PRICES_ISIN_VIEW, DB_close, result_dict=True, isin_code=holding_dict[DB_ISIN], price_date=holding_dict[DB_price_date])
         if not price:
@@ -1461,7 +1521,7 @@ class FinTS_MariaDB_Banking(object):
             self.footer.set(MESSAGE_TEXT['TASK_STARTED'].format(title))
             data_dict = input_period.field_dict
             data_total_amounts = self.mariadb.select_total_amounts(
-                period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
+                period=(date_days.subtract(data_dict[FN_FROM_DATE], 1), data_dict[FN_TO_DATE]))
             title_period = ' '.join([title, MESSAGE_TEXT['PERIOD'].format(
                 data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
             self.footer.set(MESSAGE_TEXT['TASK_DONE'])
@@ -1564,11 +1624,11 @@ class FinTS_MariaDB_Banking(object):
                                        'Volume': DB_volume}
                         elif origin_symbol == ALPHA_VANTAGE:
                             function = self.shelve_app[KEY_ALPHA_VANTAGE_PRICE_PERIOD]
-                            '''
+                            """
                             By default, outputsize=compact. Strings compact and full are accepted with the following specifications:
                             compact returns only the latest 100 data points;
                             full returns the full-length time series of 20+ years of historical data
-                            '''
+                            """
                             url = 'https://www.alphavantage.co/query?function=' + function + '&symbol=' + \
                                 symbol + '&outputsize='
                             if from_date == start_date_prices:
@@ -1582,7 +1642,7 @@ class FinTS_MariaDB_Banking(object):
                             dataframe = None
                             if len(keys) == 2:
                                 try:
-                                    '''
+                                    """
                                     2. item of dict data contains Time Series as a dict ( *data[1})
                                     example: TIME_SERIES_DAILY                                                                {
                                                 "Meta Data": {
@@ -1603,7 +1663,7 @@ class FinTS_MariaDB_Banking(object):
                                                     "2023-07-25": {
                                                         "1. open": "139.4200",
                                                         "2. high": "140.4300",
-                                    '''
+                                    """
                                     data = data[keys[1]]
                                     dataframe = DataFrame(data)
                                     dataframe = dataframe.T
@@ -1722,8 +1782,8 @@ class FinTS_MariaDB_Banking(object):
         if sepa_credit_box.button_state == WM_DELETE_WINDOW:
             return
         transfer_data = {}
-        account_data = dictaccount(bank_code,
-                                   bank.account_number)
+        account_data = self.mariadb.dictaccount(bank_code,
+                                                bank.account_number)
         transfer_data[SEPA_CREDITOR_NAME] = sepa_credit_box.field_dict[SEPA_CREDITOR_NAME]
         transfer_data[SEPA_CREDITOR_IBAN] = sepa_credit_box.field_dict[SEPA_CREDITOR_IBAN].upper()
         transfer_data[SEPA_CREDITOR_BIC] = sepa_credit_box.field_dict[SEPA_CREDITOR_BIC].upper()
@@ -1756,7 +1816,7 @@ class FinTS_MariaDB_Banking(object):
         for twostep in bank.twostep_parameters:
             security_function, security_function_name = twostep
             security_function_dict[security_function] = security_function_name
-            if (shelve_get_key(bank_code, KEY_SECURITY_FUNCTION) and shelve_get_key(
+            if (self.mariadb.shelve_get_key(bank_code, KEY_SECURITY_FUNCTION) and self.mariadb.shelve_get_key(
                     bank_code, KEY_SECURITY_FUNCTION)[0:3] == security_function[0:3]):
                 default_value = security_function
         bank_name = self._bank_name(bank.bank_code)
@@ -1776,7 +1836,7 @@ class FinTS_MariaDB_Banking(object):
             return
         if security_function_box.button_state == BUTTON_SAVE:
             data = (KEY_SECURITY_FUNCTION, security_function_box.field[0:3])
-            shelve_put_key(bank_code, data)
+            self.mariadb.shelve_put_key(bank_code, data)
         self.footer.set(MESSAGE_TEXT['SYNC_START'].format(bank_name))
 
     def _reset(self):
@@ -1928,7 +1988,7 @@ class FinTS_MariaDB_Banking(object):
             if total_df:
                 # BuiltPandasBox.CELLWIDTH_FIXED[title] = True
                 PandasBoxBalancesAllBanks(
-                    title=' '.join([title, date_days.convert(max_entry_date)]), dataframe=total_df, mode=CURRENCY_SIGN)
+                    title=' '.join([title, date_days.convert(max_entry_date)]), dataframe=total_df, mode=CURRENCY_SIGN, bank_names=self.mariadb.dictbank_names())
             else:
                 self.footer.set(
                     ' '.join([message, MESSAGE_TEXT['DATA_NO'].format('', '')]))
@@ -1957,7 +2017,7 @@ class FinTS_MariaDB_Banking(object):
         if bank_code in self.bank_owner_account and owner_name:
             accounts = self.bank_owner_account[bank_code][owner_name]
         else:
-            accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
         balances = []
         if accounts:
             for acc in accounts:
@@ -2008,8 +2068,10 @@ class FinTS_MariaDB_Banking(object):
                     # HOLDING Account
                     max_price_date = self.mariadb.select_max_column_value(
                         HOLDING, DB_price_date, iban=iban)
-                    if max_price_date:
-
+                    price_date = date_days.subtract(date.today(), 1)
+                    if date_days.isweekend(price_date):
+                        price_date = date_days.subtract(price_date, 1)
+                    if max_price_date and max_price_date >= price_date:
                         fields = [DB_total_amount_portfolio,
                                   DB_amount_currency]
                         balance = self.mariadb.select_table(
@@ -2039,6 +2101,18 @@ class FinTS_MariaDB_Banking(object):
                                                     balance_previous[DB_total_amount_portfolio],
                                                     balance_previous[DB_amount_currency]
                                                     ))
+                    else:
+                        balances.append(Balance(bank_code,
+                                                acc[KEY_ACC_ACCOUNT_NUMBER],
+                                                acc[KEY_ACC_PRODUCT_NAME],
+                                                price_date,
+                                                '',
+                                                0,
+                                                '',
+                                                '',
+                                                0,
+                                                ''
+                                                ))
         return balances
 
     def _show_statements(self, bank_code, account):
@@ -2060,6 +2134,12 @@ class FinTS_MariaDB_Banking(object):
             if date_statement.button_state == WM_DELETE_WINDOW:
                 return
             data_dict = date_statement.field_dict
+            if DB_amount in data_dict:
+                data_dict[DB_status] = 1
+            if DB_opening_balance in data_dict:
+                data_dict[DB_closing_status] = 1
+            if DB_opening_balance in data_dict:
+                data_dict[DB_opening_status] = 1
             selected_check_button = list(
                 filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
             message = None
@@ -2265,15 +2345,15 @@ class FinTS_MariaDB_Banking(object):
 
         webbrowser.open(site)
 
-    '''
+    """
     Ledger Methods
-    '''
+    """
 
     def _ledger_balances(self):
-        '''
+        """
         Show ledger balances
             date referred to entry_date field in Ledger
-        '''
+        """
         self._delete_footer()
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Balances']])
@@ -2296,10 +2376,10 @@ class FinTS_MariaDB_Banking(object):
             self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, ''))
 
     def _ledger_assets(self):
-        '''
+        """
         Show ledger assets
             date referred to entry_date field in Ledger
-        '''
+        """
         self._delete_footer()
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Assets']])
@@ -2319,6 +2399,8 @@ class FinTS_MariaDB_Banking(object):
     def _ledger_balance_table(self, from_date, to_date, ledger_coa):
 
         data = []
+        max_price_date_all_iban = self.mariadb.select_max_column_value(
+            HOLDING, DB_price_date)
         for ledger_coa_dict in ledger_coa:
             account = ledger_coa_dict[DB_account]
             _name = ledger_coa_dict[DB_name]
@@ -2327,16 +2409,21 @@ class FinTS_MariaDB_Banking(object):
             credit = 0
             debit = 0
             if portfolio:
-                balance = self._ledger_balance_holding(ledger_coa_dict, iban)
+                balance, price_date = self._ledger_balance_holding(
+                    ledger_coa_dict, iban)
+                if price_date != max_price_date_all_iban:
+                    # this holding is empty:
+                    balance = 0
                 credit = ''
                 debit = ''
             else:
                 if iban != NOT_ASSIGNED:
                     # get opening balance of asset current year
                     order = [DB_entry_date, DB_counter]
+                    field_list = [DB_opening_balance, DB_opening_status]
                     period = (from_date, to_date)
-                    balance_dict = self.mariadb.select_table_first_or_last(STATEMENT, [
-                                                                           DB_opening_balance, DB_opening_status], date_name=DB_entry_date, order=order, result_dict=True, iban=iban, period=period)
+                    balance_dict = self.mariadb.select_table_first(
+                        STATEMENT, field_list, date_name=DB_entry_date, order=order, result_dict=True, iban=iban, period=period)
                     if balance_dict and balance_dict[DB_opening_status] == CREDIT:
                         credit = balance_dict[DB_opening_balance]
                     elif balance_dict and balance_dict[DB_opening_status] == DEBIT:
@@ -2344,12 +2431,12 @@ class FinTS_MariaDB_Banking(object):
                     else:
                         # get closing balance of asset last year
                         # necessary if there is no account turnover in the current year
-                        order = ' '.join(
-                            [DB_entry_date, 'DESC,', DB_counter, 'DESC'])
+                        order = [DB_entry_date, DB_counter]
+                        field_list = [DB_closing_balance, DB_closing_status]
                         period = (date_years.subtract(from_date, 1),
                                   date_years.subtract(to_date, 1))
-                        balance_dict = self.mariadb.select_table_first_or_last(STATEMENT, [
-                                                                               DB_closing_balance, DB_closing_status], date_name=DB_entry_date, order=order, result_dict=True, iban=iban, period=period)
+                        balance_dict = self.mariadb.select_table_last(
+                            STATEMENT, field_list, date_name=DB_entry_date, order=order, result_dict=True, iban=iban, period=period)
                         if balance_dict and balance_dict[DB_closing_status] == CREDIT:
                             credit = balance_dict[DB_closing_balance]
                         elif balance_dict and balance_dict[DB_closing_status] == DEBIT:
@@ -2366,28 +2453,28 @@ class FinTS_MariaDB_Banking(object):
                 balance = credit-debit
             account_dict = dict(zip([DB_account, DB_name, FN_CREDIT, FN_DEBIT, FN_BALANCE],
                                     [account, _name, credit, debit, balance]))
-            if credit or debit or balance:
+            if credit or debit or balance or portfolio:
                 data.append(account_dict)
         return data
 
     def _ledger_balance_holding(self, ledger_coa_dict, iban):
-        '''
+        """
         Return latest total_amount_portfolio, otherwise return 0
-        '''
+        """
         max_price_date = self.mariadb.select_max_column_value(
             HOLDING, DB_price_date, iban=iban)
         if max_price_date:
             result = self.mariadb.select_table(
-                HOLDING, [DB_total_amount_portfolio], iban=iban, price_date=max_price_date)
+                HOLDING, [DB_total_amount_portfolio, DB_price_date], iban=iban, price_date=max_price_date)
             if result:
-                # HOLDING Account contains only 1 record per day
-                return result[0][0]
+                # HOLDING Account contains only 1 record per day (total_amount_portfolio, price_date)
+                return result[0]
         return 0
 
     def _ledger_upload_check(self):
-        '''
+        """
         Check (last upload ledger)
-        '''
+        """
         self._delete_footer()
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Check Upload']])
@@ -2399,7 +2486,7 @@ class FinTS_MariaDB_Banking(object):
         while True:
             data = self.mariadb.select_table(
                 LEDGER_VIEW, field_list, result_dict=True,
-                date_name=DB_entry_date, period=period, upload_check=False)
+                date_name=DB_entry_date, period=period, upload_check=False, origin=ORIGIN)
             if data:
                 table = PandasBoxLedgerTable(
                     title, data, self.mariadb, None)
@@ -2412,17 +2499,17 @@ class FinTS_MariaDB_Banking(object):
                 break
 
     def _ledger_bank_statement_check(self):
-        '''
+        """
         Check (Bank Statement of an account)
-        '''
+        """
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Check Bank Statement']])
         self._ledger_account(title=title, iban_clause=True)
 
     def _ledger_account_category(self):
-        '''
+        """
         Account grouped by category with sum Rows
-        '''
+        """
         self._delete_footer()
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Account Category']])
@@ -2462,8 +2549,8 @@ class FinTS_MariaDB_Banking(object):
                              MENU_TEXT['Account']])
         data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
             datetime.now().year, 12, 31)}
-        selected_row = 0
         while True:
+            selected_row = 0
             select_ledger_account = SelectLedgerAccount(
                 title=title, mariadb=self.mariadb, data_dict=data_dict)
             if select_ledger_account.button_state == WM_DELETE_WINDOW:
@@ -2485,6 +2572,7 @@ class FinTS_MariaDB_Banking(object):
                 else:
                     data = self.mariadb.select_ledger_account(
                         field_list, account, result_dict=True, date_name=DB_entry_date, period=period)
+
                 if data:
                     table = PandasBoxLedgerTable(
                         title_period, data, self.mariadb, None, mode=EDIT_ROW, selected_row=selected_row)

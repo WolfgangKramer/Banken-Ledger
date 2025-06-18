@@ -1,6 +1,6 @@
 """
 Created on 28.01.2020
-__updated__ = "2025-05-19"
+__updated__ = "2025-06-18"
 @author: Wolfgang Kramer
 """
 
@@ -110,7 +110,7 @@ BUILTBOX_WINDOW_POSITION = '+200+200'
 BUILTPANDASBOX_WINDOW_POSITION = '+1+1'
 BUILTEXT_WINDOW_POSITION = '+400+0'
 WIDTH_WIDGET = 70
-WIDTH_CANVAS = 650
+WIDTH_CANVAS = 700
 HEIGHT_CANVAS = 800
 PANDAS_NAME_SHOW = 'SHOW'
 PANDAS_NAME_ROW = 'ROW'
@@ -126,11 +126,11 @@ re_amount_int = re.compile(r"\d+")
 
 
 def destroy_widget(widget):
-    '''
+    """
     exit and destroys windows or
     destroys widget  and rest of root window will be left
     don't stop the tcl/tk interpreter
-    '''
+    """
     try:
         widget.destroy()
     except TclError:
@@ -138,9 +138,9 @@ def destroy_widget(widget):
 
 
 def quit_widget(widget):
-    '''
+    """
     do not destroy widgets but it exits the tcl/tk interpreter i.e it stops the mainloop()
-    '''
+    """
     try:
         widget.quit()
     except TclError:
@@ -222,9 +222,9 @@ def field_validation(name, field_def):
 
 
 def extend_message_len(title, message):
-    '''
+    """
     returns possibly extended message
-    '''
+    """
     try:
         title_len = max(len(x) for x in list(title.splitlines()))
         message_len = max(len(x) for x in list(message.splitlines()))
@@ -266,11 +266,11 @@ class FileDialogue():
 
 class MessageBoxInfo():
     """
-    bank                  Instance of Class InitBank gathering fints_codes in ClassVar
+    bank                  if true: store message in bankdata_informations_append
     information_storage   Instance of Class Informations gathering messages in ClassVar informations
     """
 
-    def __init__(self, message=None, title=MESSAGE_TITLE, bank=None, information_storage=None, information=INFORMATION):
+    def __init__(self, message=None, title=MESSAGE_TITLE, bank=False, information_storage=None, information=INFORMATION):
 
         if not check_main_thread() or information_storage:
             if information_storage == Informations.PRICES_INFORMATIONS:  # messages downloading prices threading
@@ -311,6 +311,10 @@ class MessageBoxError():
 
 
 class MessageBoxTermination(MessageBoxInfo):
+    """
+    bank                  Instance of Class InitBank gathering fints_codes in ClassVar
+    information_storage   Instance of Class Informations gathering messages in ClassVar informations
+    """
 
     def __init__(self, info='', bank=None):
 
@@ -335,9 +339,9 @@ class MessageBoxTermination(MessageBoxInfo):
 
 
 class MessageBoxAsk():
-    '''
+    """
     returns True if answer is YES
-    '''
+    """
 
     def __init__(self, message=None, title=MESSAGE_TITLE):
 
@@ -631,7 +635,6 @@ class BuiltBox(object):
             self._button5_text = button5_text
             self._button6_text = button6_text
             self._width = width
-            self._width_canvas = width_canvas
             self._height_canvas = height_canvas
             # -------------------- the message widget -------------------------
             self._row = 0
@@ -639,37 +642,34 @@ class BuiltBox(object):
             if scrollable:
                 # -------------------- scrollable frame with widgets -------------------------
                 # create form grid layout
-                frame = Frame(self._box_window_top)
-                frame.grid(row=self._row, columnspan=self.columnspan)
-                #self._box_window_top.columnconfigure(0, weight=1)
-                #self._box_window_top.rowconfigure(0, weight=5)
+                self.frame = Frame(self._box_window_top)
+                self.frame.grid(
+                    row=self._row, columnspan=self.columnspan, sticky="nsew")
                 # create scrollable canvas frame
-                canvas = Canvas(frame)
+                canvas = Canvas(self.frame)
                 # create form in canvas grid layout
                 self._box_window = Frame(canvas)
                 canvas.create_window(
                     (0, 0), window=self._box_window, anchor="nw")
                 canvas.grid(row=self._row, column=0, sticky="nsew")
                 scrollbar = Scrollbar(
-                    frame, orient="vertical", command=canvas.yview)
+                    self.frame, orient="vertical", command=canvas.yview)
                 canvas.configure(yscrollcommand=scrollbar.set,
-                                 width=width_canvas, height=height_canvas)
+                                 height=height_canvas)
                 scrollbar.grid(row=self._row, column=1, sticky="ns")
-                self._box_window.bind("<Configure>", lambda x: canvas.configure(
+                self._box_window.bind("<Configure>", lambda _: canvas.configure(
                     scrollregion=canvas.bbox("all")))
-                #self._box_window.columnconfigure(0, weight=1)
-                #self._box_window.rowconfigure(0, weight=4)
             else:
                 # -------------------- window of entry  widgets -------------------------
                 self._box_window = self._box_window_top
-            self.scrollbar = Scrollbar(self._box_window_top)
             if grab:
                 self._box_window_top.grab_set()
             self._box_window_top.title(title)
             # --------- entry ----------------------------------------------
             self.create_fields()
+
             if scrollable:
-                self._row = 3  # reset fot row after scrollable frame with widgets
+                self._row = 3  # reset foot row after scrollable frame with widgets
             # ------------------ Message -------------------------------
             self._create_footer()
             # ------------------ Buttons -------------------------------
@@ -677,6 +677,8 @@ class BuiltBox(object):
             # ------------------ Keyboard Events ------------------------------
             self._keyboard()
             self.set_geometry()
+            if 'canvas' in locals():
+                canvas.configure(width=self.calculate_width_canvas())
             self._box_window_top.protocol(
                 WM_DELETE_WINDOW, self._wm_deletion_window)
             self._box_window_top.mainloop()
@@ -684,6 +686,20 @@ class BuiltBox(object):
         else:
             MessageBoxInfo(
                 title=title, message=MESSAGE_TEXT['THREAD'].format(Caller.caller))
+
+    def calculate_width_canvas(self):
+        # Get the number of rows and columns
+        _, columns = self._box_window_top.grid_size()
+        # Get the bounding box of the column
+        width_canvas = 0
+        for column_index in range(columns):
+            bbox = self._box_window_top.grid_bbox(column=column_index, row=0)
+            # bbox returns (x, y, width, height), so we extract the width
+            padx = 10
+            ipadx = 1
+            width_canvas = width_canvas + \
+                bbox[2] + columns * padx + columns * ipadx
+        return width_canvas
 
     def set_geometry(self):
 
@@ -764,14 +780,14 @@ class BuiltBox(object):
         if self._button5_text is not None:
             button5 = ttk.Button(button_frame, text=self._button5_text)
             button5.grid(row=0, column=button_column, sticky=E, padx='3m',
-                         pady='3m', ipadx='2m', ipady='1m')
+                         pady='3m', ipadx='2m', iy='1m')
             button5.bind('<Return>', self.button_1_button5)
             button5.bind('<Button-1>', self.button_1_button5)
             button_column += 1
         if self._button6_text is not None:
             button6 = ttk.Button(button_frame, text=self._button6_text)
-            button6.grid(row=0, column=button_column, sticky=E, padx='3m',
-                         pady='3m', ipadx='2m', ipady='1m')
+            button6.grid(row=0, column=button_column, sticky=E, x='3m',
+                         y='3m', ix='2m', iy='1m')
             button6.bind('<Return>', self.button_1_button6)
             button6.bind('<Button-1>', self.button_1_button6)
 
@@ -1034,7 +1050,7 @@ class BuiltCheckButton(BuiltBox):
 
 class BuiltEnterBox(BuiltBox):
     """
-    TOP-LEVEL-WINDOW        EnterBox (Simple Input Fields and ComboList Fields)
+    TOP-LEVEL-WINDOW        EnterBox (Entry Input Fields and ComboList Fields)
 
     PARAMETER:
         ...
@@ -1065,8 +1081,8 @@ class BuiltEnterBox(BuiltBox):
                          button1_text=button1_text, button2_text=button2_text,
                          button3_text=button3_text, button4_text=button4_text,
                          button5_text=button5_text, button6_text=button6_text,
-                         width_canvas=WIDTH_CANVAS, height_canvas=HEIGHT_CANVAS,
-                         scrollable=scrollable)
+                         width_canvas=width_canvas, height_canvas=HEIGHT_CANVAS,
+                         scrollable=scrollable, columnspan=2)
 
     def create_fields(self):
 
@@ -1077,6 +1093,7 @@ class BuiltEnterBox(BuiltBox):
             else:
                 field_def.textvar = StringVar()
                 field_def.textvar.set('')
+        check_text_length = 0
         for field_def in self._field_defs:
             self._field_def = field_def
             if field_def.mandatory:
@@ -1100,11 +1117,25 @@ class BuiltEnterBox(BuiltBox):
                                              textvariable=field_def.textvar)
                     else:
                         widget_entry = Entry(self._box_window, width=MAX_FIELD_LENGTH,
-                                             textvariable=field_def.textvar,
-                                             xscrollcommand=self.scrollbar.set)
-                        self.scrollbar.config(command=widget_entry.xview)
+                                             textvariable=field_def.textvar)
+
+                        if field_def.protected and field_def.default_value is not None and len(field_def.default_value) > MAX_FIELD_LENGTH:
+                            # Create a frame to hold the Entry and Scrollbar
+                            frame = Frame(self._box_window)
+                            frame.grid(row=self._row, column=5,
+                                       padx=10, pady=10)
+                            # Create a horizontal Scrollbar if field protected
+                            scrollbar = Scrollbar(
+                                frame, orient="horizontal", command=widget_entry.xview)
+                            scrollbar.grid(
+                                row=self._row, column=5, sticky="ew")
+                            # Configure the Entry to work with the Scrollbar
+                            widget_entry.configure(
+                                xscrollcommand=scrollbar.set)
                     widget_entry.myId = field_def.name
             elif field_def.definition == CHECK:
+                if check_text_length < len(field_def.checkbutton_text):
+                    check_text_length = len(field_def.checkbutton_text)
                 widget_entry = Checkbutton(self._box_window, text=field_def.checkbutton_text,
                                            variable=field_def.textvar)
                 widget_entry.myId = field_def.name
@@ -1144,7 +1175,7 @@ class BuiltEnterBox(BuiltBox):
                     else:
                         field_def.textvar.set('')
             widget_entry.grid(row=self._row, column=1,
-                              columnspan=self.columnspan, sticky=W, padx='3m', pady='1m')
+                              columnspan=self.columnspan, sticky='W', padx='3m', pady='1m')
             self._row += 1
             if field_def.separator:
                 separator = Separator(self._box_window, orient='horizontal')
@@ -1215,7 +1246,7 @@ class BuiltEnterBox(BuiltBox):
         pass
 
     def combo_position(self, event):
-        """FZ
+        """
         positioning combolist on key release
         only combo_values selectable
         """
@@ -1228,10 +1259,9 @@ class BuiltEnterBox(BuiltBox):
                 field_attr.widget.delete(
                     field_attr.widget.index(INSERT), END)
                 get = field_attr.widget.get()
-                if field_attr.upper:
-                    get = get.upper()
-                item, index = list_positioning(field_attr.combo_values, get)
-                if item.startswith(get.upper()):
+                item, index = list_positioning(
+                    field_attr.combo_values, get.upper())
+                if item.upper().startswith(get.upper()):
                     event.widget.current(index)
                     self.comboboxselected_action(event)
         except Exception:
@@ -1296,9 +1326,9 @@ class BuiltSelectBox(BuiltEnterBox):
                          scrollable=scrollable)
 
     def get_selection(self):
-        '''
+        """
         initializes the selection fields with the used values of last session
-        '''
+        """
 
         if not self.selection_name:
             self.selection_name = self.title
@@ -1313,7 +1343,8 @@ class BuiltSelectBox(BuiltEnterBox):
                 or (self.table in [PRICES, PRICES_ISIN_VIEW] and name in [DB_symbol, DB_price_date])
                 or (self.table in [TRANSACTION, TRANSACTION_VIEW] in [DB_iban, DB_ISIN, DB_price_date, DB_counter])
                 or name == DB_id_no
-            ):
+                ):
+            # Mandatory fields are always selected and cannot be removed from the selection
             self.data_dict[name] = 1
             field_def = FieldDefinition(definition=CHECK, name=name,
                                         checkbutton_text=comment, protected=True)
@@ -1357,9 +1388,9 @@ class BuiltSelectBox(BuiltEnterBox):
         return field_defs_list
 
     def create_field_defs(self):
-        '''
+        """
         Creates attributes of form fields
-        '''
+        """
         field_defs_list = self.create_field_defs_list()
         field_name_list = []
         for field_def in field_defs_list:
@@ -1469,9 +1500,9 @@ class BuiltTableRowBox(BuiltEnterBox):
                          scrollable=scrollable)
 
     def create_field_defs(self):
-        '''
+        """
         Creates attributes of form fields
-        '''
+        """
         check_fields = []
         if isinstance(self.table_view, list):
             fields_properties = TABLE_FIELDS_PROPERTIES[self.table]
@@ -1752,7 +1783,7 @@ class BuiltPandasBox(Frame):
         destroy_widget(self.dataframe_window)
 
     def __move_to_selection(self):
-        '''
+        """
         Table without a vertical scroll bar:
             Positions the row to the beginning of the displayed rows
             after a row has been changed,
@@ -1765,7 +1796,7 @@ class BuiltPandasBox(Frame):
                 Does not change the row position,
                 because pandastable only displays the rows before the changed row
                 when the frame size is subsequently changed.
-        '''
+        """
         self.pandas_table.redraw()  # must before movetoSelection
         sleep(1)
         print('self.pandas_table.visiblerows', self.pandas_table.visiblerows)
@@ -1788,7 +1819,7 @@ class BuiltPandasBox(Frame):
 
         if not self.cellwidth_resizeable:
             return
-        columns = list(self.dataframe.columns)
+        columns = self.dataframe.columns.tolist()
         standard_column_width = 0
         for dataframe_column in columns:
             column = dataframe_column
@@ -1987,7 +2018,7 @@ class BuiltPandasBox(Frame):
         pass
 
     def set_column_format(self):
-        '''
+        """
         Pandas Table Colummn Format properties:
             Tuple (align, currency, places, color, typ)
                 align             --> alignment
@@ -1995,10 +2026,10 @@ class BuiltPandasBox(Frame):
                 places            --> decimal places
                 color             --> background color of negative numbers
                 typ               --> data type
-        '''
+        """
 
         standard_column_width = 0
-        columns = list(self.dataframe.columns)
+        columns = self.dataframe.columns.tolist()
         for dataframe_column in columns:
             column = dataframe_column
             # Include column heading for width calculation, if cellwidth unchangeable by f_keys
@@ -2079,7 +2110,7 @@ class BuiltPandasBox(Frame):
                             lambda x: x if isinstance(x, str) else dec2.convert(x))
                 else:
                     # mode:  CURRENCY_SIGN, formatted NUMERIC mode
-                    if currency in list(self.dataframe.columns):
+                    if currency in self.dataframe.columns.tolist():
                         self.dataframe[column] = self.dataframe[[column, currency]].apply(
                             lambda x: Amount(*x, places), axis=1)
                     elif currency in [EURO, '%']:
@@ -2090,8 +2121,12 @@ class BuiltPandasBox(Frame):
                             self.dataframe[column] = self.dataframe[column].apply(
                                 lambda x: Amount(x, currency))
                     else:
-                        self.dataframe[column] = self.dataframe[column].apply(
-                            lambda x: Amount(x))
+                        if currency == '':  # e.g.pieces
+                            self.dataframe[column] = self.dataframe[column].apply(
+                                lambda x: Amount(x, currency))
+                        else:
+                            self.dataframe[column] = self.dataframe[column].apply(
+                                lambda x: Amount(x))
             if align in [E, W]:
                 self.pandas_table.columnformats['alignment'][column] = align
         self.pandas_table.cellwidth = self.column_width
@@ -2144,9 +2179,9 @@ class BuiltPandasBox(Frame):
                        message=MESSAGE_TEXT['EXCEL'].format(file_dialogue.filename))
 
     def create_combo_list(self, table, field_name, from_date=date.today()-timedelta(weeks=52), date_name=DB_price_date):
-        '''
+        """
         returns dict  {field_name: field_value_list} in table of last year
-        '''
+        """
         combo_list = []
         if from_date:
             period = (from_date, date.today())

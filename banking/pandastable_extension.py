@@ -1,6 +1,6 @@
 """
 Created on 12.04.2021
-__updated__ = "2025-04-14"
+__updated__ = "2025-05-25"
 @author: Wolfgang Kramer
 
     Modified code of:
@@ -47,21 +47,21 @@ class ToolBarBanking(Frame):
             img = images.excel()
             addButton(self, 'Export excel', self.root.excel_writer,
                       img, 'export to excel file')
-            '''
+            """
             img = images.save_proj()
             addButton(self, 'Save', self.parentapp.save, img, 'save')
-            '''
+            """
             img = images.copy()
             addButton(self, 'Copy', self.parentapp.copyTable,
                       img, 'copy table to clipboard')
-            '''
+            """
             img = images.paste()
             addButton(self, 'Paste', self.parentapp.paste, img, 'paste table')
-            '''
+            """
             img = images.plot()
             addButton(self, 'Plot', self.parentapp.plotSelected,
                       img, 'plot selected')
-            '''
+            """
             img = images.transpose()
             addButton(self, 'Transpose',
                       self.parentapp.transpose, img, 'transpose')
@@ -79,11 +79,11 @@ class ToolBarBanking(Frame):
             img = images.table_multiple()
             addButton(self, 'Table from selection', self.parentapp.tableFromSelection,
                       img, 'sub-table from selection')
-            '''
+            """
             img = images.filtering()
             addButton(self, 'Query', self.parentapp.queryBar,
                       img, 'filter table')
-            '''
+            """
             img = images.calculate()
             addButton(self, 'Evaluate function',
                       self.parentapp.evalBar, img, 'calculate')
@@ -91,7 +91,7 @@ class ToolBarBanking(Frame):
             img = images.table_delete()
             addButton(self, 'Clear', self.parentapp.clearTable,
                       img, 'clear table')
-            '''
+            """
         return
 
     def toolbar_switch(self):
@@ -104,10 +104,10 @@ class ToolBarBanking(Frame):
         # self.parentapp.root.quit() # quits pandas_table of BuiltPandaasBox
 
     def currency_sign(self):
-        '''
+        """
         Button activate/deactivate Toolbar
         Switch off/on currency_sign in columns of type decimal
-        '''
+        """
         img = PhotoImage(format='gif', data=(
             'R0lGODlhIAAXAPcAAAAAAAAAMwAAZgAAmQAAzAAA/wArAAArMwArZgArmQArzAAr/wBVAABVMwBVZgBV'
             + 'mQBVzABV/wCAAACAMwCAZgCAmQCAzACA/wCqAACqMwCqZgCqmQCqzACq/wDVAADVMwDVZgDVmQDVzADV'
@@ -134,10 +134,10 @@ class ToolBarBanking(Frame):
         if len(df.columns) == 0:
             return
         ismulti = util.check_multiindex(df.columns)
-        '''
+        """
         colname = str(df.columns[self.table.currentcol])
         currcol = self.table.currentcol
-        '''
+        """
         multicols = self.table.multiplecollist
         colnames = list(df.columns[multicols])[:4]
         colnames = [str(i)[:20] for i in colnames]
@@ -167,16 +167,16 @@ class ToolBarBanking(Frame):
                               command=lambda: self.table.sortTable(ascending=[1 for i in multicols]))
         popupmenu.add_command(label="Sort by " + colnames + ' \u2191',
                               command=lambda: self.table.sortTable(ascending=[0 for i in multicols]))
-        '''
+        """
         popupmenu.add_command(label="Set %s as Index" %
                               colnames, command=self.table.setindex)
         popupmenu.add_command(label="Delete Column(s)",
                               command=self.table.deleteColumn)
-        '''
+        """
         if ismulti is True:
             popupmenu.add_command(label="Flatten Index",
                                   command=self.table.flattenIndex)
-        '''
+        """
         popupmenu.add_command(label="Fill With Data",
                               command=self.table.fillColumn)
         popupmenu.add_command(label="Create Categorical",
@@ -191,7 +191,7 @@ class ToolBarBanking(Frame):
                               command=self.table.applyStringMethod)
         popupmenu.add_command(label="Date/Time Conversion",
                               command=self.table.convertDates)
-        '''
+        """
         popupmenu.add_command(label="Set Data Type",
                               command=self.table.setColumnType)
 
@@ -214,10 +214,10 @@ class ColumnHeaderCallForms(ColumnHeader):
         if len(df.columns) == 0:
             return
         ismulti = util.check_multiindex(df.columns)
-        '''
+        """
         colname = str(df.columns[self.table.currentcol])
         currcol = self.table.currentcol
-        '''
+        """
         multicols = self.table.multiplecollist
         colnames = list(df.columns[multicols])[:4]
         colnames = [str(i)[:20] for i in colnames]
@@ -247,13 +247,13 @@ class ColumnHeaderCallForms(ColumnHeader):
                               command=lambda: self.table.sortTable(ascending=[1 for i in multicols]))
         popupmenu.add_command(label="Sort by " + colnames + ' \u2191',
                               command=lambda: self.table.sortTable(ascending=[0 for i in multicols]))
-        '''
+        """
         popupmenu.add_command(label="Delete Column(s)", command=self.table.deleteColumn)
-        '''
+        """
         if ismulti is True:
             popupmenu.add_command(label="Flatten Index",
                                   command=self.table.flattenIndex)
-        '''
+        """
         popupmenu.add_command(label="Fill With Data", command=self.table.fillColumn)
         popupmenu.add_command(label="Create Categorical", command=self.table.createCategorical)
         popupmenu.add_command(label="Apply Function", command=self.table.applyColumnFunction)
@@ -261,7 +261,7 @@ class ColumnHeaderCallForms(ColumnHeader):
         popupmenu.add_command(label="Value Counts", command=self.table.valueCounts)
         popupmenu.add_command(label="String Operation", command=self.table.applyStringMethod)
         popupmenu.add_command(label="Date/Time Conversion", command=self.table.convertDates)
-        '''
+        """
         popupmenu.add_command(label="Set Data Type",
                               command=self.table.setColumnType)
 
@@ -282,9 +282,9 @@ class RowHeaderCallForms(RowHeader):
         super().__init__(parent=parent, table=table, width=width, bg=bg)
 
     def popupMenu(self, event, rows=None, cols=None, outside=None):
-        '''
+        """
         modfication of method popupMenu
-        '''
+        """
         defaultactions = {}
         if hasattr(self.root, 'show_row'):
             defaultactions.update(
@@ -456,7 +456,8 @@ class Table(Table):
             # "Save As": self.saveAs,
             # "Import Text/CSV": lambda: self.importCSV(dialog=True),
             # "Import hdf5": lambda: self.importHDF(dialog=True),
-            "Export": self.doExport,
+            # "Export": self.doExport,
+            "Export": self.root.excel_writer,
             # "Plot Selected" : self.plotSelected,
             # "Hide plot" : self.hidePlot,
             # "Show plot" : self.showPlot,
@@ -526,10 +527,10 @@ class Table(Table):
 
         popupmenu.add_separator()
         createSubMenu(popupmenu, 'File', filecommands)
-        '''
+        """
         createSubMenu(popupmenu, 'Edit', editcommands)
         createSubMenu(popupmenu, 'Plot', plotcommands)
-        '''
+        """
         createSubMenu(popupmenu, 'Table', tablecommands)
         popupmenu.bind("<FocusOut>", popupFocusOut)
         popupmenu.focus_set()

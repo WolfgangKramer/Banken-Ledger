@@ -1,10 +1,11 @@
-'''
+"""
 Created on 26.11.2019
-__updated__ = "2025-05-19"
+__updated__ = "2025-06-14"
 @author: Wolfgang Kramer
-'''
+"""
 
 import sqlalchemy
+import json
 
 from mariadb import connect, Error
 from re import compile
@@ -12,6 +13,7 @@ from itertools import chain
 from datetime import date
 from inspect import stack
 from collections import namedtuple
+from fints.types import ValueList
 
 from banking.declarations_mariadb import (
     TABLE_NAMES,
@@ -20,6 +22,8 @@ from banking.declarations_mariadb import (
     DATABASE_FIELDS_PROPERTIES,
     FieldsProperty,
     DB_account,
+    DB_bankdata,
+    DB_code,
     DB_id_no, DB_iban,
     DB_entry_date,
     DB_name, DB_counter, DB_price_date, DB_ISIN,
@@ -27,10 +31,11 @@ from banking.declarations_mariadb import (
     DB_total_amount, DB_acquisition_amount,
     DB_status, DB_symbol,
     BANKIDENTIFIER,
+
     CREATE_TABLES,
     HOLDING, HOLDING_VIEW,
     ISIN, PRICES, LEDGER, LEDGER_VIEW, LEDGER_COA, LEDGER_STATEMENT,
-    SERVER, STATEMENT,
+    SERVER, STATEMENT, SHELVES,
     TRANSACTION, TRANSACTION_VIEW,
     DB_credit_account, DB_debit_account,
 )
@@ -42,7 +47,10 @@ from banking.declarations import (
     ERROR,
     FN_PROFIT_LOSS,
     INFORMATION,
+    KEY_ACCOUNTS,
     KEY_ACC_IBAN, KEY_ACC_ACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_PRODUCT_NAME, KEY_ACC_OWNER_NAME,
+    KEY_BANK_NAME,
+    KEY_GEOMETRY,
     KEY_LEDGER,
     MESSAGE_TEXT,
     NOT_ASSIGNED,
@@ -58,14 +66,19 @@ from banking.formbuilts import (
     WM_DELETE_WINDOW
 )
 from banking.ledger import transfer_statement_to_ledger
-from banking.utils import dec2, date_days, date_yyyymmdd, shelve_get_key, remove_obsolete_iban_rows, bankdata_informations_append
+from banking.utils import (
+    bankdata_informations_append,
+    dec2, date_days, date_yyyymmdd,
+    shelve_get_key,
+    Termination,
+)
 
 
 # statement begins with SELECT or is a Selection via CTE and begins with WITH
 select_statement = compile(r'^SELECT|^WITH')
 rowcount_statement = compile(r'^UPDATE|^DELETE|^INSERT|^REPLACE')
 
-'''
+"""
 Cursor attributes
 .description
 This read-only attribute is a sequence of 7-item sequences.
@@ -79,7 +92,7 @@ internal_size
 precision
 scale
 null_ok
-'''
+"""
 
 # used type_codes
 TYPE_CODE_VARCHAR = 253
@@ -91,9 +104,9 @@ TYPE_CODE_SMALLINT = 2
 
 
 def _sqlalchemy_exception(title, storage, info):
-    '''
+    """
     SQLAlchemy Error Handling
-    '''
+    """
 
     MessageBoxInfo(title=title, information_storage=storage, information=ERROR,
                    message=MESSAGE_TEXT['SQLALCHEMY_ERROR'].format('MESSAGE', info.args[0]))
@@ -104,12 +117,12 @@ def _sqlalchemy_exception(title, storage, info):
 
 
 class MariaDB(object):
-    '''
+    """
     Create Connection MARIADB
     Create MARIADB Tables
     Retrieve Records from MARIADB Tables
     Insert and Modify Records of MARIADB Tables
-    '''
+    """
     DATABASES = []
 
     def __init__(self, user, password, database):
@@ -158,7 +171,7 @@ class MariaDB(object):
             MessageBoxInfo(message=message)
 
     def _init_database_info(self):
-        '''
+        """
 
              Dictionary: TABLE_FIELDS
                          values are fieldnames of a table
@@ -167,14 +180,13 @@ class MariaDB(object):
 
 
                             (column_name, character_maximum_length, numeric_scale, numeric_precision, data_type)
-        '''
-        # initialize list TABLE_NAMES
+        """
         sql_statement = "SELECT table_name FROM information_schema.tables WHERE table_schema = database();"
-        '''
+        """
         Initialize list TABLE_NAMES (list of database table_names)
         Example TABLE_NAMES
         <class 'list'>: ['bankidentifier', 'holding',  ...]
-        '''
+        """
         TABLE_NAMES.extend(list(chain(*self.execute(sql_statement))))
         self.table_names = TABLE_NAMES
         # initialize dict FIELDS->table< (properties of column fields)
@@ -213,33 +225,32 @@ class MariaDB(object):
                     properties = FieldsProperty(
                         30, 0, typ, column_names.column_comment, column_names.data_type)
                 table_fields_properties[column_names.column_name] = properties
-            '''
+            """
              Initialize dict TABLE_FIELDS (column names of table)
               KEY: table_name
                   VALUE: list of table_fields
-            '''
+            """
             TABLE_FIELDS[table] = list(
                 map(lambda x: x[0], result))
-            '''
+            """
             Initialize dict TABLE_FIELDS_PROPERTIES (field properties of each column_name of a table)
                 KEY: table_name
                     KEY: field_name
                         VALUE: namedtuple('FieldsProperty', 'length, places, typ, comment, data_type')
-            '''
+            """
             TABLE_FIELDS_PROPERTIES[table] = table_fields_properties
-            '''
+            """
             Initialize dict of DATABASE_FIELDS_PROPERTIES (field properties of all column_names of database)
                 KEY: field_name
                     VALUE: namedtuple('FieldsProperty', 'length, places, typ, comment, data_type')
-            '''
+            """
             DATABASE_FIELDS_PROPERTIES.update(TABLE_FIELDS_PROPERTIES[table])
 
     def _holdings(self, bank):
-        '''
+        """
         Storage of holdings on a daily basis of >bank.account_number<
         in MARIADB table HOLDING
-
-        '''
+        """
 
         self.execute('START TRANSACTION;')
         holdings = bank.dialogs.holdings(bank)
@@ -314,12 +325,12 @@ class MariaDB(object):
         return button_state
 
     def _statements(self, bank):
-        '''
+        """
         Storage of statements of >bank.account_number< starting from the last stored entry_date
         in table STATEMENT.
         For the first time: all available statements will be stored.
         Use of touchdowns is not implemented
-        '''
+        """
         sql_statement = (
             "select max(entry_date) from " + STATEMENT + " where iban=?"
         )
@@ -355,16 +366,26 @@ class MariaDB(object):
 
         return statements
 
-    def _order_clause(self, sql_statement, order=None):
-
+    def _order_clause(self, sql_statement, order=None, sort='ASC'):
+        '''
+        Creates ORDER BY value
+        Standard Ascending
+        '''
         if order is not None:
             if isinstance(order, list):
-                order = ','.join(order)
+                if sort == 'ASC':
+                    order = ','.join(order)
+                else:
+                    order = ' DESC,'.join(order)
+                    order = order + ' DESC'
+            else:
+                if sort == 'DESC':
+                    order = order + ' DESC'
             sql_statement = sql_statement + " ORDER BY " + order
         return sql_statement
 
     def _where_clause(self, clause=None, date_name=None, **kwargs):
-        '''
+        """
         Generates WHERE Clause of kwargs items
 
         kwargs:      >database_fieldname<=>value< AND ....  >database_fieldname< IN >list<  ...
@@ -373,7 +394,7 @@ class MariaDB(object):
 
         result:  where    WHERE >database_fieldname<=? AND .... AND '
                  vars_    (>value<, ..>list<, .....)
-        '''
+        """
         WHERE = ' WHERE '
         vars_ = ()
         where = WHERE
@@ -411,11 +432,11 @@ class MariaDB(object):
             return ' ', vars_
 
     def all_accounts(self, bank, holdings):
-        '''
+        """
         Insert downloaded  Bank Data in Database
 
         holdings: ignores holdings if False
-        '''
+        """
         for account in bank.accounts:
             bank.account_number = account[KEY_ACC_ACCOUNT_NUMBER]
             bank.account_product_name = account[KEY_ACC_PRODUCT_NAME]
@@ -450,16 +471,11 @@ class MariaDB(object):
                             return
         bankdata_informations_append(
             INFORMATION, MESSAGE_TEXT['DOWNLOAD_DONE'].format(bank.bank_name) + '\n\n')
-        if bank.scraper:
-            try:
-                bank.driver.quit()
-            except Exception:
-                pass
 
     def all_holdings(self, bank):
-        '''
+        """
         Insert downloaded  Holding Bank Data in Database
-        '''
+        """
         bankdata_informations_append(
             INFORMATION, MESSAGE_TEXT['DOWNLOAD_BANK'].format(bank.bank_name))
         for account in bank.accounts:
@@ -474,9 +490,9 @@ class MariaDB(object):
                     return
 
     def all_statements(self, bank):
-        '''
+        """
         Insert downloaded  Staement Bank Data in Database
-        '''
+        """
         bankdata_informations_append(
             INFORMATION, MESSAGE_TEXT['DOWNLOAD_BANK'].format(bank.bank_name))
         for account in bank.accounts:
@@ -494,15 +510,15 @@ class MariaDB(object):
             INFORMATION, MESSAGE_TEXT['DOWNLOAD_DONE'].format(bank.bank_name))
 
     def destroy_connection(self):
-        '''
+        """
         close connection >database<
-        '''
+        """
         if self.conn.is_connected():
             self.conn.close()
             self.cursor.close()
 
     def execute(self, sql_statement, vars_=None, duplicate=False, result_dict=False):
-        '''
+        """
         Parameter:  duplicate=True --> Ignore Error 1062 (Duplicate Entry)
                     result_dict -----> True: returns a list of dicts
 
@@ -513,7 +529,7 @@ class MariaDB(object):
         SQL REPLACE, UPDATE, ...
         Method executes SQL statement; no result set will be returned!
         rowcount = True   returns row_count of UPDATE, INSERT; DELETE
-        '''
+        """
         try:
             if vars_:
                 result = self.cursor.execute(sql_statement, vars_)
@@ -567,10 +583,9 @@ class MariaDB(object):
                 return False  # thread checking
 
     def execute_insert(self, table, field_dict):
-        '''
+        """
         Insert Record in MARIADB table
-
-        '''
+        """
         set_fields = ' SET '
         vars_ = ()
         for key_ in field_dict.keys():
@@ -583,9 +598,9 @@ class MariaDB(object):
         self.execute(sql_statement, vars_=vars_)
 
     def execute_replace(self, table, field_dict):
-        '''
+        """
         Insert/Change Record in MARIADB table
-        '''
+        """
         set_fields = ' SET '
         vars_ = ()
         for key_ in field_dict.keys():
@@ -598,9 +613,9 @@ class MariaDB(object):
         self.execute(sql_statement, vars_=vars_)
 
     def execute_update(self, table, field_dict, **kwargs):
-        '''
+        """
         Updates columns of existing rows in the MARIADB table with new values
-        '''
+        """
         where, vars_where = self._where_clause(**kwargs)
         set_fields = ' SET '
         vars_set = ()
@@ -612,20 +627,20 @@ class MariaDB(object):
         self.execute(sql_statement, vars_=vars_set + vars_where)
 
     def execute_delete(self, table, **kwargs):
-        '''
+        """
         Deletion of record in MARIADB table
-        '''
+        """
         where, vars_ = self._where_clause(**kwargs)
         sql_statement = "DELETE FROM " + table + where
         self.execute(sql_statement, vars_=vars_)
 
     def import_bankidentifier(self, filename):
-        '''
+        """
         Import CSV file into table bankidentifier
         Download CSV from https://www.bundesbank.de/de/aufgaben/
         unbarer-zahlungsverkehr/serviceangebot/bankleitzahlen/
         download-bankleitzahlen-602592
-        '''
+        """
         sql_statement = "DELETE FROM " + BANKIDENTIFIER
         self.execute(sql_statement)
         sql_statement = ("LOAD DATA LOW_PRIORITY LOCAL INFILE '" + filename +
@@ -642,13 +657,13 @@ class MariaDB(object):
         return
 
     def import_server(self, filename):
-        '''
+        """
         Import CSV file into table server
                 CSV_File contains 28 columns
         Registration see https://www.hbci-zka.de/register/prod_register.htm
 
         Imports only bank_code and server
-        '''
+        """
         columns = 28
         csv_columns = ['@VAR' + str(x) for x in range(columns)]
         csv_columns[1] = 'code'
@@ -674,9 +689,9 @@ class MariaDB(object):
         return
 
     def import_transaction(self, iban, filename):
-        '''
+        """
         Import CSV file into table transaction
-        '''
+        """
         sql_statement = ("LOAD DATA LOW_PRIORITY LOCAL INFILE '" + filename +
                          "' REPLACE INTO TABLE " + TRANSACTION +
                          " CHARACTER SET latin1 FIELDS TERMINATED BY ';'"
@@ -698,21 +713,20 @@ class MariaDB(object):
         self.execute(sql_statement, vars_=vars_)
 
     def import_prices(self, title, dataframe):
-        '''
+        """
         Insert/Replace prices
-        '''
-
+        """
         # engine = sqlalchemy.create_engine(
         #    "mariadb+mariadbconnector://root:" + self.password + "@127.0.0.1:3306/" + self.database)
         credentials = ''.join(
             [self.user, ":", self.password, "@", self.host, "/", self.database])
-        '''
+        """
         if_exists{>fail<, >replace<, >append<}, default >fail<
             How to behave if the table already exists.
             fail: Raise a ValueError.
             replace: Drop the table before inserting new values.
             append: Insert new values to the existing table.
-        '''
+        """
         try:
             engine = sqlalchemy.create_engine(
                 "mariadb+mariadbconnector://" + credentials)
@@ -726,9 +740,9 @@ class MariaDB(object):
             return False
 
     def select_dict(self, table, key_name, value_name, order=DB_name, **kwargs):
-        '''
+        """
         result: dictionary
-        '''
+        """
         where, vars_ = self._where_clause(**kwargs)
         sql_statement = "SELECT " + key_name + ', ' + \
             value_name + " FROM " + table + where
@@ -758,7 +772,14 @@ class MariaDB(object):
         sql_statement = sql_statement + " GROUP BY price_date ORDER BY price_date ASC;"
         return self.execute(sql_statement, vars_=vars_)
 
-    def select_holding_comparision(self, iban, comparision_field, isin_codes, **kwargs):
+    def select_holding_isins_interval(self, iban, comparision_field, isin_codes, **kwargs):
+        """
+        Get data of a list of isin_codes with their maximum common time interval
+        in a given period
+        Returns: start of common time intervall
+                 end of common tome intervall
+                 data holding in given period
+        """
 
         where, vars_ = self._where_clause(**kwargs)
         periods = []
@@ -770,8 +791,10 @@ class MariaDB(object):
             if result:
                 periods.append(result[0])
         from_date, to_date = zip(*periods)
-        from_date = max(from_date)
-        to_date = min(to_date)
+        # delete None from from_date
+        from_date = max([item for item in from_date if item is not None])
+        # delete all None from to_date
+        to_date = min([item for item in to_date if item is not None])
         if comparision_field == FN_PROFIT_LOSS:
             db_fields = [DB_name, DB_price_date,
                          ''.join([DB_total_amount, '-', DB_acquisition_amount, ' AS ', FN_PROFIT_LOSS])]
@@ -798,9 +821,9 @@ class MariaDB(object):
                             field_list='isin_code, name, total_amount, acquisition_amount, pieces, market_price, price_currency, amount_currency',
                             result_dict=True,
                             **kwargs):
-        '''
+        """
         returns a list (of dictionaries)
-        '''
+        """
         if field_list:
             where, vars_ = self._where_clause(**kwargs)
             if isinstance(field_list, list):
@@ -814,9 +837,9 @@ class MariaDB(object):
 
     def select_holding_last(self, iban, name, period,
                             field_list='price_date, market_price, pieces, total_amount, acquisition_amount'):
-        '''
+        """
         returns tuple with last portfolio entries
-        '''
+        """
         isin = self.select_table(ISIN, DB_ISIN, name=name)
         if isin:
             isin = isin[0]
@@ -848,9 +871,9 @@ class MariaDB(object):
         return result
 
     def select_ledger_account(self, field_list, account, order=None, result_dict=True, date_name=None, **kwargs):
-        '''
+        """
         select ledger rows of account
-        '''
+        """
         if field_list:
             where, vars_ = self._where_clause(date_name=date_name, **kwargs)
             if isinstance(field_list, list):
@@ -866,13 +889,13 @@ class MariaDB(object):
             return []
 
     def select_ledger_posting_text_account(self, iban, credit=True):
-        '''
+        """
         Recommended credit/debit accounts for used posting_texts
         Creates dict --> key: posting_text
                                 value:  credit_account if credit=True or
                                         debit_account if credit=False
         of last 365 days
-        '''
+        """
         from_date = date_days.convert(date_days.subtract(date.today(), 365))
         if credit:
             status = CREDIT
@@ -889,13 +912,13 @@ class MariaDB(object):
             return {}
 
     def select_sepa_fields_in_statement(self, iban, **kwargs):
-        '''
+        """
         kwargs: sepa_fieldname (only 1!)
         Credit Statement: returns last debit_account of connected ledger_row
         Debit Statement: returns last creditit_account of connected ledger_row
 
         Not found: returns 'NA'
-        '''
+        """
         where, vars_ = self._where_clause(
             date_name=DB_entry_date, **kwargs)
         field_list = ','.join(
@@ -926,13 +949,7 @@ class MariaDB(object):
         where, vars_ = self._where_clause(**kwargs)
         sql_statement = ("SELECT applicant_iban, applicant_bic, purpose FROM " + STATEMENT +
                          where + " ORDER BY date DESC;")
-        result = self.execute(sql_statement, vars_=vars_)
-
-        if result:
-            applicant_iban, applicant_bic, purpose = result[0]
-            return applicant_iban, applicant_bic, purpose
-        else:
-            return None, None, None
+        return self.execute(sql_statement, vars_=vars_)
 
     def select_sepa_transfer_creditor_names(self, **kwargs):
 
@@ -969,23 +986,23 @@ class MariaDB(object):
             servers.append(server)
         return servers
 
-    def select_table(self, table, field_list, order=None, result_dict=False, date_name=None, **kwargs):
+    def select_table(self, table, field_list, order=None, result_dict=False, date_name=None, sort='ASC', **kwargs):
 
         if field_list:
             where, vars_ = self._where_clause(date_name=date_name, **kwargs)
             if isinstance(field_list, list):
                 field_list = ','.join(field_list)
             sql_statement = "SELECT " + field_list + " FROM " + table + where
-            sql_statement = self._order_clause(sql_statement, order=order)
+            sql_statement = self._order_clause(
+                sql_statement, order=order, sort=sort)
             return self.execute(sql_statement, vars_=vars_, result_dict=result_dict)
         else:
             return []
 
     def select_table_sum(self, table, sum_field, date_name=None, **kwargs):
-        '''
+        """
         returns sum of a column of the selected rows depending on **kwargs
-        '''
-
+        """
         where, vars_ = self._where_clause(date_name=date_name, **kwargs)
         sql_statement = "SELECT SUM(" + sum_field + ") FROM " + table + where
         result = self.execute(sql_statement, vars_=vars_)
@@ -1005,10 +1022,9 @@ class MariaDB(object):
             return []
 
     def select_table_next(self, table, field_list, key_name, sign, key_value, result_dict=False, date_name=None, **kwargs):
-        '''
+        """
         Returns row before (sign '<', '<=') or next row (sign '>', '>=')
-        '''
-
+        """
         assert sign in [
             '>', '>=', '<', '<='], 'Comparison Operators {} not allowed'.format(sign)
         if field_list:
@@ -1030,26 +1046,17 @@ class MariaDB(object):
         else:
             return []
 
-    def select_table_first_or_last(self, table, field_list, order=None, result_dict=False, date_name=None, **kwargs):
-        '''
-        return one of selection depending on order value and **kwargs
-
-        e.g.: order parameter to select last row of selection
-            ' '.join([DB_entry_date, 'DESC,', DB_counter, 'DESC'] or
-            ' entry_date DESC, counter DESC '
-
-        e.g.: order parameter to select first row of selection
-            ' '.join([DB_entry_date, ',', DB_counter] or
-            ' entry_date, counter '
-        '''
+    def select_table_last(self, table, field_list, order=[], result_dict=False, date_name=None, **kwargs):
+        """
+        Return last row of selection depending on order value and **kwargs
+        """
         where, vars_ = self._where_clause(date_name=date_name, **kwargs)
         if isinstance(field_list, list):
             field_list = ','.join(field_list)
         sql_statement = "SELECT " + field_list + " FROM " + table + where
         if order:
-            if isinstance(order, list):
-                field_list = ','.join(field_list)
-            sql_statement = self._order_clause(sql_statement, order=order)
+            sql_statement = self._order_clause(
+                sql_statement, order=order, sort='DESC')
         sql_statement = sql_statement + " LIMIT 1"
         result = self.execute(sql_statement, vars_=vars_,
                               result_dict=result_dict)
@@ -1058,66 +1065,54 @@ class MariaDB(object):
         else:
             return None
 
-    def _select_total_amounts(self, **kwargs):
+    def select_table_first(self, table, field_list, order=[], result_dict=False, date_name=None, **kwargs):
+        """
+        Return first row of selection depending on order value and **kwargs
+        """
+        where, vars_ = self._where_clause(date_name=date_name, **kwargs)
+        if isinstance(field_list, list):
+            field_list = ','.join(field_list)
+        sql_statement = "SELECT " + field_list + " FROM " + table + where
+        if order:
+            sql_statement = self._order_clause(
+                sql_statement, order=order)
+        sql_statement = sql_statement + " LIMIT 1"
+        result = self.execute(sql_statement, vars_=vars_,
+                              result_dict=result_dict)
+        if result:
+            return result[0]
+        else:
+            return None
 
+    def select_daily_amounts(self, date_name=DB_entry_date, **kwargs):
+        """
+        Returns dict of statement's daily_amounts
+        """
         where, vars_ = self._where_clause(**kwargs)
-        where = where.replace(DB_price_date, 'date')
-        from_date, to_date = vars_
-        vars_ = (str(date_days.add(from_date, 1)), to_date)
-        # search first row if no statements/holding in period., use it for as
-        # from_date data
-        sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(entry_date) AS max_date FROM " + STATEMENT + " WHERE entry_date <= '" + from_date + "' GROUP BY iban) "
-                         "SELECT iban, date('" + from_date + "'), closing_status AS status, closing_balance AS saldo FROM " + STATEMENT + ", max_date_rows WHERE iban = max_iban AND entry_date = max_date GROUP BY iban;")
-        first_row_statement = self.execute(sql_statement)
-        sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(price_date) AS max_date FROM " + HOLDING + " WHERE price_date <= '" + from_date + "' GROUP BY iban) "
-                         "SELECT iban, date('" + from_date + "'), '" + CREDIT + "' AS status, total_amount_portfolio AS saldo FROM " + HOLDING + ", max_date_rows WHERE iban = max_iban AND price_date = max_date GROUP BY iban;")
-        first_row_holding = self.execute(sql_statement)
-        sql_statement = ("WITH total_amounts AS ("
-                         "SELECT iban, price_date AS date, '" + CREDIT +
-                         "' AS status, total_amount_portfolio AS saldo  FROM "
-                         + HOLDING + " GROUP BY iban, price_date "
-                         " UNION "
-                         "SELECT iban, entry_date AS date, closing_status AS status, closing_balance AS saldo FROM "
-                         + STATEMENT + " GROUP BY iban, entry_date) "
-                         "SELECT iban, date, status, saldo FROM total_amounts " + where)
-        result = self.execute(sql_statement, vars_=vars_)
-        # remove IBANs of old ledger applications or deleted banks.
-        result = remove_obsolete_iban_rows(result)
-        first_row_statement = remove_obsolete_iban_rows(first_row_statement)
-        total_amounts = first_row_statement + first_row_holding + result
-        '''
-        Returns Ledger Accounts of Asset Balances that have no entry in STATEMENT and HOLDING ergo no balances
-        e.g., fixed-term deposit accounts, cash registers, receivables, ..
-        '''
-        ledger_coa = self.select_table(
-            LEDGER_COA, DB_account, order=DB_account, asset_accounting=True, download=False)
-
-        for item in ledger_coa:
-            account, = item
-            sql_statement = ("WITH amounts AS ("
-                             "SELECT credit_account as iban, entry_date AS date, '" + CREDIT +
-                             "' AS status, amount AS saldo  FROM "
-                             + LEDGER + " WHERE credit_account='" + account + "'"
-                             " UNION "
-                             "SELECT debit_account as iban, entry_date AS date, '" + DEBIT +
-                             "' AS status, amount AS saldo  FROM "
-                             + LEDGER + " WHERE debit_account='" + account + "') "
-                             "SELECT iban, date, status, saldo FROM amounts " + where +
-                             " GROUP BY iban, date ")
-            ledger = self.execute(sql_statement, vars_=vars_)
-            total_amounts = total_amounts + ledger
-        return total_amounts
+        where = where.replace(DB_price_date, DB_entry_date)
+        sql_statement = ("SELECT iban, entry_date, SUM(amount) AS amount, closing_entry_date, closing_status, closing_balance, origin FROM"
+                         + " (SELECT iban, entry_date, amount, closing_entry_date, closing_status, closing_balance,  origin FROM "
+                         + STATEMENT + where
+                         + " AND STATUS='" + CREDIT
+                         + "' UNION ALL"
+                         + " SELECT iban, entry_date, -amount, closing_entry_date, closing_status, closing_balance,  origin FROM "
+                         + STATEMENT + where
+                         + " AND STATUS='" + DEBIT
+                         + "') AS combined_statement"
+                         + " GROUP BY iban, entry_date;")
+        result = self.execute(
+            sql_statement, result_dict=True, vars_=vars_ + vars_)
+        return result
 
     def select_total_amounts(self, **kwargs):
-        '''
+        """
         returns total_amounts
             List of tuples from the STATEMENT and HOLDING tables:
                                 (IBAN, date, closing balance)
         returns ledger_amounts
         List of tuples from the LEDGER table:
                                 (account number, date, amount)
-        '''
-
+        """
         where, vars_ = self._where_clause(**kwargs)
         where_entry_date = where.replace(DB_price_date, DB_entry_date)
         from_date, _ = vars_
@@ -1135,24 +1130,24 @@ class MariaDB(object):
                          )
         total_amounts = self.execute(sql_statement, vars_=vars_)
         # remove IBANs of old ledger applications or deleted banks.
-        total_amounts = remove_obsolete_iban_rows(total_amounts)
+        total_amounts = self._remove_obsolete_iban_rows(total_amounts)
 
-        # search first row if no statements/holding before period
-        sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(entry_date) AS max_date FROM " + STATEMENT + " WHERE entry_date <= '" + from_date + "' GROUP BY iban) "
+        # search statements/holding before period
+        sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(entry_date) AS max_date FROM " + STATEMENT + " WHERE entry_date < '" + from_date + "' GROUP BY iban) "
                          "SELECT iban, date('" + from_date + "'), closing_status AS status, closing_balance AS saldo FROM " + STATEMENT + ", max_date_rows WHERE iban = max_iban AND entry_date = max_date GROUP BY iban;")
         first_row_statement = self.execute(sql_statement)
         total_amounts = total_amounts + first_row_statement
         # remove IBANs of old ledger applications or deleted banks.
-        first_row_statement = remove_obsolete_iban_rows(
+        first_row_statement = self._remove_obsolete_iban_rows(
             first_row_statement)
         sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(price_date) AS max_date FROM " + HOLDING + " WHERE price_date <= '" + from_date + "' GROUP BY iban) "
                          "SELECT iban, date('" + from_date + "'), '" + CREDIT + "' AS status, total_amount_portfolio AS saldo FROM " + HOLDING + ", max_date_rows WHERE iban = max_iban AND price_date = max_date GROUP BY iban;")
         first_row_holding = self.execute(sql_statement)
         total_amounts = total_amounts + first_row_holding
-        '''
+        """
         Returns Ledger Accounts of Asset Balances that have no entry in STATEMENT and HOLDING ergo no balances
         e.g., fixed-term deposit accounts, cash registers, receivables, ..
-        '''
+        """
         ledger_coa = self.select_table(
             LEDGER_COA, DB_account, order=DB_account, asset_accounting=True, download=False)
         for item in ledger_coa:
@@ -1170,6 +1165,58 @@ class MariaDB(object):
             total_amounts = total_amounts + ledger
         return total_amounts
 
+    def _dict_all_ibans(self):
+        """
+        Returns a list of all ibans
+        """
+        dict_all_ibans = {}
+        for bank_code in self.listbank_codes():
+            accounts = self.shelve_get_key(bank_code, KEY_ACCOUNTS)
+            for account in accounts:
+                dict_all_ibans[account[KEY_ACC_IBAN]
+                               ] = account[KEY_ACC_PRODUCT_NAME]
+        return dict_all_ibans
+
+    def _remove_obsolete_iban_rows(self, row_list):
+        """
+        Returns row list without rows with IBANs that are no longer available in the installed bank
+        """
+        all_ibans = self._dict_all_ibans()
+        row_to_delete = []
+        for row in row_list:
+            if row[0] not in all_ibans.keys():
+                row_to_delete.append(row)
+        result = list(set(row_list) - set(row_to_delete))
+        return result
+
+    def listbank_codes(self):
+
+        result = self.select_table(SHELVES, DB_code)
+        bank_codes = list(chain.from_iterable(result))
+        return bank_codes
+
+    def dictbank_names(self):
+        """
+        Returns customized BankNames, alternative BankCodes
+        """
+        bank_names = {}
+        for bank_code in self.listbank_codes():
+            bank_name = shelve_get_key(bank_code, KEY_BANK_NAME)
+            if bank_name:
+                bank_names[bank_code] = bank_name
+            else:
+                bank_names[bank_code] = bank_code
+        return bank_names
+
+    def dictaccount(self, bank_code, account_number):
+        """
+        Returns Account Information from Shelve-File/HIUPD
+        """
+        accounts = self.shelve_get_key(bank_code, KEY_ACCOUNTS)
+        acc = next(
+            (acc for acc in accounts if acc[KEY_ACC_ACCOUNT_NUMBER] == account_number.lstrip('0')), None)
+        return acc
+
     def select_max_column_value(self, table, column_name, **kwargs):
 
         where, vars_ = self._where_clause(**kwargs)
@@ -1181,12 +1228,23 @@ class MariaDB(object):
         else:
             return None
 
+    def select_max_min_column_value(self, table, column_name, **kwargs):
+
+        where, vars_ = self._where_clause(**kwargs)
+        sql_statement = "SELECT min(" + column_name + \
+            "), max(" + column_name + ") FROM " + table + where
+        result = self.execute(sql_statement, vars_=vars_)
+        if result:
+            return result[0]  # returns max_price_date min_price_date
+        else:
+            return None
+
     def select_first_price_date_of_prices(self, symbol_list, **kwargs):
-        '''
+        """
         Selects first price_date of symbols in symbol_list in table PRICES
         for which row exists for all symbols
         skips symbols with no row
-        '''
+        """
         where, vars_ = self._where_clause(**kwargs)
         if vars_:
             where = where + ' AND '
@@ -1206,11 +1264,90 @@ class MariaDB(object):
         else:
             return None
 
-    def row_exists(self, table, **kwargs):
-        '''
-        Returns True row exists
-        '''
+    def shelve_del_key(self, shelve_name, key):
+        """
+        Deletes key in SHELVES field bankdata
+        """
+        result = self.select_table(SHELVES, DB_bankdata, code=shelve_name)
+        if result:
+            bankdata_dict = json.loads(result[0][0])
+            try:
+                del bankdata_dict[key]
+            except KeyError:
+                pass
+            bankdata_json = json.dumps(bankdata_dict)
+            self.execute_replace(
+                SHELVES, {DB_code: shelve_name, DB_bankdata: bankdata_json})
+        return
 
+    def shelve_get_key(self, shelve_name, key, none=True):
+        """
+            PARAMETER:     KEY of type LIST
+            RETURN:        DICTIONARY {key:value,...}
+                            (key not found, value = NONE or if none=False empty dict)
+            PARAMETER:     KEY of type STRING
+            RETURN:        Value of Key; key not found, value = NONE
+
+        """
+        result = self.select_table(SHELVES, DB_bankdata, code=shelve_name)
+        if result:
+            bankdata_dict = json.loads(result[0][0])
+            if isinstance(key, list):
+                if none:
+                    result_dict = dict.fromkeys(key, None)
+                    # missing key in bankdata_dict retain value None
+                    result_dict.update(bankdata_dict)
+                else:
+                    result_dict = bankdata_dict
+                return result_dict
+            if isinstance(key, str):
+                if key in bankdata_dict:
+                    return bankdata_dict[key]
+                else:
+                    if key == KEY_GEOMETRY:
+                        return {}
+                    else:
+                        return None
+        else:
+            Termination(
+                info=MESSAGE_TEXT['SHELVE_NAME_MISSED'].format(shelve_name))
+
+    def shelve_put_key(self, shelve_name, data):
+        """ PARAMETER:   data: LIST of tuples (key, value)   or
+                         data: TUPLE (key, value)
+        """
+
+        result = self.select_table(SHELVES, DB_bankdata, code=shelve_name)
+        if result:
+            bankdata_dict = json.loads(result[0][0])
+        else:
+            bankdata_dict = {}
+        if isinstance(data, tuple):
+            data = [data]
+        bankdata_dict.update(dict(data))
+        bankdata_json = json.dumps(
+            bankdata_dict, default=self.shelve_serialize)
+        self.execute_replace(
+            SHELVES, {DB_code: shelve_name, DB_bankdata: bankdata_json})
+
+    def shelve_serialize(self, obj):
+        '''
+        Object of type ValueList (see fints.types.py) is not JSON serializable
+        Transform object of type >ValueList< to type >list<
+        '''
+        if isinstance(obj, ValueList):
+            result_list = []
+            for item in obj:
+                result_list.append(item)
+            return result_list
+        if not isinstance(obj, ValueList):
+            raise TypeError(
+                f"Invalid type: Expected type ValueList, got {type(obj)}.")
+
+    def row_exists(self, table, **kwargs):
+        """
+        Returns True row exists
+        """
         where, vars_ = self._where_clause(**kwargs)
         sql_statement = "SELECT EXISTS(SELECT * FROM " + table + where + ")"
         result = self.execute(sql_statement, vars_=vars_)
@@ -1218,9 +1355,9 @@ class MariaDB(object):
             return result[0][0]  # returns 1/0
 
     def iban_exists(self, table, bank_code, **kwargs):
-        '''
+        """
         Returns True iban exists
-        '''
+        """
         clause = ' '.join([DB_iban, "LIKE", "'%" + bank_code + "%')"])
         where, vars_ = self._where_clause(clause=clause, **kwargs)
         sql_statement = ' '.join(
@@ -1237,7 +1374,9 @@ class MariaDB(object):
             # field_list='price_date, counter, transaction_type, price_currency,\
             #              price, pieces, amount_currency, posted_amount, comments',
             **kwargs):
-        ''' returns a list of tuples '''
+        """
+        returns a list of tuples
+        """
         where, vars_ = self._where_clause(**kwargs)
         if isinstance(field_list, list):
             field_list = ','.join(field_list)
@@ -1247,9 +1386,9 @@ class MariaDB(object):
         return self.execute(sql_statement, vars_=vars_)
 
     def transaction_pieces(self, **kwargs):
-        '''
+        """
         Returns transaction balance of pieces
-        '''
+        """
         where, vars_ = self._where_clause(**kwargs)
 
         sql_statement = ("SELECT  t1.isin_code, t1.name, t1.pieces FROM"
@@ -1281,25 +1420,17 @@ class MariaDB(object):
         return sql_statement
 
     def transaction_profit_closed(self, **kwargs):
-        '''
+        """
         Returns profit of closed stocks
-        '''
+        """
         where, vars_ = self._where_clause(**kwargs)
         sql_statement = self._transaction_profit_closed_sql(where)
         return self.execute(sql_statement, vars_ + vars_)
 
-    def _transaction_profit_portfolio_sql(self, where, max_price_date):
-
-        sql_statement = ("SELECT isin_code, name, total_amount AS profit, \
-                         amount_currency AS currency, pieces FROM " + HOLDING_VIEW +
-                         + where + " AND price_date='" + str(max_price_date) +
-                         "' GROUP BY isin_code ")
-        return sql_statement
-
     def transaction_profit_all(self, **kwargs):
-        '''
+        """
         Returns profit all transactions inclusive portfolio values
-        '''
+        """
         where, vars_ = self._where_clause(**kwargs)
         max_price_date = self.select_max_column_value(
             HOLDING, DB_price_date, **kwargs)
@@ -1315,9 +1446,9 @@ class MariaDB(object):
         return self.execute(sql_statement, vars_ + vars_ + vars_)
 
     def transaction_portfolio(self, **kwargs):
-        '''
+        """
         Returns comparison between Portfolio and stored Transactions
-        '''
+        """
         where, vars_ = self._where_clause(**kwargs)
         max_price_date = self.select_max_column_value(
             HOLDING, DB_price_date, **kwargs)

@@ -2,7 +2,7 @@
 # -*- coding: ISO-8859-15 -*-
 """
 Created on 27.06.2021
-__updated__ = "2025-05-19"
+__updated__ = "2025-06-05"
 @author: Wolfgang Kramer
 
   Attention! new Scraper Class, see     Module: mariadb.py
@@ -33,7 +33,7 @@ from banking.declarations import (
     KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_SERVER, KEY_BANK_NAME, KEY_ACCOUNTS,
     MESSAGE_TEXT, MENU_TEXT, PNS,
     SCRAPER_BANKDATA, SHELVE_KEYS,
-    WARNING,
+    ERROR, WARNING,
 )
 from banking.declarations_mariadb import (
     STATEMENT,
@@ -74,7 +74,7 @@ def setup_driver(title):
             driver = webdriver.Edge(options=options, service=Service(
                 EdgeChromiumDriverManager().install()))
             MessageBoxInfo(
-                message=MESSAGE_TEXT['WEBDRIVER_INSTALL'].format('Edge'))
+                message=MESSAGE_TEXT['WEBDRIVER_INSTALL'].format('Edge'), bank=True)
         except Exception as e:
             exception_error(
                 title=title, message=MESSAGE_TEXT['WEBDRIVER'].format('Edge', f'{type(e).__name__}: {e}'))
@@ -96,9 +96,9 @@ class ReturnValueThread(Thread):
             exception_error()
 
     def join(self, name, *args, **kwargs):
-        '''
+        """
             get result with >thread<.join()
-        '''
+        """
         while name.is_alive():
             time.sleep(1)
             self.progress.update_progressbar()
@@ -107,7 +107,7 @@ class ReturnValueThread(Thread):
 
 
 class AlphaVantage(object):
-    '''
+    """
     Creates:
         Dictionary of API Parameters of all Functions of Alpha Vantage Website
         List of all Alpha Vantage Functions
@@ -120,7 +120,7 @@ class AlphaVantage(object):
             Dict Structure:
                 Key:          Function
                 Value:        List of API Parameters
-    '''
+    """
 
     def __init__(self, progress, function_list, parameter_dict):
 
@@ -140,7 +140,7 @@ class AlphaVantage(object):
         error = refresh_alpha_vantage.join(refresh_alpha_vantage)
         if error:
             MessageBoxInfo(
-                title=MENU_TEXT['Refresh Alpha Vantage'], message=error)
+                title=MENU_TEXT['Refresh Alpha Vantage'], message=error, bank=True)
             return False
         return True
 
@@ -210,7 +210,7 @@ class BmwBank(object):
             BMW_BANK_CODE]
         self.scraper = True
         self.user_id = None
-        shelve_file = shelve_get_key(self.bank_code, SHELVE_KEYS)
+        shelve_file = mariadb.shelve_get_key(self.bank_code, SHELVE_KEYS)
         self.bank_name = shelve_file[KEY_BANK_NAME]
         self.title = self.bank_name
         try:
@@ -247,25 +247,35 @@ class BmwBank(object):
         self.opened_bank_code = None
         try:
             self.driver.find_element(By.LINK_TEXT, "Abmelden").click()
+            self.opened_bank_code = None
+            self.driver.quit()
         except Exception:
-            pass
+            try:
+                """
+                The driver.quit() method is used to close all open browser windows or tabs and terminate the WebDriver session.
+                This method is typically used at the end of a test script
+                to ensure that all browser instances are closed properly and any associated resources are released.                
+                """
+                self.opened_bank_code = None
+                self.driver.quit()
+            except Exception:
+                pass
 
     def _exception_handling_logoff(self, no, error):
 
         if error:
             # Print detailed selenium error information
-            print("An error occurred:")
-            print(f"Error type: {type(error).__name__}")
-            print(f"Error message: {error.msg}")
+            MessageBoxInfo(message=MESSAGE_TEXT['SCRAPER_SELENIUM_EXCEPTION'].format(
+                type(error).__name__, error.msg), information=ERROR, bank=True)
         exception_error()
-        MessageBoxError(title=self.title,
-                        message=MESSAGE_TEXT['SCRAPER_PAGE_ERROR'])
+        MessageBoxInfo(title=self.title,
+                       message=MESSAGE_TEXT['SCRAPER_PAGE_ERROR'], information=ERROR, bank=True)
         self.logoff()
 
     def _wait_ready_state(self, seconds=20):
-        '''
+        """
         wait until page is loaded
-        '''
+        """
         try:
             WebDriverWait(self.driver, seconds).until(
                 lambda driver: driver.execute_script(
@@ -282,28 +292,34 @@ class BmwBank(object):
             while True:
                 try:
                     if self.bank_code not in PNS.keys():
-                        inputpin = InputPIN(self.bank_code, self.bank_name)
+                        inputpin = InputPIN(
+                            self.bank_code, self.mariadb, self.bank_name)
                         if inputpin.button_state == WM_DELETE_WINDOW:
-                            MessageBoxInfo(
-                                message=MESSAGE_TEXT['LOGIN_ABORTED'])
                             return None
                         PNS[self.bank_code] = inputpin.pin
                     self.driver.get(self.server)
                     self.driver.fullscreen_window()
-                    self.driver.find_element(
-                        By.ID, "contentForm:Benutzerkennung").send_keys(self.user_id)
-                    self.driver.find_element(
-                        By.ID, "contentForm:password").send_keys(PNS[self.bank_code])
-                    self.driver.find_element(
-                        By.ID, "contentForm:submitLogin").click()
+                    locator = "contentForm:Benutzerkennung"
+                    element = self.wait.until(
+                        EC.visibility_of_element_located((By.ID, locator)))
+                    element.send_keys(self.user_id)
+                    locator = "contentForm:password"
+                    element = self.wait.until(
+                        EC.visibility_of_element_located((By.ID, locator)))
+                    element.send_keys(PNS[self.bank_code])
+                    locator = "contentForm:submitLogin"
+                    element = self.wait.until(
+                        EC.element_to_be_clickable((By.ID, locator)))
+                    element.click()
                     try:
-                        WebDriverWait(self.driver, 60).until(EC.title_is(
-                            'BMW Bank - Finanzstatus - Finanzstatus'))
+                        locator = "BMW Bank - Finanzstatus - Finanzstatus"
+                        WebDriverWait(self.driver, 60).until(
+                            EC.title_is(locator))
                         self.opened_bank_code = self.bank_code
                         return True
                     except TimeoutException:
                         MessageBoxInfo(title=self.title,
-                                       message=MESSAGE_TEXT['SCRAPER_TIMEOUT'])
+                                       message=MESSAGE_TEXT['SCRAPER_TIMEOUT'], bank=True)
                         return False
                     except WebDriverException as error:
                         self._exception_handling_logoff(
@@ -317,10 +333,10 @@ class BmwBank(object):
             return True
 
     def get_accounts(self):
-        '''
+        """
         get account data for all accounts (list of tuples):
             account_product_name, account_owner_name, iban, account_number
-        '''
+        """
         if not self.credentials():
             return []
         # find down arrow to view account details
@@ -350,9 +366,9 @@ class BmwBank(object):
         return accounts
 
     def download_statements(self):
-        '''
+        """
         Only dailyTransfers and savingTransfers (list of dicts)
-        '''
+        """
         title = ' '.join([self.bank_name, self.account_product_name])
         result = self.credentials()
         if result is None:  # login aborted
@@ -405,11 +421,11 @@ class BmwBank(object):
         dataframe[DB_closing_status] = CREDIT
         dataframe[DB_closing_entry_date] = dataframe[DB_entry_date]
         statements = dataframe.to_dict(orient='records')
-        # get last stored traansaction
-        result_dict = self.mariadb.select_table_first_or_last(
-            STATEMENT, [DB_entry_date, DB_purpose, DB_amount,
-                        DB_closing_balance], result_dict=True, iban=self.iban,
-            order=' '.join([DB_entry_date, 'DESC']))
+        # get last stored statement
+        order = [DB_entry_date]
+        field_list = [DB_entry_date, DB_purpose, DB_amount, DB_closing_balance]
+        result_dict = self.mariadb.select_table_last(
+            STATEMENT, field_list, result_dict=True, iban=self.iban, order=order)
         if result_dict:
             entry_date = result_dict[DB_entry_date]
             mariadb_closing_balance = result_dict[DB_closing_balance]
@@ -420,14 +436,10 @@ class BmwBank(object):
                 idx -= 1
             if not statements:
                 MessageBoxInfo(title=title, message=MESSAGE_TEXT['SCRAPER_NO_TRANSACTION_TO_STORE'].format(
-                    self.account_product_name, self.iban))
-                return statements
+                    self.account_product_name, self.iban), bank=True)
+                return []
         # get last closing balance of transactions; Verfügbarer Betrag
         locator = "//span[contains(@class, 'xl:text-2xl')]"
-        '''
-        element = self.driver.find_element(
-            By.XPATH, locator)  # find end  closing_balance
-        '''
         element = self.wait.until(
             EC.presence_of_element_located((By.XPATH, locator)))
         amount_available = element.text.split()[-2]
@@ -449,6 +461,8 @@ class BmwBank(object):
             idx -= 1
         # check if last closing balance of database with opening balance of transactions
         if statements and result_dict and mariadb_closing_balance != statements[0][DB_opening_balance]:
+            message = MESSAGE_TEXT['SCRAPER_BALANCE'].format(
+                mariadb_closing_balance, statements[0][DB_opening_balance])
             MessageBoxInfo(
-                title=title, message=MESSAGE_TEXT['SCRAPER_BALANCE'], information=WARNING)
+                title=title, message=message, information=WARNING, bank=True)
         return statements

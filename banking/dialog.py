@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-04-19"
+__updated__ = "2025-06-14"
 @author: Wolfgang Kramer
 """
 
@@ -58,7 +58,7 @@ from banking.utils import (
     create_iban,
     date_yymmdd,
     exception_error,
-    shelve_get_key, shelve_put_key)
+    shelve_get_key,)
 
 
 re_identification = re.compile(r'^:35B:ISIN\s(.*)\|(.*)\|(.*)$')
@@ -108,7 +108,7 @@ class Dialogs(object):
                 bank.message_number = 1
                 if bank.bank_code not in PNS.keys():
                     input_pin = InputPIN(
-                        bank.bank_code, bank_name=bank.bank_name)
+                        bank.bank_code, self.mariadb, bank_name=bank.bank_name)
                     if input_pin.button_state == WM_DELETE_WINDOW:
                         return None
                     PNS[bank.bank_code] = input_pin.pin
@@ -180,8 +180,8 @@ class Dialogs(object):
         if seg is not None:
             bank.bpd_version = seg.bpd_version
             bank.bank_name = seg.bank_name
-            shelve_put_key(bank.bank_code, [
-                           (KEY_BPD, bank.bpd_version), (KEY_BANK_NAME, bank.bank_name)])
+            self.mariadb.shelve_put_key(bank.bank_code, [
+                (KEY_BPD, bank.bpd_version), (KEY_BANK_NAME, bank.bank_name)])
         else:
             return
         for hitans in [HITANS6, HITANS5, HITANS4, HITANS3, HITANS2, HITANS1]:
@@ -192,7 +192,7 @@ class Dialogs(object):
                     if par.tan_process == '2':
                         bank.twostep_parameters.append(
                             (par.security_function, par.name))
-                shelve_put_key(
+                self.mariadb.shelve_put_key(
                     bank.bank_code, (KEY_TWOSTEP, bank.twostep_parameters))
                 break
         transaction_versions_allowed = {}
@@ -210,10 +210,10 @@ class Dialogs(object):
         seg = response.find_segment_first(HIWPDS6)
         if seg is not None:
             transaction_versions_allowed['WPD'].append(seg.header.version)
-        shelve_put_key(bank.bank_code, (KEY_VERSION_TRANSACTION_ALLOWED,
-                       transaction_versions_allowed))
-        if shelve_get_key(bank.bank_code, KEY_VERSION_TRANSACTION):
-            bank.transaction_versions = shelve_get_key(
+        self.mariadb.shelve_put_key(bank.bank_code, (KEY_VERSION_TRANSACTION_ALLOWED,
+                                                     transaction_versions_allowed))
+        if self.mariadb.shelve_get_key(bank.bank_code, KEY_VERSION_TRANSACTION):
+            bank.transaction_versions = self.mariadb.shelve_get_key(
                 bank.bank_code, KEY_VERSION_TRANSACTION)
         else:
             # use lowest version
@@ -226,29 +226,30 @@ class Dialogs(object):
             seg = response.find_segment_first(HIWPDS5)
             if seg is not None:
                 bank.transaction_versions['WPD'] = seg.header.version
-            shelve_put_key(
+            self.mariadb.shelve_put_key(
                 bank.bank_code, (KEY_VERSION_TRANSACTION, bank.transaction_versions))
         seg = response.find_segment_first(HISPAS1)
         bank.sepa_formats = []
         if seg is not None:
             bank.sepa_formats = seg.parameter.supported_sepa_formats
-        shelve_put_key(bank.bank_code, (KEY_SEPA_FORMATS, bank.sepa_formats))
+        self.mariadb.shelve_put_key(
+            bank.bank_code, (KEY_SEPA_FORMATS, bank.sepa_formats))
         seg = response.find_segment_first(HIPINS1)
         if seg is not None:
             tans_required = []
             for item in seg.parameter.transaction_tans_required:
                 tans_required.append((item.transaction, item.tan_required))
-            shelve_put_key(bank.bank_code, [(KEY_MIN_PIN_LENGTH, seg.parameter.min_pin_length),
-                                            (KEY_MAX_PIN_LENGTH,
-                                            seg.parameter.max_pin_length),
-                                            (KEY_MAX_TAN_LENGTH,
-                                            seg.parameter.max_tan_length),
-                                            (KEY_TAN_REQUIRED, tans_required)])
+            self.mariadb.shelve_put_key(bank.bank_code, [(KEY_MIN_PIN_LENGTH, seg.parameter.min_pin_length),
+                                                         (KEY_MAX_PIN_LENGTH,
+                                                          seg.parameter.max_pin_length),
+                                                         (KEY_MAX_TAN_LENGTH,
+                                                          seg.parameter.max_tan_length),
+                                                         (KEY_TAN_REQUIRED, tans_required)])
         else:
             MessageBoxInfo(message=MESSAGE_TEXT['HIPINS1'], bank=bank)
-            shelve_put_key(bank.bank_code, [(KEY_MIN_PIN_LENGTH, 3),
-                                            (KEY_MAX_PIN_LENGTH, 20),
-                                            (KEY_MAX_TAN_LENGTH, 10)])
+            self.mariadb.shelve_put_key(bank.bank_code, [(KEY_MIN_PIN_LENGTH, 3),
+                                                         (KEY_MAX_PIN_LENGTH, 20),
+                                                         (KEY_MAX_TAN_LENGTH, 10)])
         seg = response.find_segment_first(HIKAZS7)
         if seg is not None:
             bank.storage_period = seg.parameter.storage_period
@@ -258,7 +259,7 @@ class Dialogs(object):
                 bank.storage_period = seg.parameter.storage_period
             else:
                 bank.storage_period = 90
-        shelve_put_key(
+        self.mariadb.shelve_put_key(
             bank.bank_code, (KEY_STORAGE_PERIOD, bank.storage_period))
 
     def _store_sync_shelve(self, bank, response):
@@ -272,13 +273,14 @@ class Dialogs(object):
         if seg is not None:
             bank.system_id = seg.system_id
             bank.security_identifier = seg.system_id
-            shelve_put_key(bank.bank_code, (KEY_SYSTEM_ID, seg.system_id))
+            self.mariadb.shelve_put_key(
+                bank.bank_code, (KEY_SYSTEM_ID, seg.system_id))
         else:
             MessageBoxTermination(info=MESSAGE_TEXT['HISYN4'], bank=bank)
         seg = response.find_segment_first(HISPAS1)
         if seg is not None:
             bank.sepa_formats = seg.parameter.supported_sepa_formats
-            shelve_put_key(
+            self.mariadb.shelve_put_key(
                 bank.bank_code, (KEY_SEPA_FORMATS, bank.sepa_formats))
         self._store_upd_shelve(bank, response)
 
@@ -287,7 +289,8 @@ class Dialogs(object):
         seg = response.find_segment_first(HIUPA4)
         if seg is not None:
             bank.upd_version = seg.upd_version
-            shelve_put_key(bank.bank_code, (KEY_UPD, bank.upd_version))
+            self.mariadb.shelve_put_key(
+                bank.bank_code, (KEY_UPD, bank.upd_version))
         else:
             return
         seg = response.find_segment_first(HIUPD6)
@@ -320,7 +323,8 @@ class Dialogs(object):
                             acc[KEY_ACC_ALLOWED_TRANSACTIONS].append(
                                 allowed_transaction.transaction)
                     bank.accounts.append(acc)
-            shelve_put_key(bank.bank_code, (KEY_ACCOUNTS, bank.accounts))
+            self.mariadb.shelve_put_key(
+                bank.bank_code, (KEY_ACCOUNTS, bank.accounts))
 
     def _receive_msg(self, bank, response, hirms_codes):
 
@@ -574,7 +578,7 @@ class Dialogs(object):
 
         transactions = Transactions()
         mt940 = []
-        identifier_delimiter = shelve_get_key(
+        identifier_delimiter = self.mariadb.shelve_get_key(
             bank_code, KEY_IDENTIFIER_DELIMITER)
         # bank: CONSORS
         # transactions.parse returns duplicate customer_reference value separated

@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-05-19"
+__updated__ = "2025-05-27"
 @author: Wolfgang Kramer
 """
 from banking.declarations import (
@@ -35,7 +35,8 @@ class InitBank(object):
 
         self.scraper = False
         self.bank_code = bank_code
-        shelve_file = shelve_get_key(bank_code, SHELVE_KEYS, none=False)
+        shelve_file = mariadb.shelve_get_key(
+            bank_code, SHELVE_KEYS, none=False)
         try:
             self.user_id = shelve_file[KEY_USER_ID]
             if KEY_PIN in shelve_file.keys() and shelve_file[KEY_PIN] not in ['', None]:
@@ -128,7 +129,8 @@ class InitBankSync(object):
         self.scraper = False
         shelve_keys = [KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_BPD, KEY_SERVER,
                        KEY_SECURITY_FUNCTION]
-        shelve_file = shelve_get_key(bank_code, shelve_keys, none=False)
+        shelve_file = mariadb.shelve_get_key(
+            bank_code, shelve_keys, none=False)
         try:
             self.user_id = shelve_file[KEY_USER_ID]
             if KEY_PIN in shelve_file.keys() and shelve_file[KEY_PIN] not in ['', None]:
@@ -143,7 +145,7 @@ class InitBankSync(object):
             return None  # thread checking
         if bank_code not in PNS.keys():
             try:
-                inputpin = InputPIN(bank_code)
+                inputpin = InputPIN(bank_code, mariadb)
                 PNS[bank_code] = inputpin.pin
             except TypeError:
                 MessageBoxError(
@@ -167,12 +169,12 @@ class InitBankSync(object):
         self.bank_name = None
         self.storage_period = 90
         self.twostep_parameters = []
-        self.upd_version = shelve_get_key(bank_code, KEY_UPD)
+        self.upd_version = mariadb.shelve_get_key(bank_code, KEY_UPD)
         if not self.upd_version:
             self.upd_version = 0
             self.accounts = []
         else:
-            self.accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+            self.accounts = mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
         # Setting Dialog Variables
         self.message_number = 1
         self.task_reference = None
@@ -199,7 +201,7 @@ class InitBankAnonymous(object):
         self.bank_code = bank_code
         self.scraper = False
         self.user_id = CUSTOMER_ID_ANONYMOUS
-        self.server = shelve_get_key(bank_code, KEY_SERVER)
+        self.server = mariadb.shelve_get_key(bank_code, KEY_SERVER)
         if self.server in [None, '']:
             MessageBoxError(
                 message=MESSAGE_TEXT['LOGIN'].format(self.bank_code, KEY_SERVER))
@@ -222,12 +224,12 @@ class InitBankAnonymous(object):
         self.bpd_version = 0
         self.bank_name = None
         self.twostep_parameters = []
-        self.upd_version = shelve_get_key(bank_code, KEY_UPD)
+        self.upd_version = mariadb.shelve_get_key(bank_code, KEY_UPD)
         if not self.upd_version:
             self.upd_version = 0
             self.accounts = []
         else:
-            self.accounts = shelve_get_key(bank_code, KEY_ACCOUNTS)
+            self.accounts = mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
         # Setting Dialog Variables
         self.message_number = 1
         self.task_reference = None

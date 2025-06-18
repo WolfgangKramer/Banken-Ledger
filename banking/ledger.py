@@ -1,8 +1,8 @@
-'''
+"""
 Created on 11.08.2024
-__updated__ = "2025-02-02"
+__updated__ = "2025-05-25"
 @author: Wolfgang Kramer
-'''
+"""
 from datetime import date, timedelta
 
 from banking.declarations import (
@@ -37,6 +37,7 @@ from banking.declarations_mariadb import (
     DB_name,
     DB_opening_balance,
     DB_opening_status,
+    DB_posting_text,
     DB_purpose_wo_identifier,
     DB_status,
 )
@@ -45,24 +46,17 @@ from banking.utils import dec2,  date_days
 
 
 def _recommend_account(mariadb, account, statement_dict, posting_text_dict):
-    '''
+    """
     recommendation contra account, otherwise return 'NA'
     hierarchy of contra_account selection
-    '''
+    """
     # 1. table LEDGER_COA
     ledger_coa = mariadb.select_table(
         LEDGER_COA, [DB_contra_account, DB_iban], result_dict=True, account=account)
     if ledger_coa and ledger_coa[0][DB_contra_account] != NOT_ASSIGNED:
         if ledger_coa[0][DB_contra_account] != account:
             return ledger_coa[0][DB_contra_account]
-    '''
-    # 2. dictionary  used posting_text_dict of last 365 days
-    if statement_dict[DB_posting_text] in posting_text_dict.keys():
-        # contra_account matched posting_text
-        if posting_text_dict[statement_dict[DB_posting_text]] != account:
-            return posting_text_dict[statement_dict[DB_posting_text]]
-    '''
-    # 3. find contra_account used last 370 days, statement fields checked in this order
+    # 2. find contra_account used last 370 days, statement fields checked in this order
     check_field_list = [DB_creditor_id, DB_debitor_id, DB_mandate_id,
                         DB_applicant_iban, DB_applicant_name, DB_purpose_wo_identifier]
     period = (statement_dict[DB_entry_date] -
@@ -89,13 +83,18 @@ def _recommend_account(mariadb, account, statement_dict, posting_text_dict):
                     statement_dict[DB_iban], period=period, purpose_wo_identifier=statement_dict[DB_purpose_wo_identifier][:20] + '%')
             if account != NOT_ASSIGNED:
                 return account
+    # 3. dictionary  used posting_text_dict of last 365 days
+    if statement_dict[DB_posting_text] in posting_text_dict.keys():
+        # contra_account matched posting_text
+        if posting_text_dict[statement_dict[DB_posting_text]] != account:
+            return posting_text_dict[statement_dict[DB_posting_text]]
     return NOT_ASSIGNED
 
 
 def transfer_statement_to_ledger(mariadb, bank):
-    '''
+    """
     Upload ledger rows from table statement
-    '''
+    """
     posting_text_credit_dict = mariadb.select_ledger_posting_text_account(
         bank.iban)
     posting_text_debit_dict = mariadb.select_ledger_posting_text_account(

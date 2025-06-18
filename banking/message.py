@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-04-19"
+__updated__ = "2025-05-31"
 @author: Wolfgang Kramer
 """
 
@@ -30,7 +30,7 @@ def _serialize(message, mariadb):
 def _get_tan_required(bank, segment_type, mariadb):
 
     tan_required = True
-    transactions_tan_required = shelve_get_key(
+    transactions_tan_required = mariadb.shelve_get_key(
         bank.bank_code, KEY_TAN_REQUIRED)
     for item in transactions_tan_required:
         transaction, tan_required = item
@@ -101,7 +101,7 @@ class Messages():
         message = self.segments.segHNHBK(bank)
         message = self.segments.segHNSHK(bank, message)
         message = self.segments.segHKTAN(bank, message)
-        message = self.segments.segHNSHA_TAN(bank, message)
+        message = self.segments.segHNSHA_TAN(bank, message, self.mariadb)
         if message:
             message = self.segments.segHNHBS(bank, message)
             _serialize(message, self.mariadb)

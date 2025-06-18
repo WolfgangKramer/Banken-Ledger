@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-05-19"
+__updated__ = "2025-05-28"
 @author: Wolfgang Kramer
 """
 
@@ -221,7 +221,6 @@ MESSAGE_TEXT = {
     'LOGGING_FILE': 'OS Error Logging_file',
     'LOGIN': 'LOGIN Data incomplete.   \nCustomizing e.g. synchronization LOGIN Data must be done \nBank_Code: {} (Key Error: {})',
     'LOGIN_SCRAPER': 'LOGIN Data incomplete.   \nCustomizing LOGIN Data/Scraping must be done \nBank: {} ({})',
-    'LOGIN_ABORTED': 'LOGIN ABORTED',
     'MANDATORY': '{} is mandatory',
     'MARIADB_DUPLICATE': 'Duplicate Entry ignored\nSQL Statement: \n{} \n Error: \n{} \n Vars: \n{}',
     'MARIADB_ERROR_SQL': 'SQL_Statement\n {} \n\nVars\n {}',
@@ -231,7 +230,7 @@ MESSAGE_TEXT = {
     'NAMING': 'Fix Naming. Allowed Characters: A-Z, a-z, 0-9, _',
     'NO_TURNOVER': 'Bank: {} \n Bank Account: {}  {}       \n     No new turnover',
     'NOTALLOWED': 'Value not allowed, select from list',
-    'OS_ERROR': 'Shelve File  {} not found',
+    'SHELVE_NAME_MISSED': 'Shelve name  {} not found',
     'PAIN': 'SEPA Format pain.001.001.03 not found/allowed\nBank: {}',
     'PERIOD':               'Period ({}, {})',
     'PIN': 'PIN missing! \nBank: {} ({})',
@@ -243,8 +242,9 @@ MESSAGE_TEXT = {
     'RADIOBUTTON': 'Select one of SELECT the RadioButtons',
     'RESPONSE': 'Got unvalid response from bank',
     'SCRAPER_BALANCE': 'Last closing balance from database: {} \n Opening balance from the transaction overview: {}',
-    'SCRAPER_NO_TRANSACTION_TO_STORE': 'All transactions already saved in database',
+    'SCRAPER_NO_TRANSACTION_TO_STORE': '{} {} All transactions already saved in database',
     'SCRAPER_PAGE_ERROR': 'Connection interrupted!',
+    'SCRAPER_SELENIUM_EXCEPTION': 'An error occurred:\n  Error type: {}\n  Error message: {}',
     'SCRAPER_TIMEOUT': 'Connection TimeOut',
     'SCROLL': 'Scroll forward: CTRL+RIGHT   Scroll backwards: CTRL+LEFT',
     'SEGMENT_VERSION': 'Segment {}{} Version {} not implemented',
@@ -504,8 +504,9 @@ SEPA_PURPOSE_2 = 'Purpose_2'
 SEPA_REFERENCE = 'Reference'
 SEPA_EXECUTION_DATE = 'Execution_Date'
 NOTPROVIDED = 'NOTPROVIDED'
-
-''' BuilPandasBox param mode '''
+""" 
+-------------------------- BuilPandasBox param mode
+"""
 EDIT_ROW = 'EDIT_ROW'
 CURRENCY_SIGN = 'CURRENCY_SIGN'
 NUMERIC = 'NUMERIC'
@@ -520,7 +521,6 @@ END_WITH = 'END_WITH'
 GREATER = 'GREATER'
 LESS = 'LESS'
 OPERATORS = [EQUAL, CONTAINS, START_WITH, END_WITH, GREATER, LESS]
-
 """
 ---------------  MT940 Field 86 identifiers in element PURPOSE (>identifier sub-field< :  >MARIADB column name<)-----------------------------------------------------
 """

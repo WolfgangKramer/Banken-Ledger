@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-04-24"
+__updated__ = "2025-06-05"
 @author: Wolfgang Kramer
 """
 from collections import namedtuple
@@ -12,9 +12,9 @@ TINYINT = 'tinyint'  # data_type only used as check button fields
 INTEGER = ['bigint', 'smallint', 'int']
 DATABASE_TYP_DECIMAL = 'decimal'
 
-'''
+"""
 Database info. Initialized by MariaDB instance in method
-'''
+"""
 # List of table names
 TABLE_NAMES = []
 # Column names of table
@@ -34,6 +34,7 @@ DATABASE_FIELDS_PROPERTIES = {
 """
 -------------------------------- MariaDB Tables ----------------------------------
 """
+PRODUCTIVE_DATABASE_NAME = 'banken'
 BANKIDENTIFIER = 'bankidentifier'
 HOLDING = 'holding'
 HOLDING_VIEW = 'holding_view'
@@ -52,6 +53,7 @@ LEDGER_COA = 'ledger_coa'
 LEDGER_VIEW = 'ledger_view'
 LEDGER_STATEMENT = 'ledger_statement'
 LEDGER_UNCHECKED_VIEW = 'ledger_unchecked_view'
+SHELVES = 'shelves'
 
 """
 -------------------------------- Create MariaDB Tables --------------------------------------------------------
@@ -79,7 +81,6 @@ COMMENT='Contains German Banks\r\n\r\nSource: https://www.bundesbank.de/resource
 COLLATE='latin1_swedish_ci'\
 ENGINE=InnoDB\
 ;"
-
 
 CREATE_HOLDING = "CREATE TABLE IF NOT EXISTS `holding` (\
     `iban` CHAR(22) NOT NULL COMMENT ':97A:: DepotKonto' COLLATE 'latin1_swedish_ci',\
@@ -347,6 +348,16 @@ ENGINE=InnoDB\
 
 CREATE_TRANSACTION_VIEW = "CREATE ALGORITHM = UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW IF NOT EXISTS `transaction_view` AS SELECT t1.iban, t1.isin_code, t2.name, t1.price_date, t1.counter, t1.transaction_type, t1.price_currency, t1.price, t1.pieces, t1.amount_currency, t1.posted_amount, t1.origin, t1.comments  FROM transaction AS t1 INNER JOIN isin AS t2 USING(isin_code);"
 
+CREATE_SHELVES = "CREATE TABLE IF NOT EXISTS `shelves` (\
+    `code` CHAR(8) NOT NULL COMMENT 'Bank_Code (BLZ)' COLLATE 'latin1_swedish_ci',\
+    `bankdata` LONGTEXT NULL DEFAULT NULL COMMENT 'bank data stored in JSON format' COLLATE 'utf8mb4_bin',\
+    PRIMARY KEY (`code`) USING BTREE\
+)\
+COMMENT='Contains one row per bank archived with the app.\r\nRow contains the bank basic data from tables bankidentifier and server.\r\nRow contains BPD data and UPD data  from FINTS for this bank.\r\nData is stored in JSON format\r\n'\
+COLLATE='latin1_swedish_ci'\
+ENGINE=InnoDB\
+;"
+
 #  Ledger Tables ------------------------------------------------------------------------------------------
 
 
@@ -366,6 +377,8 @@ CREATE_TABLES = [CREATE_BANKIDENTIFIER,
                  CREATE_LEDGER_DELETE,
                  CREATE_LEDGER_STATEMENT,
                  CREATE_LEDGER_VIEW,
+
+                 CREATE_SHELVES,
                  ]
 """
 -------------------------------- MariaDB Table Fields --------------------------------------------------------
@@ -373,6 +386,7 @@ CREATE_TABLES = [CREATE_BANKIDENTIFIER,
 DB_acquisition_amount = 'acquisition_amount'
 DB_acquisition_price = 'acquisition_price'
 DB_additional_purpose = 'additional_purpose'
+DB_bankdata = 'bankdata'
 DB_open = 'open'
 DB_low = 'low'
 DB_high = 'high'

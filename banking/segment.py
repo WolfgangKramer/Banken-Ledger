@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-04-19"
+__updated__ = "2025-05-31"
 @author: Wolfgang Kramer
 """
 
@@ -405,7 +405,7 @@ class Segments():
         )
         return message
 
-    def segHNSHA_TAN(self, bank, message):
+    def segHNSHA_TAN(self, bank, message, mariadb):
         """
         Segment Signaturabschluss (PIN/TAN)
             FINTS Dokument: Sicherheitsverfahren HBCI
@@ -416,7 +416,7 @@ class Segments():
         """
         if bank.system_id == SynchronizationMode.NEW_SYSTEM_ID:
             message += HKSYN3(SynchronizationMode.NEW_SYSTEM_ID)
-        input_tan = InputTAN(bank.bank_code, bank.bank_name)
+        input_tan = InputTAN(bank.bank_code, bank.bank_name, mariadb)
         if input_tan.button_state == WM_DELETE_WINDOW:
             return None
         message += HNSHA2(

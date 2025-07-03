@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-05-28"
+__updated__ = "2025-06-25"
 @author: Wolfgang Kramer
 """
 
@@ -229,7 +229,7 @@ MESSAGE_TEXT = {
     'NAME_INPUT': 'Enter Query Name (Name of Stored Procedure, allowed Chars [alphanumeric and _): ',
     'NAMING': 'Fix Naming. Allowed Characters: A-Z, a-z, 0-9, _',
     'NO_TURNOVER': 'Bank: {} \n Bank Account: {}  {}       \n     No new turnover',
-    'NOTALLOWED': 'Value not allowed, select from list',
+    'NOTALLOWED': '{} Value not allowed, select from list \n {}',
     'SHELVE_NAME_MISSED': 'Shelve name  {} not found',
     'PAIN': 'SEPA Format pain.001.001.03 not found/allowed\nBank: {}',
     'PERIOD':               'Period ({}, {})',

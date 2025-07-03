@@ -1,6 +1,6 @@
 """
 Created on 28.01.2020
-__updated__ = "2025-06-18"
+__updated__ = "2025-07-03"
 @author: Wolfgang Kramer
 """
 
@@ -619,7 +619,6 @@ class BuiltBox(object):
         Caller.caller = self.caller = self.__class__.__name__
         self.button_state = None
         self._box_window_top = Toplevel()
-        #self._box_window_top.resizable(1, 1)
         if check_main_thread():
             self.header = header
             button_counter = 6 - [button1_text, button2_text, button3_text,
@@ -648,7 +647,7 @@ class BuiltBox(object):
                 # create scrollable canvas frame
                 canvas = Canvas(self.frame)
                 # create form in canvas grid layout
-                self._box_window = Frame(canvas)
+                self._box_window = Frame(canvas)  # window of entry  widgets
                 canvas.create_window(
                     (0, 0), window=self._box_window, anchor="nw")
                 canvas.grid(row=self._row, column=0, sticky="nsew")
@@ -1339,11 +1338,11 @@ class BuiltSelectBox(BuiltEnterBox):
     def create_check_field(self, name, comment):
 
         if ((self.table == STATEMENT and name in [DB_iban, DB_entry_date, DB_counter])
-                or (self.table in [HOLDING, HOLDING_VIEW] and name in [DB_iban, DB_price_date, DB_ISIN])
-                or (self.table in [PRICES, PRICES_ISIN_VIEW] and name in [DB_symbol, DB_price_date])
-                or (self.table in [TRANSACTION, TRANSACTION_VIEW] in [DB_iban, DB_ISIN, DB_price_date, DB_counter])
-                or name == DB_id_no
-                ):
+            or (self.table in [HOLDING, HOLDING_VIEW] and name in [DB_iban, DB_price_date, DB_ISIN])
+            or (self.table in [PRICES, PRICES_ISIN_VIEW] and name in [DB_symbol, DB_price_date])
+            or (self.table in [TRANSACTION, TRANSACTION_VIEW] in [DB_iban, DB_ISIN, DB_price_date, DB_counter])
+            or name == DB_id_no
+            ):
             # Mandatory fields are always selected and cannot be removed from the selection
             self.data_dict[name] = 1
             field_def = FieldDefinition(definition=CHECK, name=name,
@@ -1522,10 +1521,11 @@ class BuiltTableRowBox(BuiltEnterBox):
                 field_def = FieldDefinition(definition=CHECK, name=field_name,
                                             checkbutton_text=fields_properties[field_name].comment)
             elif field_name in self.combo_dict.keys():
-                # combo field without positioning, new items allowed
+                # combo field without positioning, new items allowed if fieldname in self.combo_insert_value
                 field_def = FieldDefinition(definition=COMBO, name=field_name,
                                             length=fields_properties[field_name].length,
                                             typ=fields_properties[field_name].typ,
+                                            combo_insert_value=combo_insert_value,
                                             combo_positioning=False,
                                             combo_values=self.combo_dict[field_name])
             elif field_name in self.combo_positioning_dict.keys():
@@ -1774,46 +1774,47 @@ class BuiltPandasBox(Frame):
         self.set_row_format()
         self.pandas_table.updateModel(TableModel(self.dataframe))
         self.pandas_table.show()
+        self.first_scroll_page_row = 0
         self._move_to_selection()
-        self.pandas_table.rowheader.bind('<Button-1>', self.handle_click)
+        self.pandas_table.yview_scroll(10, "units")
+        self.pandas_table.rowheader.bind('<Button-1>', self._handle_click)
+        self.pandas_table.rowheader.bind('<Configure>', self._on_scroll)
         # --------------------------------------------------------------
         self.dataframe_window.protocol(
             WM_DELETE_WINDOW, self._wm_deletion_window)
         self.dataframe_window.mainloop()
         destroy_widget(self.dataframe_window)
 
-    def __move_to_selection(self):
+    def _handle_click(self, event):
         """
-        Table without a vertical scroll bar:
-            Positions the row to the beginning of the displayed rows
-            after a row has been changed,
-            because pandastable only displays the rows before the changed row
-            when the frame size is subsequently changed.       
-
-        Table with vertical scroll bar:
-            Positions the changed row to the beginning of the displayed rows.
-            Special case for the first and last displayed rows:
-                Does not change the row position,
-                because pandastable only displays the rows before the changed row
-                when the frame size is subsequently changed.
+        Get selected Row Number (start with 0) and Row_Ddata
         """
-        self.pandas_table.redraw()  # must before movetoSelection
-        sleep(1)
-        print('self.pandas_table.visiblerows', self.pandas_table.visiblerows)
-        last_visible_row = self.pandas_table.visiblerows[-1]
-        last_row = self.pandas_table.rows
-        if last_visible_row != 0 and last_row > last_visible_row:
-            self.pandas_table.movetoSelection(row=self.selected_row)
-        print('self.pandas_table.visiblerows', type(
-            self.pandas_table.visiblerows), self.pandas_table.visiblerows)
-        print('last_visible_row', last_visible_row, 'last_row',
-              last_row, 'self.selected_row', self.selected_row)
-        pass
+        self.selected_row = self.pandas_table.get_row_clicked(
+            event)  # starts with 0
+        self.processing()
 
     def _move_to_selection(self):
 
         self.pandas_table.redraw()
         self.pandas_table.movetoSelection(row=self.selected_row)
+
+    def _on_scroll(self, event):
+        '''
+        Pandastable Bug:
+         When scrollin to the last page of a table with vertical scroll,
+         only the following rows are displayed but not the previous rows.
+         Therefore, the last line of the second to last scroll page is positioned.
+        '''
+        canvas_height = self.pandas_table.winfo_height(
+        )  # Height of the canvas showing the table
+        # Approximate row height (default is 20, but may vary)
+        row_height = self.pandas_table.rowheight
+        visible_rows = canvas_height // row_height  # Number of visible rows
+        if self.selected_row >= len(self.pandas_table.model.df) - visible_rows:
+            # positioning to last row of the penultimate scrolling page
+            self.selected_row = len(
+                self.pandas_table.model.df) - visible_rows - 1
+            self._move_to_selection()
 
     def _standard_col_width(self, event):
 
@@ -1952,14 +1953,6 @@ class BuiltPandasBox(Frame):
             except AttributeError:
                 pass  # column_with used in subclasses
 
-    def handle_click(self, event):
-        """
-        Get selected Row Number (start with 0) and Row_Ddata
-        """
-        self.selected_row = self.pandas_table.get_row_clicked(
-            event)  # starts with 0
-        self.processing()
-
     def insert_row(self, row_dict):
         self.df = self.df._append(row_dict, ignore_index=True)
         self.table.model.df = self.df
@@ -1970,12 +1963,15 @@ class BuiltPandasBox(Frame):
         Get dict of selected Row of Pandastable
         """
         selected_row = self.pandas_table.getSelectedRow()
-        dataframe_row = self.pandas_table.model.df.iloc[[selected_row]]
-        row_dict = dataframe_row.iloc[[0]].to_dict('records')[0]
-        keys = list(row_dict.keys()).copy()
-        for _key in keys:
-            row_dict[_key.lower()] = row_dict.pop(_key)
-        return row_dict
+        try:
+            dataframe_row = self.pandas_table.model.df.iloc[[selected_row]]
+            row_dict = dataframe_row.iloc[[0]].to_dict('records')[0]
+            keys = list(row_dict.keys()).copy()
+            for _key in keys:
+                row_dict[_key.lower()] = row_dict.pop(_key)
+            return row_dict
+        except:
+            return {}
 
     def create_dataframe(self):
 
@@ -2178,7 +2174,7 @@ class BuiltPandasBox(Frame):
         MessageBoxInfo(title=self.title,
                        message=MESSAGE_TEXT['EXCEL'].format(file_dialogue.filename))
 
-    def create_combo_list(self, table, field_name, from_date=date.today()-timedelta(weeks=52), date_name=DB_price_date):
+    def create_combo_list(self, table, field_name, from_date=date.today()-timedelta(weeks=104), date_name=DB_price_date):
         """
         returns dict  {field_name: field_value_list} in table of last year
         """

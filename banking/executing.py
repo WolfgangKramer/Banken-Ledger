@@ -1,6 +1,6 @@
 """
 Created on 09.12.2019
-__updated__ = "2025-06-14"
+__updated__ = "2025-06-30"
 Author: Wolfang Kramer
 """
 
@@ -374,7 +374,7 @@ class FinTS_MariaDB_Banking(object):
                      app_data_box.field_dict[KEY_ALPHA_VANTAGE]),
                     (KEY_DIRECTORY,  app_data_box.field_dict[KEY_DIRECTORY]),
                     (KEY_MARIADB_NAME,
-                     app_data_box.field_dict[KEY_MARIADB_NAME].upper()),
+                     app_data_box.field_dict[KEY_MARIADB_NAME]),
                     (KEY_MARIADB_USER,
                      app_data_box.field_dict[KEY_MARIADB_USER]),
                     (KEY_MARIADB_PASSWORD,
@@ -2400,7 +2400,7 @@ class FinTS_MariaDB_Banking(object):
 
         data = []
         max_price_date_all_iban = self.mariadb.select_max_column_value(
-            HOLDING, DB_price_date)
+            HOLDING, DB_price_date, period=(from_date, to_date))
         for ledger_coa_dict in ledger_coa:
             account = ledger_coa_dict[DB_account]
             _name = ledger_coa_dict[DB_name]
@@ -2550,7 +2550,6 @@ class FinTS_MariaDB_Banking(object):
         data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
             datetime.now().year, 12, 31)}
         while True:
-            selected_row = 0
             select_ledger_account = SelectLedgerAccount(
                 title=title, mariadb=self.mariadb, data_dict=data_dict)
             if select_ledger_account.button_state == WM_DELETE_WINDOW:
@@ -2562,6 +2561,7 @@ class FinTS_MariaDB_Banking(object):
             data_dict[DB_id_no] = 1
             field_list = list(filter(lambda x: data_dict[x] == 1, list(
                 data_dict.keys())))  # filter selected check_buttons
+            selected_row = 0
             while True:
                 title_period = '  '.join(
                     [title, account, account_name, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])

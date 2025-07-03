@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-06-05"
+__updated__ = "2025-06-30"
 @author: Wolfgang Kramer
 """
 from collections import namedtuple
@@ -120,6 +120,7 @@ CREATE_ISIN = "CREATE TABLE  IF NOT EXISTS   `isin` (\
     `origin_symbol` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'origin of symbol: Yahoo or AlphaVantage' COLLATE 'latin1_swedish_ci',\
     `symbol` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'ticker symbol' COLLATE 'latin1_swedish_ci',\
     `currency` CHAR(3) NOT NULL DEFAULT 'EUR' COMMENT 'Currency Code' COLLATE 'latin1_swedish_ci',\
+    `industry` VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'Branch of Industry' COLLATE 'latin1_swedish_ci',\
     `comment` TEXT NULL DEFAULT NULL COLLATE 'latin1_swedish_ci',\
     PRIMARY KEY (`name`) USING BTREE,\
     UNIQUE INDEX `ISIN` (`isin_code`) USING BTREE,\
@@ -437,6 +438,7 @@ DB_guessed_entry_date = 'guessed_entry_date'
 DB_high_price = 'high_price'
 DB_iban = 'iban'
 DB_id = 'id'
+DB_industry = 'industry'
 DB_intermediary_bank = 'intermediary_bank'
 DB_ISIN = 'isin_code'
 DB_last_price = 'last_price'
@@ -532,7 +534,8 @@ DB_obsolete = 'obsolete'
 DB_creditor_id = 'creditor_id'
 DB_credit_name = 'credit_name'
 DB_debit_name = 'debit_name'
-
+DB_credit_balance = 'credit_balance'
+DB_debit_balance = 'debit_balance'
 DB_c_iban = 'c_iban'
 DB_c_entry_date = 'c_entry_date'
 DB_c_counter = 'c_counter'

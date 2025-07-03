@@ -2,7 +2,7 @@
 # -*- coding: ISO-8859-15 -*-
 """
 Created on 27.06.2021
-__updated__ = "2025-06-05"
+__updated__ = "2025-06-26"
 @author: Wolfgang Kramer
 
   Attention! new Scraper Class, see     Module: mariadb.py

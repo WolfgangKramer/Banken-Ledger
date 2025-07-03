@@ -1,6 +1,6 @@
 """
 Created on 26.11.2019
-__updated__ = "2025-06-14"
+__updated__ = "2025-06-29"
 @author: Wolfgang Kramer
 """
 
@@ -72,6 +72,7 @@ from banking.utils import (
     shelve_get_key,
     Termination,
 )
+from banking.declarations_mariadb import HOLDING_VIEW
 
 
 # statement begins with SELECT or is a Selection via CTE and begins with WITH
@@ -1456,9 +1457,14 @@ class MariaDB(object):
             return None
         else:
             result_transaction = self.transaction_pieces(**kwargs)
-            sql_statement = ("SELECT isin_code, NAME, pieces FROM holding_view" + where +
-                             " AND price_date='" + str(max_price_date) + "'")
-            result_portfolio = self.execute(sql_statement, vars_)
+            max_price_date_transaction = self.select_max_column_value(
+                TRANSACTION, DB_price_date, **kwargs)
+            if max_price_date_transaction and max_price_date_transaction < max_price_date:
+                sql_statement = ("SELECT isin_code, NAME, pieces FROM " + HOLDING_VIEW + where +
+                                 " AND price_date='" + str(max_price_date) + "'")
+                result_portfolio = self.execute(sql_statement, vars_)
+            else:
+                result_portfolio = []  # no positions in portfolio
             result = []
             for item in set(result_transaction).symmetric_difference(set(result_portfolio)):
                 if item in result_portfolio:

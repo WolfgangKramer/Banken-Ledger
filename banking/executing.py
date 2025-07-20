@@ -1,6 +1,6 @@
 """
 Created on 09.12.2019
-__updated__ = "2025-06-30"
+__updated__ = "2025-07-17"
 Author: Wolfang Kramer
 """
 
@@ -1609,6 +1609,10 @@ class FinTS_MariaDB_Banking(object):
                             if max_price_date:
                                 from_date = max_price_date + timedelta(days=1)
                         to_date = date_days.subtract(date.today(), 1)
+                        if from_date > to_date:
+                            MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
+                                           message=MESSAGE_TEXT['PRICES_ALREADY'].format(
+                                               name, message_symbol, origin_symbol, isin, '', to_date))
                         if origin_symbol == YAHOO:
                             tickers = Ticker(symbol)
                             f = io.StringIO()

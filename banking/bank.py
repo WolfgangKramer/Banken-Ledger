@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-05-27"
+__updated__ = "2025-07-07"
 @author: Wolfgang Kramer
 """
 from banking.declarations import (
@@ -192,7 +192,7 @@ class InitBankSync(object):
 
 class InitBankAnonymous(object):
     """
-    Data Bank Anoymous Dialogue
+    Data Bank Anonymous Dialogue
     """
 
     def __init__(self, bank_code, mariadb):

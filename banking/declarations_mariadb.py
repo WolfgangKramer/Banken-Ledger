@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-06-30"
+__updated__ = "2025-07-08"
 @author: Wolfgang Kramer
 """
 from collections import namedtuple
@@ -36,6 +36,7 @@ DATABASE_FIELDS_PROPERTIES = {
 """
 PRODUCTIVE_DATABASE_NAME = 'banken'
 BANKIDENTIFIER = 'bankidentifier'
+GEOMETRY = 'geometry'
 HOLDING = 'holding'
 HOLDING_VIEW = 'holding_view'
 HOLDING_SYMBOL = 'holding_symbol'
@@ -81,6 +82,19 @@ COMMENT='Contains German Banks\r\n\r\nSource: https://www.bundesbank.de/resource
 COLLATE='latin1_swedish_ci'\
 ENGINE=InnoDB\
 ;"
+
+
+CREATE_GEOMETRY = "CREATE TABLE IF NOT EXISTS `geometry` (\
+    `caller` VARCHAR(200) NOT NULL COMMENT 'name of called tkinter form' COLLATE 'latin1_swedish_ci',\
+    `geometry` VARCHAR(50) NULL DEFAULT NULL COMMENT '>width<x>height<+>x-position<+>y-position<' COLLATE 'latin1_swedish_ci',\
+    `column_width` SMALLINT(5) UNSIGNED NULL DEFAULT NULL COMMENT 'column width  in form or pandastable',\
+    PRIMARY KEY (`caller`) USING BTREE\
+)\
+COMMENT='Contains geometry information and column widths for each called tkinter form or pandastable\r\n\r\ngeometry() method sets:\r\n\r\nWindow size- width × height\r\nWindow position- X and Y distance from the top-left corner of the screen\r\n'\
+COLLATE='latin1_swedish_ci'\
+ENGINE=InnoDB\
+;"
+
 
 CREATE_HOLDING = "CREATE TABLE IF NOT EXISTS `holding` (\
     `iban` CHAR(22) NOT NULL COMMENT ':97A:: DepotKonto' COLLATE 'latin1_swedish_ci',\
@@ -363,6 +377,7 @@ ENGINE=InnoDB\
 
 
 CREATE_TABLES = [CREATE_BANKIDENTIFIER,
+                 CREATE_GEOMETRY,
                  CREATE_ISIN,
                  CREATE_HOLDING,
                  CREATE_HOLDING_VIEW,
@@ -402,6 +417,7 @@ DB_applicant_name = 'applicant_name'
 DB_bank_reference = 'bank_reference'
 DB_beneficiary = 'beneficiary'
 DB_bic = 'bic'
+DB_caller = 'caller'
 DB_category_name = 'category_name'
 DB_change_indicator = 'change_indicator'
 DB_charges = 'charges'
@@ -412,6 +428,7 @@ DB_closing_entry_date = 'closing_entry_date'
 DB_closing_status = 'closing_status'
 DB_code = 'code'
 DB_code_deletion = 'code_deletion'
+DB_column_width = 'column_width'
 DB_comments = 'comments'
 DB_compensation_amount = 'compensation_amount'
 DB_counter = 'counter'
@@ -434,6 +451,7 @@ DB_exchange_rate = 'exchange_rate'
 DB_extra_details = 'extra_details'
 DB_datasource = 'datasource'
 DB_follow_code = 'follow_code'
+DB_geometry = 'geometry'
 DB_guessed_entry_date = 'guessed_entry_date'
 DB_high_price = 'high_price'
 DB_iban = 'iban'

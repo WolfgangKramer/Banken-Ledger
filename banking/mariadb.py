@@ -1,6 +1,6 @@
 """
 Created on 26.11.2019
-__updated__ = "2025-06-29"
+__updated__ = "2025-07-17"
 @author: Wolfgang Kramer
 """
 
@@ -33,7 +33,7 @@ from banking.declarations_mariadb import (
     BANKIDENTIFIER,
 
     CREATE_TABLES,
-    HOLDING, HOLDING_VIEW,
+    HOLDING,
     ISIN, PRICES, LEDGER, LEDGER_VIEW, LEDGER_COA, LEDGER_STATEMENT,
     SERVER, STATEMENT, SHELVES,
     TRANSACTION, TRANSACTION_VIEW,

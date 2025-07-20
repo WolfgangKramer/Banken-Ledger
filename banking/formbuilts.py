@@ -1,6 +1,6 @@
 """
 Created on 28.01.2020
-__updated__ = "2025-07-03"
+__updated__ = "2025-07-17"
 @author: Wolfgang Kramer
 """
 
@@ -8,7 +8,6 @@ import inspect
 import re
 import sys
 
-from time import sleep
 from inspect import stack
 from pathlib import Path
 from collections import namedtuple
@@ -26,10 +25,11 @@ from pandastable import config, TableModel
 from tkcalendar import DateEntry
 
 from banking.declarations_mariadb import (
-    HOLDING, HOLDING_VIEW, PRICES, PRICES_ISIN_VIEW, STATEMENT, TRANSACTION, TRANSACTION_VIEW,
+    GEOMETRY, HOLDING, HOLDING_VIEW, PRICES, PRICES_ISIN_VIEW, STATEMENT, TRANSACTION, TRANSACTION_VIEW,
     TABLE_FIELDS, TABLE_FIELDS_PROPERTIES, DATABASE_FIELDS_PROPERTIES,
     TINYINT, INTEGER, DATABASE_TYP_DECIMAL,
-    DB_currency, DB_status, DB_price_date,
+    DB_currency, DB_column_width, DB_caller, DB_geometry,
+    DB_status, DB_price_date,
     DB_opening_balance, DB_opening_currency, DB_price_currency, DB_posted_amount,
     DB_acquisition_amount, DB_market_price,
     DB_acquisition_price, DB_total_amount,
@@ -779,14 +779,14 @@ class BuiltBox(object):
         if self._button5_text is not None:
             button5 = ttk.Button(button_frame, text=self._button5_text)
             button5.grid(row=0, column=button_column, sticky=E, padx='3m',
-                         pady='3m', ipadx='2m', iy='1m')
+                         pady='3m', ipadx='2m', ipady='1m')
             button5.bind('<Return>', self.button_1_button5)
             button5.bind('<Button-1>', self.button_1_button5)
             button_column += 1
         if self._button6_text is not None:
             button6 = ttk.Button(button_frame, text=self._button6_text)
             button6.grid(row=0, column=button_column, sticky=E, x='3m',
-                         y='3m', ix='2m', iy='1m')
+                         y='3m', ix='2m', ipady='1m')
             button6.bind('<Return>', self.button_1_button6)
             button6.bind('<Button-1>', self.button_1_button6)
 
@@ -1338,11 +1338,11 @@ class BuiltSelectBox(BuiltEnterBox):
     def create_check_field(self, name, comment):
 
         if ((self.table == STATEMENT and name in [DB_iban, DB_entry_date, DB_counter])
-            or (self.table in [HOLDING, HOLDING_VIEW] and name in [DB_iban, DB_price_date, DB_ISIN])
-            or (self.table in [PRICES, PRICES_ISIN_VIEW] and name in [DB_symbol, DB_price_date])
-            or (self.table in [TRANSACTION, TRANSACTION_VIEW] in [DB_iban, DB_ISIN, DB_price_date, DB_counter])
-            or name == DB_id_no
-            ):
+                    or (self.table in [HOLDING, HOLDING_VIEW] and name in [DB_iban, DB_price_date, DB_ISIN])
+                    or (self.table in [PRICES, PRICES_ISIN_VIEW] and name in [DB_symbol, DB_price_date])
+                    or (self.table in [TRANSACTION, TRANSACTION_VIEW] in [DB_iban, DB_ISIN, DB_price_date, DB_counter])
+                    or name == DB_id_no
+                ):
             # Mandatory fields are always selected and cannot be removed from the selection
             self.data_dict[name] = 1
             field_def = FieldDefinition(definition=CHECK, name=name,
@@ -1863,6 +1863,12 @@ class BuiltPandasBox(Frame):
                       ] = self.column_width
         shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
 
+    def _N_save_col_width(self, column_width):
+
+        self.column_width = column_width
+        self.mariadb.update(GEOMETRY, {
+                            DB_caller: self.caller, DB_column_width: column_width}, caller=self.caller)
+
     def _get_col_width(self):
 
         self.column_width = self.pandas_table.maxcellwidth / 2
@@ -1871,6 +1877,16 @@ class BuiltPandasBox(Frame):
             geometry_key = ''.join([self.caller, 'COLUMN_WIDTH'])
             if geometry_key in GEOMETRY_DICT:
                 self.column_width = GEOMETRY_DICT[geometry_key]
+        return self.column_width
+
+    def _N_get_col_width(self):
+
+        self.column_width = self.pandas_table.maxcellwidth / 2
+        clause = ' '. join([DB_column_width, ' IS NOT NULL'])
+        result = self.mariadb.select_table(
+            GEOMETRY, DB_column_width, caller=self.caller, clause=clause)
+        if result:
+            self.column_width = result[0][0]
         return self.column_width
 
     def set_geometry(self):
@@ -1902,6 +1918,38 @@ class BuiltPandasBox(Frame):
         height = self._get_pandastable_height()
         geometry = ''.join([str(width), 'x', str(height),
                            BUILTPANDASBOX_WINDOW_POSITION])
+        self.dataframe_window.geometry(geometry)
+
+    def _N_set_geometry(self):
+
+        result = self.mariadb.select_table(
+            GEOMETRY, DB_geometry, caller=self.caller)
+        if result:
+            geometry = result[0][0]
+            if geometry:
+                geometry = geometry.replace('x', ' ')
+                geometry = geometry.replace('+', ' ')
+                geometry_values = geometry.split()
+                if len(geometry_values) == 4:
+                    height = self._get_pandastable_height()
+                    # geometry = >width<x>height<+>x-position<+>y-position<
+                    geometry_update = ''.join(
+                        [geometry_values[0], 'x', str(height), '+', geometry_values[2], '+', geometry_values[3]])
+                    if geometry != geometry_update:
+                        self.mariadb.update(
+                            GEOMETRY, {DB_geometry: geometry_update}, caller=self.caller)
+                    self.dataframe_window.geometry(geometry)
+                    return
+        cellwidth = self.pandas_table.maxcellwidth / 2
+        width = int(cellwidth * (self.pandas_table.cols + 1))
+        window_width = self.dataframe_window.winfo_screenwidth()
+        if width > window_width:
+            width = window_width - 10
+        height = self._get_pandastable_height()
+        geometry = ''.join([str(width), 'x', str(height),
+                           BUILTPANDASBOX_WINDOW_POSITION])
+        self.mariadb.update(
+            GEOMETRY, {DB_geometry: geometry_update}, caller=self.caller)
         self.dataframe_window.geometry(geometry)
 
     def _get_pandastable_height(self):

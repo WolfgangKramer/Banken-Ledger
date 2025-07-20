@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-06-25"
+__updated__ = "2025-07-17"
 @author: Wolfgang Kramer
 """
 
@@ -237,6 +237,7 @@ MESSAGE_TEXT = {
     'PIN_INPUT': 'Enter PIN   {} ({}) ',
     'PRICES_DELETED': '{}:  Prices deleted\n\n Used Ticker Symbol {} \n ISIN: {}',
     'PRICES_LOADED': '{}:  Price loaded for Period {}\n\n Used Ticker Symbol {} \n ISIN: {}',
+    'PRICES_ALREADY': '{}:  No new Prices found\n\n Used Ticker Symbol {} {}\n ISIN: {}  {} \n Prices already available until {}',
     'PRICES_NO': '{}:  No new Prices found\n\n Used Ticker Symbol {} {}\n ISIN: {}  {}',
     'PRODUCT_ID': 'Product_ID missing, No Bank Access possible\n Get your Product_Id: https://www.hbci-zka.de/register/prod_register.htm',
     'RADIOBUTTON': 'Select one of SELECT the RadioButtons',
@@ -300,7 +301,6 @@ KEY_PRODUCT_ID = 'PRODUCT_ID'
 KEY_ALPHA_VANTAGE = 'ALPHA_VANTAGE'
 KEY_DIRECTORY = 'DIRECTORY'
 KEY_DRIVER = 'DRIVER'
-KEY_EXPLORER = 'EXPLORER'
 KEY_MARIADB_NAME = 'MARIADB_NAME'
 KEY_MARIADB_USER = 'MARIADB_USER'
 KEY_MARIADB_PASSWORD = 'MARIADB_PASSWORD'
@@ -318,7 +318,7 @@ KEY_RESET_SCREENSIZE = 'KEY_RESET_SCREENSIZE'
 APP_SHELVE_KEYS = [
     KEY_PRODUCT_ID, KEY_ALPHA_VANTAGE, KEY_DIRECTORY, KEY_LOGGING,
     KEY_MARIADB_NAME, KEY_MARIADB_USER, KEY_MARIADB_PASSWORD,
-    KEY_EXPLORER, KEY_DRIVER, KEY_SHOW_MESSAGE, KEY_THREADING, KEY_ALPHA_VANTAGE_PRICE_PERIOD,
+    KEY_DRIVER, KEY_SHOW_MESSAGE, KEY_THREADING, KEY_ALPHA_VANTAGE_PRICE_PERIOD,
     KEY_ALPHA_VANTAGE_FUNCTION, KEY_ALPHA_VANTAGE_PARAMETER, KEY_LEDGER
 ]
 
@@ -575,7 +575,6 @@ BMW_BANK_CODE = '70220300'
 # value: [>login Link<, >identifier_delimiter<, >storage_period<]
 SCRAPER_BANKDATA = {BMW_BANK_CODE: [
     'https://ebanking.bmwbank.de/eBankingClient', '+', 360]}
-EXPLORER = ['Edge', ]
 """
 ----------------------------- Named Tuples ------------
 """

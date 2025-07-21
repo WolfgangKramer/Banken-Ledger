@@ -10,7 +10,7 @@ Only German banks with FINTS access and PIN/TAN authentication
  * Request a free API key https://www.alphavantage.co/support/#support
 # Installing on Windows
 * Install MariaDB 10.5 and create an empty database >banken<
-* Install Python 3.9
+* Install Python 3.13.3
 * Download GitHub project from https://github.com/WolfgangKramer/Banken-Ledger
 The directory structure, should look like this:  
 <pre>
@@ -23,14 +23,13 @@ bankarchive/
 |   			|-- bank.py
 |			...
 |   			|-- utils.py
-|		|-- data
-|			|-- background.gif
-|			|-- Banking.py
+|		|-- background.gif
+|		|-- Banking.py
 </pre>
 # Install Requirements
 pip install -r requirements.txt  
 # Create BAT file Banking.bat
-> cd C:\BANKEN\src\data  
+> cd C:\BANKEN\src  
 > py Banking.py
 # Customizing
 1. Customize Application INI File

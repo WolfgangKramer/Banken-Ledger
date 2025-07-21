@@ -9,6 +9,9 @@ import io
 import sys
 import requests
 import webbrowser
+import base64
+from io import BytesIO
+from PIL import Image, ImageTk
 
 from contextlib import redirect_stdout
 from time import sleep
@@ -178,6 +181,7 @@ class FinTS_MariaDB_Banking(object):
                     MariaDBuser, MariaDBname))
             self.bank_names = self.mariadb.dictbank_names()
         else:
+            self.bank_names ={}
             MariaDBname = UNKNOWN
             self.shelve_app = {}
         while True:
@@ -216,6 +220,28 @@ class FinTS_MariaDB_Banking(object):
             self.window.destroy()
         except TclError:
             pass
+
+    def gif_file(self):    
+
+
+        
+        
+        # Eingebettetes GIF als Base64-String (aus deiner Datei)
+        GIF_DATA_BASE64 = """
+        R0lGODlhDwAPAJEAAAAAAP///3p6ev///yH5BAEAAAMALAAAAAAPAA8AAAIUjI+ZwKkCzVrJsWmZsvttWEMFADs=
+        """  # <--- gekürzt zur Demo; dein vollständiger Base64-String kommt gleich weiter unten
+        
+        # Base64-String decodieren und in BytesIO laden
+        gif_bytes = base64.b64decode(GIF_DATA_BASE64)
+        gif_file = BytesIO(gif_bytes)
+
+        gif_file.seek(0)
+        img = Image.open(gif_file)
+        tk_img = ImageTk.PhotoImage(img)
+
+        return tk_img
+
+
 
     def _wm_deletion_window(self):
 

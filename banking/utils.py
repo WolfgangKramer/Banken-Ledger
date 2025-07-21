@@ -319,6 +319,12 @@ def delete_shelve_files(shelve_name):
     shelve_file = (os.path.join(os.getcwd(), shelve_name))
     try:
         shelve_file = (os.path.join(os.getcwd(), shelve_name))
+        os.remove(shelve_file) # Backend is dbm.sqlite3 or dbm.gnu
+    except Exception:
+        pass 
+    # dbm.dumb is used, but the path is incomplete. Then dbm.dumb should create two files.   
+    try:
+        shelve_file = (os.path.join(os.getcwd(), shelve_name))
         os.remove(shelve_file + '.dat')
     except Exception:
         pass
@@ -338,10 +344,8 @@ def shelve_exist(shelve_name):
     """ PARAMETER:     shelve_name = BANK_MARIADB_INI
         RETURN:        True if shelve_file exists
     """
-    if os.path.exists(shelve_name + '.dat') and os.path.exists(shelve_name + '.dir'):
-        return True
-    else:
-        return False
+    result = os.path.isfile(shelve_name)
+    return result
 
 
 def shelve_get_keylist(shelve_name, flag='r'):
@@ -377,7 +381,7 @@ def shelve_get_key(shelve_name, key, none=True, flag='r'):
 
     """
 
-    if os.path.exists(shelve_name + '.dat') and os.path.exists(shelve_name + '.dir'):
+    if os.path.exists(shelve_name):
         with shelve.open(shelve_name, flag=flag, protocol=None, writeback=False) as shelve_file:
             if isinstance(key, list):
                 key_exist = []

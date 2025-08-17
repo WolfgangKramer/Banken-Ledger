@@ -41,7 +41,7 @@ from banking.declarations_mariadb import (
     DB_purpose_wo_identifier,
     DB_status,
 )
-from banking.formbuilts import MessageBoxInfo
+from banking.messagebox import MessageBoxInfo
 from banking.utils import dec2,  date_days
 
 

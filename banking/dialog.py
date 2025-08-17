@@ -16,7 +16,7 @@ from operator import itemgetter
 from fints.message import FinTSInstituteMessage
 from fints.segments.accounts import HISPAS1
 from fints.segments.auth import (
-    HITAN6, HITANS1, HITANS2, HITANS3, HITANS4, HITANS5, HITANS6, HIPINS1
+    HITAN6, HITAN7, HITANS1, HITANS2, HITANS3, HITANS4, HITANS5, HITANS6, HITANS7, HIPINS1
 )
 from fints.segments.bank import HIBPA3, HIUPA4, HIUPD6
 from fints.segments.depot import HIWPD5, HIWPD6
@@ -26,10 +26,12 @@ from fints.segments.statement import HIKAZ6, HIKAZ7
 from fints.utils import Password
 from mt940.models import Transactions
 
-from banking.declarations_mariadb import STATEMENT, TABLE_FIELDS
+from banking.declarations_mariadb import (
+    STATEMENT, TABLE_FIELDS,
+    DB_show_messages, DB_logging
+    )
 from banking.declarations import (
-    BANK_MARIADB_INI,
-    CODE_0030, CODE_3010, CODE_3040,
+        CODE_0030, CODE_3010, CODE_3040, CODE_3955,
     DIALOG_ID_UNASSIGNED,
     ERROR,
     Informations, INFORMATION, IDENTIFIER,
@@ -44,21 +46,21 @@ from banking.declarations import (
     KEY_ACC_BANK_CODE, KEY_ACC_CURRENCY, KEY_ACC_CUSTOMER_ID, KEY_ACC_OWNER_NAME,
     KEY_ACC_PRODUCT_NAME, KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_TYPE,
     PNS,
-    WARNING, KEY_LOGGING)
+    WARNING )
 from banking.fints_extension import HIKAZS6, HIKAZS7,  HIWPDS5, HIWPDS6
-from banking.formbuilts import (
-    MessageBoxTermination, MessageBoxInfo, WM_DELETE_WINDOW)
+from banking.formbuilts import   WM_DELETE_WINDOW
+from banking.messagebox import (MessageBoxTermination, MessageBoxInfo, MessageBoxAsk)
 from banking.forms import PrintMessageCode, InputPIN
 from banking.message import Messages
 from banking.utils import (
-    Amount,
+    Amount, application_store,
     bankdata_informations_append,
     check_main_thread,
     dec2, dec6,
     create_iban,
     date_yymmdd,
     exception_error,
-    shelve_get_key,)
+    )
 
 
 re_identification = re.compile(r'^:35B:ISIN\s(.*)\|(.*)\|(.*)$')
@@ -91,8 +93,10 @@ class Dialogs(object):
 
         self.mariadb = mariadb
         self.messages = Messages(mariadb)
-        self._show_message = shelve_get_key(BANK_MARIADB_INI, KEY_SHOW_MESSAGE)
-        self._logging = shelve_get_key(BANK_MARIADB_INI, KEY_LOGGING)
+        result = application_store.get([DB_logging, DB_show_messages])
+        if result:
+            self._show_message = result[DB_show_messages]
+            self._logging = result[DB_logging]
         if not self._show_message:
             self._show_message = ERROR
 
@@ -129,10 +133,12 @@ class Dialogs(object):
                 PNS.pop(bank.bank_code, None)
                 response = None
             bank.dialog_id = seg.dialog_id
-            seg = response.find_segment_first(HITAN6)
+            seg = response.find_segment_first(HITAN7)
             if not seg:
-                MessageBoxInfo(message=MESSAGE_TEXT['HITAN6'].format(
-                    bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
+                seg = response.find_segment_first(HITAN6) 
+                if not seg:               
+                    MessageBoxInfo(message=MESSAGE_TEXT['HITAN_MISSED'].format(
+                        bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
             bank.task_reference = seg.task_reference
             response, _ = self._get_tan(bank, response)
             if response:
@@ -184,7 +190,7 @@ class Dialogs(object):
                 (KEY_BPD, bank.bpd_version), (KEY_BANK_NAME, bank.bank_name)])
         else:
             return
-        for hitans in [HITANS6, HITANS5, HITANS4, HITANS3, HITANS2, HITANS1]:
+        for hitans in [HITANS7, HITANS6, HITANS5, HITANS4, HITANS3, HITANS2, HITANS1]:
             seg = response.find_segment_first(hitans)
             if seg is not None:
                 bank.twostep_parameters = []
@@ -196,6 +202,13 @@ class Dialogs(object):
                     bank.bank_code, (KEY_TWOSTEP, bank.twostep_parameters))
                 break
         transaction_versions_allowed = {}
+        transaction_versions_allowed['TAN'] = []
+        seg = response.find_segment_first(HITANS6)
+        if seg is not None:
+            transaction_versions_allowed['TAN'].append(seg.header.version)
+        seg = response.find_segment_first(HITANS7)
+        if seg is not None:
+            transaction_versions_allowed['TAN'].append(seg.header.version)
         transaction_versions_allowed['KAZ'] = []
         seg = response.find_segment_first(HIKAZS6)
         if seg is not None:
@@ -218,6 +231,10 @@ class Dialogs(object):
         else:
             # use lowest version
             bank.transaction_versions = {}
+            bank.transaction_versions['TAN'] = 7
+            seg = response.find_segment_first(HITANS6)
+            if seg is not None:
+                bank.transaction_versions['TAN'] = seg.header.version            
             bank.transaction_versions['KAZ'] = 7
             seg = response.find_segment_first(HIKAZS6)
             if seg is not None:
@@ -329,11 +346,13 @@ class Dialogs(object):
     def _receive_msg(self, bank, response, hirms_codes):
 
         if CODE_0030 in hirms_codes:
-            seg = response.find_segment_first(HITAN6)
+            seg = response.find_segment_first(HITAN7)
             if not seg:
-                MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
-                    bank.bank_name, bank.account_number, bank.account_product_name), bank=bank, information=WARNING)
-                return [], hirms_codes
+                seg = response.find_segment_first(HITAN6)
+                if not seg:               
+                    MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
+                        bank.bank_name, bank.account_number, bank.account_product_name), bank=bank, information=WARNING)
+                    return [], hirms_codes
             if check_main_thread():
                 bank.task_reference = seg.task_reference
                 response, hirms_codes = self._get_tan(bank, response)
@@ -341,6 +360,20 @@ class Dialogs(object):
                 MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
                     bank.bank_name, bank.account_number, bank.account_product_name), bank=bank, information=WARNING)
         return response, hirms_codes
+    
+    def _decoupled_process(self, bank, response, hirms_codes):
+
+        if CODE_3955 in hirms_codes:
+            # Security clearance is provided via another channel
+            for seg in response.find_segments(HITAN7):
+                bank.task_reference = seg.task_reference
+                message_box_ask = MessageBoxAsk(message=MESSAGE_TEXT['HITAN'].format(seg.challenge))
+                if message_box_ask.result:
+                    bank.tan_process = 'S'
+                    return True
+        return False
+
+  
 
     def _send_msg(self, bank, message, dialog_init=False):
 
@@ -401,7 +434,7 @@ class Dialogs(object):
         error = False
         for response in segment.responses:
             codes.append(response.code)
-            message = ' ' .join(['Code', response.code, response.text])
+            message = ' ' .join(['Code', str(response.code), str(response.text)])
             if response.code == '3076':      # SCA not required
                 bank.sca = False
             if response.code[0] in ['0', '1']:
@@ -419,10 +452,10 @@ class Dialogs(object):
                 bankdata_informations_append(WARNING, message)
                 if response.reference_element:
                     bankdata_informations_append(WARNING, ' ' .join(
-                        ['- Bezugssegment', response.reference_element]))
+                        ['- Bezugssegment', str(response.reference_element)]))
                 if response.parameters:
                     bankdata_informations_append(ERROR, ' ' .join(
-                        ['- Parameters', response.parameters]))
+                        ['- Parameters', str(response.parameters)]))
 
         return error, codes
 
@@ -771,6 +804,9 @@ class Dialogs(object):
             bank.tan_process = 4
             response, hirms_codes = self._send_msg(
                 bank, self.messages.msg_statements(bank))
+            if self._decoupled_process(bank, response, hirms_codes):
+                response, hirms_codes = self._send_msg(
+                    bank, self.messages.msg_tan_decoupled(bank))                
             response, hirms_codes = self._receive_msg(
                 bank, response, hirms_codes)
             if not response:

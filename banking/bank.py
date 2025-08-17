@@ -4,22 +4,22 @@ __updated__ = "2025-07-07"
 @author: Wolfgang Kramer
 """
 from banking.declarations import (
-    BANK_MARIADB_INI,
     CUSTOMER_ID_ANONYMOUS,
     DIALOG_ID_UNASSIGNED,
     HTTP_CODE_OK, MESSAGE_TEXT,
-    KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_PRODUCT_ID, KEY_BANK_NAME, KEY_VERSION_TRANSACTION,
+    KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_BANK_NAME, KEY_VERSION_TRANSACTION,
     KEY_SERVER, KEY_SECURITY_FUNCTION, KEY_SEPA_FORMATS, KEY_SYSTEM_ID,
     KEY_BPD, KEY_UPD, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS,
     PRODUCT_ID, PNS,
     SCRAPER_BANKDATA,
     SHELVE_KEYS, SYSTEM_ID_UNASSIGNED,
 )
+from banking.declarations_mariadb import DB_product_id
 from banking.dialog import Dialogs
-from banking.formbuilts import MessageBoxError, MessageBoxInfo
+from banking.messagebox import MessageBoxError, MessageBoxInfo
 from banking.forms import InputPIN
 
-from banking.utils import shelve_get_key, http_error_code
+from banking.utils import application_store, http_error_code
 from datetime import date
 from random import randint
 import re
@@ -70,7 +70,7 @@ class InitBank(object):
             # Checking / Installing FINTS server connection
             # register product:
             # https://www.hbci-zka.de/register/prod_register.htm
-            self.product_id = shelve_get_key(BANK_MARIADB_INI, KEY_PRODUCT_ID)
+            self.product_id = application_store.get(DB_product_id)
             if self.product_id == '':
                 MessageBoxInfo(message=MESSAGE_TEXT['PRODUCT_ID'])
                 self.product_id = PRODUCT_ID
@@ -152,7 +152,7 @@ class InitBankSync(object):
                     message=MESSAGE_TEXT['PIN'].format('', self.bank_code))
                 return None  # thread checking
         # register product: https://www.hbci-zka.de/register/prod_register.htm
-        self.product_id = shelve_get_key(BANK_MARIADB_INI, KEY_PRODUCT_ID)
+        self.product_id = application_store.get(DB_product_id)
         if self.product_id == '':
             MessageBoxInfo(message=MESSAGE_TEXT['PRODUCT_ID'])
             self.product_id = PRODUCT_ID
@@ -207,7 +207,7 @@ class InitBankAnonymous(object):
                 message=MESSAGE_TEXT['LOGIN'].format(self.bank_code, KEY_SERVER))
             return None  # thread checking
         # register product: https://www.hbci-zka.de/register/prod_register.htm
-        self.product_id = shelve_get_key(BANK_MARIADB_INI, KEY_PRODUCT_ID)
+        self.product_id = application_store.get(DB_product_id)
         if self.product_id in [None, '']:
             MessageBoxInfo(message=MESSAGE_TEXT['PRODUCT_ID'])
             self.product_id = PRODUCT_ID
@@ -221,6 +221,7 @@ class InitBankAnonymous(object):
         # Init Sychronization Data
         self.system_id = SYSTEM_ID_UNASSIGNED
         self.security_identifier = '0'
+        self.security_function = None
         self.bpd_version = 0
         self.bank_name = None
         self.twostep_parameters = []

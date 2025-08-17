@@ -22,7 +22,7 @@ from fints.formals import (
 )
 from fints.message import FinTSCustomerMessage
 from fints.models import SEPAAccount
-from fints.segments.auth import HKIDN2, HKVVB3, HKTAN6
+from fints.segments.auth import HKIDN2, HKVVB3, HKTAN6, HKTAN7
 from fints.segments.depot import HKWPD5, HKWPD6
 from fints.segments.dialog import HKSYN3, HKEND1
 from fints.segments.message import HNHBK3, HNHBS1, HNSHK4, HNSHA2, HNVSD1, HNVSK3
@@ -32,7 +32,8 @@ from fints.types import SegmentSequence
 
 from banking.declarations import MESSAGE_TEXT, PNS, SYSTEM_ID_UNASSIGNED
 from banking.fints_extension import HKCSE1
-from banking.formbuilts import MessageBoxInfo, MessageBoxTermination,  WM_DELETE_WINDOW
+from banking.formbuilts import WM_DELETE_WINDOW
+from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.forms import InputTAN
 
 
@@ -118,7 +119,7 @@ def from_to_date(bank):
 
 def _get_segment(bank, segment_type):
 
-    for seg in [HKKAZ6, HKKAZ7, HKWPD5, HKWPD6]:
+    for seg in [HKTAN7, HKTAN6, HKKAZ7, HKKAZ6, HKWPD6, HKWPD5]:
         if (seg.__name__[2:5] == segment_type
                 and seg.__name__[5:6] == str(bank.transaction_versions[segment_type])):
             return seg
@@ -248,9 +249,9 @@ class Segments():
         )
         return message
 
-    def segHKTAN(self, bank, message, segment_name='HKIDN'):
+    def segHKTAN_decoupled(self, bank, message, segment_name='HKKAZ'):
         """
-        Segment Geschaeftsvorfall HKTAN6 (starke Kundenauthentifizierung)
+        Segment Geschaeftsvorfall HITAN7 (starke Kundenauthentifizierung)
             FINTS Dokument: Schnittstellenspezifikation Sicherheitsverfahren PIN/TAN
             https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Security_Sicherheitsverfahren_PINTAN_2018-02-23_final_version.pdf
 
@@ -259,11 +260,38 @@ class Segments():
         """
         if bank.task_reference == 'noref':
             bank.task_reference = None
-        message += HKTAN6(
+        try:    
+            hktan = _get_segment(bank, 'TAN')
+        except Exception:
+            hktan = HKTAN6
+        message += hktan(
+            'S',
+            task_reference=bank.task_reference,
+            further_tan_follows=False,
+        )
+        return message
+
+    def segHKTAN(self, bank, message, segment_name='HKIDN'):
+        """
+        Segment Geschaeftsvorfall HITAN6/7 (starke Kundenauthentifizierung)
+            FINTS Dokument: Schnittstellenspezifikation Sicherheitsverfahren PIN/TAN
+            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Security_Sicherheitsverfahren_PINTAN_2018-02-23_final_version.pdf
+
+            Dieser Geschaeftsvorfall dient im Zwei-Schritt-Verfahren dazu, eine Challenge zur
+            TAN-Bildung anzufordern und eine TAN zu einem Auftrag zu uebermitteln.
+        """
+        if bank.task_reference == 'noref':
+            bank.task_reference = None
+        try:    
+            hktan = _get_segment(bank, 'TAN')
+        except Exception:
+            hktan = HKTAN6            
+        message += hktan(
             bank.tan_process,
             segment_name,
             task_reference=bank.task_reference,
-            further_tan_follows=False
+            further_tan_follows=False,
+            tan_medium_name = bank.security_function            
         )
         return message
 
@@ -306,14 +334,17 @@ class Segments():
         """
         from_to_date(bank)
         hkkaz = _get_segment(bank, 'KAZ')
-        message += hkkaz(
-            account=hkkaz._fields['account'].type.from_sepa_account(
-                _sepaaccount(bank)),
-            all_accounts=False,
-            date_start=bank.from_date,
-            date_end=bank.to_date
-        )
-        return message
+        if hkkaz in [HKKAZ6, HKKAZ7]:
+            message += hkkaz(
+                account=hkkaz._fields['account'].type.from_sepa_account(
+                    _sepaaccount(bank)),
+                all_accounts=False,
+                date_start=bank.from_date,
+                date_end=bank.to_date
+            )
+            return message
+        MessageBoxTermination(info=MESSAGE_TEXT['HIKAZ'].format(
+            bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
 
     def segHKWPD(self, bank, message):
         """
@@ -416,14 +447,21 @@ class Segments():
         """
         if bank.system_id == SynchronizationMode.NEW_SYSTEM_ID:
             message += HKSYN3(SynchronizationMode.NEW_SYSTEM_ID)
-        input_tan = InputTAN(bank.bank_code, bank.bank_name, mariadb)
-        if input_tan.button_state == WM_DELETE_WINDOW:
-            return None
-        message += HNSHA2(
-            security_reference=bank.security_reference,
-            user_defined_signature=UserDefinedSignature(
-                PNS[bank.bank_code], input_tan.tan),
-        )
+        if bank.tan_process != 'S':
+            # tan decoupled
+            input_tan = InputTAN(bank.bank_code, bank.bank_name, mariadb)
+            if input_tan.button_state == WM_DELETE_WINDOW:
+                return None
+            message += HNSHA2(
+                security_reference=bank.security_reference,
+                user_defined_signature=UserDefinedSignature(
+                    PNS[bank.bank_code], input_tan.tan),
+            )
+        else:
+            message += HNSHA2(
+                security_reference=bank.security_reference,
+                user_defined_signature=UserDefinedSignature(PNS[bank.bank_code])
+                )
         return message
 
     def segHNHBS(self, bank, message):

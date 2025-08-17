@@ -279,7 +279,7 @@ class RowHeaderCallForms(RowHeader):
 
     def __init__(self, parent=None, table=None, width=50, bg='gray75', root=None):
         self.root = root
-        super().__init__(parent=parent, table=table, width=width, bg=bg)
+        super().__init__(parent=parent, table=table, width=width, bgcolor=bg)
 
     def popupMenu(self, event, rows=None, cols=None, outside=None):
         """
@@ -381,7 +381,7 @@ class Table(Table):
         # Add the table and header to the frame
         self.rowheader = RowHeader(self.parentframe, self)
         self.colheader = ColumnHeaderCallForms(
-            self.parentframe, self, bg='gray25')
+            self.parentframe, self, bgcolor='gray25')
         self.rowindexheader = IndexHeader(self.parentframe, self, bg='gray75')
         self.Yscrollbar = AutoScrollbar(
             self.parentframe, orient=VERTICAL, command=self.set_yviews)
@@ -432,48 +432,61 @@ class Table(Table):
     def popupMenu(self, event, rows=None, cols=None, outside=None):
         """Add left and right click behaviour for canvas, should not have to override
             this function, it will take its values from defined dicts in constructor"""
-
-        defaultactions = {
-            "Copy": lambda: self.copy(rows, cols),
-            # "Undo" : lambda: self.undo(),
-            # "Paste" : lambda: self.paste(),
-            # "Fill Down" : lambda: self.fillDown(rows, cols),
-            # "Fill Right" : lambda: self.fillAcross(cols, rows),
-            # "Add Row(s)" : lambda: self.addRows(),
-            # "Delete Row(s)" : lambda: self.deleteRow(),
-            # "Add Column(s)" : lambda: self.addColumn(),
-            # "Delete Column(s)" : lambda: self.deleteColumn(),
-            # "Clear Data" : lambda: self.deleteCells(rows, cols),
-            "Select All": self.selectAll,
-            # "Auto Fit Columns": self.autoResizeColumns,
-            "Table Info": self.showInfo,
-            "Set Color": self.setRowColors,
-            # "Show as Text" : self.showasText,
-            "Filter Rows": self.queryBar,
-            # "New": self.new,
-            # "Open": self.load,
-            # "Save": self.save,
-            # "Save As": self.saveAs,
-            # "Import Text/CSV": lambda: self.importCSV(dialog=True),
-            # "Import hdf5": lambda: self.importHDF(dialog=True),
-            # "Export": self.doExport,
-            "Export": self.root.excel_writer,
-            # "Plot Selected" : self.plotSelected,
-            # "Hide plot" : self.hidePlot,
-            # "Show plot" : self.showPlot,
-            "Preferences": self.showPreferences,
-            # "Table to Text" : self.showasText,
-            # "Clean Data" : self.cleanData,
-            "Clear Formatting": self.clearFormatting,
-            # "#Undo Last Change": self.undo,
-            "Copy Table": self.copyTable,
-            # "Find/Replace": self.findText
-        }
+        
+        if self.root:    
+            defaultactions = {
+                "Copy": lambda: self.copy(rows, cols),
+                # "Undo" : lambda: self.undo(),
+                # "Paste" : lambda: self.paste(),
+                # "Fill Down" : lambda: self.fillDown(rows, cols),
+                # "Fill Right" : lambda: self.fillAcross(cols, rows),
+                # "Add Row(s)" : lambda: self.addRows(),
+                # "Delete Row(s)" : lambda: self.deleteRow(),
+                # "Add Column(s)" : lambda: self.addColumn(),
+                # "Delete Column(s)" : lambda: self.deleteColumn(),
+                # "Clear Data" : lambda: self.deleteCells(rows, cols),
+                "Select All": self.selectAll,
+                # "Auto Fit Columns": self.autoResizeColumns,
+                "Table Info": self.showInfo,
+                "Set Color": self.setRowColors,
+                # "Show as Text" : self.showasText,
+                "Filter Rows": self.queryBar,
+                # "New": self.new,
+                # "Open": self.load,
+                # "Save": self.save,
+                # "Save As": self.saveAs,
+                # "Import Text/CSV": lambda: self.importCSV(dialog=True),
+                # "Import hdf5": lambda: self.importHDF(dialog=True),
+                # "Export": self.doExport,
+                "Export": self.root.excel_writer,
+                # "Plot Selected" : self.plotSelected,
+                # "Hide plot" : self.hidePlot,
+                # "Show plot" : self.showPlot,
+                "Preferences": self.showPreferences,
+                # "Table to Text" : self.showasText,
+                # "Clean Data" : self.cleanData,
+                "Clear Formatting": self.clearFormatting,
+                # "#Undo Last Change": self.undo,
+                "Copy Table": self.copyTable,
+                # "Find/Replace": self.findText
+            }
+        else:
+            defaultactions = {
+                "Copy": lambda: self.copy(rows, cols),
+                "Select All": self.selectAll,
+                "Table Info": self.showInfo,
+                "Set Color": self.setRowColors,
+                "Filter Rows": self.queryBar,
+                "Preferences": self.showPreferences,
+                "Clear Formatting": self.clearFormatting,
+                "Copy Table": self.copyTable,
+            }                
 
         main = ["Copy", "Set Color"]
         general = ["Select All", "Filter Rows",
                    "Table Info", "Preferences"]
 
+        
         filecommands = ['Export']
         tablecommands = ['Clear Formatting']
 
@@ -526,7 +539,8 @@ class Table(Table):
             popupmenu.add_command(label=action, command=defaultactions[action])
 
         popupmenu.add_separator()
-        createSubMenu(popupmenu, 'File', filecommands)
+        if self.root:
+            createSubMenu(popupmenu, 'File', filecommands)
         """
         createSubMenu(popupmenu, 'Edit', editcommands)
         createSubMenu(popupmenu, 'Plot', plotcommands)
@@ -568,7 +582,7 @@ class TableRowEdit(Table):
         self.rowheader = RowHeaderCallForms(
             self.parentframe, self, root=TableRowEdit.root)
         self.colheader = ColumnHeaderCallForms(
-            self.parentframe, self, bg='gray25')
+            self.parentframe, self, bgcolor='gray25')
         self.rowindexheader = IndexHeader(self.parentframe, self, bg='gray75')
         self.Yscrollbar = AutoScrollbar(
             self.parentframe, orient=VERTICAL, command=self.set_yviews)

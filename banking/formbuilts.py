@@ -4,16 +4,16 @@ __updated__ = "2025-07-17"
 @author: Wolfgang Kramer
 """
 
-import inspect
+
 import re
-import sys
+
 
 from inspect import stack
 from pathlib import Path
 from collections import namedtuple
 from datetime import date, timedelta
 from tkinter import (
-    Tk, TclError, ttk, messagebox, Toplevel, StringVar, IntVar, INSERT, Text,
+    Tk, TclError, ttk, Toplevel, StringVar, IntVar, INSERT, Text,
     W, E, filedialog, BOTH, BOTTOM, TOP, HORIZONTAL, Canvas,
     END, DISABLED)
 from tkinter.ttk import (
@@ -28,7 +28,9 @@ from banking.declarations_mariadb import (
     GEOMETRY, HOLDING, HOLDING_VIEW, PRICES, PRICES_ISIN_VIEW, STATEMENT, TRANSACTION, TRANSACTION_VIEW,
     TABLE_FIELDS, TABLE_FIELDS_PROPERTIES, DATABASE_FIELDS_PROPERTIES,
     TINYINT, INTEGER, DATABASE_TYP_DECIMAL,
-    DB_currency, DB_column_width, DB_caller, DB_geometry,
+    DB_caller,
+    DB_currency, DB_geometry, DB_column_width,
+    DB_directory,
     DB_status, DB_price_date,
     DB_opening_balance, DB_opening_currency, DB_price_currency, DB_posted_amount,
     DB_acquisition_amount, DB_market_price,
@@ -39,21 +41,20 @@ from banking.declarations_mariadb import (
 )
 from banking.declarations import (
 
-    BANK_MARIADB_INI,
     Caller, ToolbarSwitch, Informations,
-    EURO, ERROR, EDIT_ROW,
+    EURO, EDIT_ROW,
     FN_COLUMNS_EURO, FN_COLUMNS_PERCENT, FN_FROM_DATE, FN_TO_DATE,
     HEIGHT_TEXT,
-    INFORMATION,
-    KEY_GEOMETRY, KEY_PIN, KEY_DIRECTORY,
     MESSAGE_TEXT, MESSAGE_TITLE,
     NO_CURRENCY_SIGN, NUMERIC,
 )
 from banking.pandastable_extension import Table, TableRowEdit
 from banking.utils import (
-    Amount, check_main_thread, dec2, shelve_get_key, shelve_put_key, list_positioning, exception_error,
-    bankdata_informations_append, prices_informations_append
-)
+    application_store,
+    Amount, check_main_thread, dec2, list_positioning,
+    )
+from banking.messagebox import (  MessageBoxInfo, MessageBoxTermination)
+from banking.mariadb import MariaDB
 
 ENTRY = 'Entry'
 COMBO = 'ComboBox'
@@ -250,10 +251,9 @@ class FileDialogue():
             else:
                 filetypes = (("CSV files", "*.csv"), ("all files", "*.*"))
         if create_file:
-            directory = shelve_get_key(BANK_MARIADB_INI, KEY_DIRECTORY)
+            directory = application_store.get(DB_directory)
             if directory:
                 initialdir = directory
-        if create_file:
             self.filename = filedialog.asksaveasfilename(
                 initialdir=initialdir, title=title, filetypes=filetypes)
             filepath = Path(self.filename)
@@ -262,99 +262,6 @@ class FileDialogue():
         else:
             self.filename = filedialog.askopenfilename(
                 initialdir=initialdir, title=title, filetypes=filetypes)
-
-
-class MessageBoxInfo():
-    """
-    bank                  if true: store message in bankdata_informations_append
-    information_storage   Instance of Class Informations gathering messages in ClassVar informations
-    """
-
-    def __init__(self, message=None, title=MESSAGE_TITLE, bank=False, information_storage=None, information=INFORMATION):
-
-        if not check_main_thread() or information_storage:
-            if information_storage == Informations.PRICES_INFORMATIONS:  # messages downloading prices threading
-                prices_informations_append(information, message)
-            else:
-                if bank:  # messages downloading bank threading
-                    bankdata_informations_append(information, message)
-                else:
-                    print(message)
-        else:
-            if information != INFORMATION:
-                bankdata_informations_append(information, message)
-            window = Tk()
-            window.withdraw()
-            message = extend_message_len(title, message)
-            window.title(title)
-            messagebox.showinfo(title=title, message=message,)
-            destroy_widget(window)
-
-
-class MessageBoxError():
-
-    def __init__(self, message=None, title=MESSAGE_TITLE):
-        print(message)
-        try:
-            if not check_main_thread:
-                # its a banking Dialogue
-                bankdata_informations_append(ERROR, message)
-            else:
-                window = Tk()
-                window.withdraw()
-                message = extend_message_len(title, message)
-                window.title(title)
-                messagebox.showerror(title=title, message=message)
-                MessageBoxTermination()
-        except Exception:
-            exception_error(message=message)
-
-
-class MessageBoxTermination(MessageBoxInfo):
-    """
-    bank                  Instance of Class InitBank gathering fints_codes in ClassVar
-    information_storage   Instance of Class Informations gathering messages in ClassVar informations
-    """
-
-    def __init__(self, info='', bank=None):
-
-        message = MESSAGE_TEXT['TERMINATION'] + ' '
-        if info:
-            message = message + '\n' + info
-        for stack_item in inspect.stack()[2:]:
-            filename = stack_item[1]
-            line = stack_item[2]
-            method = stack_item[3]
-            message = (
-                message + '\n' + filename + '\n' + 'LINE:   ' +
-                str(line) + '   METHOD: ' + method
-            )
-        if not check_main_thread():
-            # its a banking Dialogue
-            message = ' '.join([bank.bank_name, bank.iban, message])
-            bankdata_informations_append(ERROR, message)
-        else:
-            super().__init__(message=message, title=MESSAGE_TITLE, bank=bank)
-            sys.exit()
-
-
-class MessageBoxAsk():
-    """
-    returns True if answer is YES
-    """
-
-    def __init__(self, message=None, title=MESSAGE_TITLE):
-
-        if not check_main_thread:
-            # its a banking Dialogue
-            bankdata_informations_append(ERROR, message)
-        else:
-            window = Tk()
-            window.withdraw()
-            window.title(title)
-            self.result = messagebox.askyesno(
-                title=title, message=message, default='no')
-            destroy_widget(window)
 
 
 class ProgressBar(Progressbar):
@@ -617,6 +524,7 @@ class BuiltBox(object):
             grab=True, scrollable=False):
 
         Caller.caller = self.caller = self.__class__.__name__
+        self.mariadb = MariaDB()
         self.button_state = None
         self._box_window_top = Toplevel()
         if check_main_thread():
@@ -702,14 +610,9 @@ class BuiltBox(object):
 
     def set_geometry(self):
 
-        if self.caller == 'AppCustomizing':
-            return BUILTBOX_WINDOW_POSITION
-        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-        if GEOMETRY_DICT:
-            if self.caller in GEOMETRY_DICT:
-                geometry = GEOMETRY_DICT[self.caller]
-            else:
-                geometry = BUILTBOX_WINDOW_POSITION
+        result = self.mariadb.select_table(GEOMETRY, '*', caller=self.caller, result_dict=True)
+        if result:
+            geometry = result[0][DB_geometry]
         else:
             geometry = BUILTBOX_WINDOW_POSITION
         self._box_window_top.geometry(geometry)
@@ -809,23 +712,14 @@ class BuiltBox(object):
         """
         put window geometry
         """
-        if self.caller == 'AppCustomizing':
-            return
-        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-        if not GEOMETRY_DICT:
-            GEOMETRY_DICT = {}
         if window.winfo_exists():  # window exists
-            if self.caller in GEOMETRY_DICT:
-                width = window.winfo_width()
-                height = window.winfo_height()
-                geometry = ''.join([str(width), 'x', str(
-                    height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
-                GEOMETRY_DICT[self.caller] = geometry
-            else:
-                GEOMETRY_DICT[self.caller] = BUILTBOX_WINDOW_POSITION
+            width = window.winfo_width()
+            height = window.winfo_height()
+            geometry = ''.join([str(width), 'x', str(
+                height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
         else:
-            GEOMETRY_DICT[self.caller] = BUILTBOX_WINDOW_POSITION
-        shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+            geometry = BUILTBOX_WINDOW_POSITION
+        self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.caller, DB_geometry: geometry})    
 
     def button_1_button1(self, event):
 
@@ -1156,8 +1050,8 @@ class BuiltEnterBox(BuiltBox):
                 widget_entry.bind("<FocusIn>", self.focus_in_action)
             if field_def.protected:
                 widget_entry.config(state=DISABLED)
-            if field_def.name in [KEY_PIN]:
-                widget_entry.config(show='*')
+            #if field_def.name in [KEY_PIN]:
+            #    widget_entry.config(show='*')
             if field_def.definition == CHECK:
                 if field_def.default_value:
                     field_def.textvar.set(1)
@@ -1300,6 +1194,7 @@ class BuiltSelectBox(BuiltEnterBox):
                  ):
 
         Caller.caller = self.__class__.__name__
+        self.mariadb = MariaDB()
         self.title = title
         self.header = header
         self.table = table
@@ -1331,7 +1226,7 @@ class BuiltSelectBox(BuiltEnterBox):
 
         if not self.selection_name:
             self.selection_name = self.title
-        result = shelve_get_key(BANK_MARIADB_INI, self.selection_name)
+        result = self.mariadb.selection_get(self.selection_name)    
         if result:
             self.data_dict = result
 
@@ -1411,8 +1306,7 @@ class BuiltSelectBox(BuiltEnterBox):
         self.validation()
         if not self.footer.get():
             if self.selection_name:
-                shelve_put_key(BANK_MARIADB_INI,
-                               (self.selection_name, self.field_dict))
+                self.mariadb.selection_put(self.selection_name, self.field_dict)
             self.quit_widget()
 
     def button_1_button3(self, event):
@@ -1496,7 +1390,7 @@ class BuiltTableRowBox(BuiltEnterBox):
         super().__init__(title=title, header=header, field_defs=field_defs,
                          button1_text=button1_text, button2_text=button2_text,
                          button3_text=button3_text, button4_text=button4_text,
-                         scrollable=scrollable)
+                         grab=True, scrollable=scrollable)
 
     def create_field_defs(self):
         """
@@ -1720,8 +1614,8 @@ class BuiltPandasBox(Frame):
                  ):
 
         Caller.caller = self.caller = self.__class__.__name__
-        self.title = title
-        self.button_state = None
+        self.button_state = ''
+        self.mariadb = MariaDB()
         # Changes must be made in the duplicate (deepcopy) of the DataFrame, if a DataFrame is passed,
         # because Pandastable saves changes in the passed original
         # e.g. added summary rows would be added to the DataFrame with each run
@@ -1856,100 +1750,58 @@ class BuiltPandasBox(Frame):
     def _save_col_width(self, column_width):
 
         self.column_width = column_width
-        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-        if not GEOMETRY_DICT:
-            GEOMETRY_DICT = {}
-        GEOMETRY_DICT[''.join([self.caller, 'COLUMN_WIDTH'])
-                      ] = self.column_width
-        shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
-
-    def _N_save_col_width(self, column_width):
-
-        self.column_width = column_width
-        self.mariadb.update(GEOMETRY, {
-                            DB_caller: self.caller, DB_column_width: column_width}, caller=self.caller)
+        self.mariadb.execute_update(GEOMETRY, {DB_column_width: column_width}, caller=self.caller)
 
     def _get_col_width(self):
 
         self.column_width = self.pandas_table.maxcellwidth / 2
-        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-        if GEOMETRY_DICT:
-            geometry_key = ''.join([self.caller, 'COLUMN_WIDTH'])
-            if geometry_key in GEOMETRY_DICT:
-                self.column_width = GEOMETRY_DICT[geometry_key]
-        return self.column_width
-
-    def _N_get_col_width(self):
-
-        self.column_width = self.pandas_table.maxcellwidth / 2
-        clause = ' '. join([DB_column_width, ' IS NOT NULL'])
-        result = self.mariadb.select_table(
-            GEOMETRY, DB_column_width, caller=self.caller, clause=clause)
+        result = self.mariadb.select_table(GEOMETRY, DB_column_width, caller=self.caller)
         if result:
-            self.column_width = result[0][0]
+            column_width = result[0][0]
+            if column_width:
+                self.column_width = column_width
         return self.column_width
+
+    def _geometry_put(self, window):
+        """
+        put window geometry
+        """
+        if window.winfo_exists():
+            try:
+                width = window.winfo_width()
+                height = window.winfo_height()
+                geometry = ''.join([str(width), 'x', str(
+                    height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
+                self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.caller, DB_geometry: geometry, DB_column_width: self.column_width})              
+            except AttributeError:
+                pass  # column_with used in subclasses
+
 
     def set_geometry(self):
 
-        GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-        if not GEOMETRY_DICT:
-            GEOMETRY_DICT = {}
-        if self.caller in GEOMETRY_DICT:
-            geometry = GEOMETRY_DICT[self.caller]
+
+        result = self.mariadb.select_table(GEOMETRY, DB_geometry, caller=self.caller)
+        if result:
+            geometry = result[0][0]
             geometry = geometry.replace('x', ' ')
             geometry = geometry.replace('+', ' ')
             geometry_values = geometry.split()
             if len(geometry_values) == 4:
                 height = self._get_pandastable_height()
-                # geometry = >width<x>height<+>x-position<+>y-position<
-                geometry = ''.join(
-                    [geometry_values[0], 'x', str(height), '+', geometry_values[2], '+', geometry_values[3]])
-                if GEOMETRY_DICT[self.caller] != geometry:
-                    GEOMETRY_DICT[self.caller] = geometry
-                    shelve_put_key(BANK_MARIADB_INI,
-                                   (KEY_GEOMETRY, GEOMETRY_DICT))
-                self.dataframe_window.geometry(geometry)
-                return
-        cellwidth = self.pandas_table.maxcellwidth / 2
-        width = int(cellwidth * (self.pandas_table.cols + 1))
-        window_width = self.dataframe_window.winfo_screenwidth()
-        if width > window_width:
-            width = window_width - 10
-        height = self._get_pandastable_height()
-        geometry = ''.join([str(width), 'x', str(height),
-                           BUILTPANDASBOX_WINDOW_POSITION])
-        self.dataframe_window.geometry(geometry)
-
-    def _N_set_geometry(self):
-
-        result = self.mariadb.select_table(
-            GEOMETRY, DB_geometry, caller=self.caller)
-        if result:
-            geometry = result[0][0]
-            if geometry:
-                geometry = geometry.replace('x', ' ')
-                geometry = geometry.replace('+', ' ')
-                geometry_values = geometry.split()
-                if len(geometry_values) == 4:
-                    height = self._get_pandastable_height()
+                if height != geometry_values[1]:                
                     # geometry = >width<x>height<+>x-position<+>y-position<
-                    geometry_update = ''.join(
+                    geometry = ''.join(
                         [geometry_values[0], 'x', str(height), '+', geometry_values[2], '+', geometry_values[3]])
-                    if geometry != geometry_update:
-                        self.mariadb.update(
-                            GEOMETRY, {DB_geometry: geometry_update}, caller=self.caller)
-                    self.dataframe_window.geometry(geometry)
-                    return
-        cellwidth = self.pandas_table.maxcellwidth / 2
-        width = int(cellwidth * (self.pandas_table.cols + 1))
-        window_width = self.dataframe_window.winfo_screenwidth()
-        if width > window_width:
-            width = window_width - 10
-        height = self._get_pandastable_height()
-        geometry = ''.join([str(width), 'x', str(height),
-                           BUILTPANDASBOX_WINDOW_POSITION])
-        self.mariadb.update(
-            GEOMETRY, {DB_geometry: geometry_update}, caller=self.caller)
+                    self.mariadb.execute_update(GEOMETRY, {DB_geometry: geometry}, caller=self.caller)
+        else:
+            cellwidth = self.pandas_table.maxcellwidth / 2
+            width = int(cellwidth * (self.pandas_table.cols + 1))
+            window_width = self.dataframe_window.winfo_screenwidth()
+            if width > window_width:
+                width = window_width - 10
+            height = self._get_pandastable_height()
+            geometry = ''.join([str(width), 'x', str(height),
+                               BUILTPANDASBOX_WINDOW_POSITION])
         self.dataframe_window.geometry(geometry)
 
     def _get_pandastable_height(self):
@@ -1979,27 +1831,6 @@ class BuiltPandasBox(Frame):
             self.selected_row = self.pandas_table.getSelectedRow()
         quit_widget(self.dataframe_window)
 
-    def _geometry_put(self, window):
-        """
-        put window geometry
-        """
-        if self.caller == 'AppCustomizing':
-            return
-        if window.winfo_exists():
-            try:
-                width = window.winfo_width()
-                height = window.winfo_height()
-                geometry = ''.join([str(width), 'x', str(
-                    height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
-                GEOMETRY_DICT = shelve_get_key(BANK_MARIADB_INI, KEY_GEOMETRY)
-                if not GEOMETRY_DICT:
-                    GEOMETRY_DICT = {}
-                GEOMETRY_DICT[self.caller] = geometry
-                GEOMETRY_DICT[''.join([self.caller, '_CELLWIDTH', ])
-                              ] = self.column_width
-                shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
-            except AttributeError:
-                pass  # column_with used in subclasses
 
     def insert_row(self, row_dict):
         self.df = self.df._append(row_dict, ignore_index=True)

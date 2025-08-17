@@ -74,6 +74,7 @@ FINTS_SERVER = " \n\nContains German Bank FINTS Server Address \nRegistrate to g
 """
 MESSAGE_TITLE = 'BANK ARCHIVE'
 MENU_TEXT = {
+    'Connect DB': 'Connect DB',
     'Ledger': 'Ledger',
     'Show': 'Show',
     'Download': 'Download',
@@ -146,11 +147,12 @@ POPUP_MENU_TEXT = {
 CODE_3010 = '3010'  # Download bank data,    no entries exist'
 CODE_3040 = '3040'  # Download partially executed
 CODE_0030 = '0030'  # Download not executed
+CODE_3955 = '3955'  # Security clearance is provided via another channel 
 
 MESSAGE_TEXT = {
     CODE_0030: 'Bank: {} \n Bank Account: {}  {}       \n     Download not executed,    use single downloading bank data',
     CODE_3040: 'Bank: {} \n Bank Account: {}  {}       \n     Download partially executed',
-    'ACCOUNT_IBAN_MISSED': 'Check TABLE LEDGER_COA: {}, \n Assign valid IBAN to account: {}, {}',
+    'ACCOUNT_IBAN_MISSED': 'Check TABLE LEDGER_COA: {}, \n Assign valid IBAN to ledger account: {}, {}',
     'ACQUISITION_HEADER': '{}  ACQUISITION AMOUNT CHANGE {} in Period {} - {}',
     'ACQUISITION_AMOUNT': 'Bank: {} \n Bank Account: {}  {}  {}      \n     Acquisition Amount must be adjusted manually',
     'ALPHA_VANTAGE': 'DOWNLOAD Prices from ALPHA_VANTAGE ({}/{}) failed (see ERROR Message before)',
@@ -172,6 +174,14 @@ MESSAGE_TEXT = {
     'BANK_PERIOD': '{} ({}) \n Bank Account: {} {}      \n Account Postings only available from {} onwards',
     'BMW_ZFA2': 'Please confirm the login process with your BMW Bank 2FA app',
     'BMW_ZFA2_REJECTED': 'login process not confirmed with your BMW Bank 2FA app; Login rejected',
+    'CONNECT_IMAGE_ERROR': 'Image error, Could not load background image:\n {}',
+    'CONNECT_MARIADB_ERROR': 'MariaDB connection error: {}',
+    'CONNECT_MARIADB': 'MariaDb connected: {}',
+    'CONNECT_SELECT_DB': 'Please select or specify a database.',
+    'CONNECT_CREATE_DB': 'New database? \n The database {} does not exist.\n  Do you want to create it?',
+    'CONNECT_DB_CREATED': 'Database {} created.',
+    'CONNECT_CREATE_DB_ABORTED': 'Database creation aborted.',
+    'CONNECT_DB_CONNECTED': 'Connected to database {}',
     'CREDENTIALS': '{} Login failed',
     'CREDENTIALS_CHECK': '{} Checking Credentials',
     'CHECKBOX': 'Select at least one of the Check Box Icons',
@@ -201,7 +211,10 @@ MESSAGE_TEXT = {
     'ENTRY_DATE': 'Entry_date missed',
     'FIELDLIST_MIN': 'Select at least {} positions in fieldlist',
     'FIXED': '{} MUST HAVE {} Characters ',
-    'HITAN6': 'Bank: {} \n Bank Account: {}  {}       \n     Could not find HITAN6 task_reference',
+    'HI': 'Bank: {} \n Bank Account: {}  {}       \n     Could not find HITAN7 task_reference',
+    'HIKAZ':  'Response HIKAZ missing: bank_name {}, account_number {}, account_product_name {}',
+    'HITAN': 'Security clearance is provided via another channel\n{}',
+    'HITAN_MISSED': 'Response HITAN missing: bank_name {}, account_number {}, account_product_name {}',
     'HIUPD_EXTENSION': 'Bank: {} \n Bank Account: {}  {}       \n     IBAN {} received Bank Information: \n     {}',
     'HOLDING_INSERT': 'Holding data for date {} does not exist. Insert?',
     'HTTP': 'Server not connected! HTTP Status Code: {}\nBank: {}  Server: {}',
@@ -294,33 +307,22 @@ VERSION_TRANSACTION = ['HKAKZ6', 'HKAKZ7',
 """
  ------------------Shelve_Files------------------------------------------------
 """
-DIRECTORY = 'C:/TEMP/PYTHON'
-BANK_MARIADB_INI = 'BANKING'
-UNKNOWN = 'UNKNOWN'
-KEY_PRODUCT_ID = 'PRODUCT_ID'
-KEY_ALPHA_VANTAGE = 'ALPHA_VANTAGE'
 KEY_DIRECTORY = 'DIRECTORY'
 KEY_DRIVER = 'DRIVER'
-KEY_MARIADB_NAME = 'MARIADB_NAME'
-KEY_MARIADB_USER = 'MARIADB_USER'
-KEY_MARIADB_PASSWORD = 'MARIADB_PASSWORD'
+MARIADB_NAME = 'MARIADB_NAME'
+MARIADB_USER = 'MARIADB_USER'
+MARIADB_PASSWORD = 'MARIADB_PASSWORD'
+MARIADB_HOST = 'MARIADB_HOST'
 KEY_ALPHA_VANTAGE_PRICE_PERIOD = 'ALPHA_VANTAGE_PRICE_PERIOD'
 KEY_SHOW_MESSAGE = 'SHOW_MESSAGE'
 KEY_LOGGING = 'LOGGING'
 KEY_THREADING = 'THREADING'
 
-KEY_GEOMETRY = 'GEOMETRY'
 KEY_ALPHA_VANTAGE_FUNCTION = 'ALPHA_VANTAGE_FUNCTION'
 KEY_ALPHA_VANTAGE_PARAMETER = 'ALPHA_VANTAGE_PARAMETER'
 KEY_LEDGER = 'LEDGER'
 KEY_RESET_SCREENSIZE = 'KEY_RESET_SCREENSIZE'
 
-APP_SHELVE_KEYS = [
-    KEY_PRODUCT_ID, KEY_ALPHA_VANTAGE, KEY_DIRECTORY, KEY_LOGGING,
-    KEY_MARIADB_NAME, KEY_MARIADB_USER, KEY_MARIADB_PASSWORD,
-    KEY_DRIVER, KEY_SHOW_MESSAGE, KEY_THREADING, KEY_ALPHA_VANTAGE_PRICE_PERIOD,
-    KEY_ALPHA_VANTAGE_FUNCTION, KEY_ALPHA_VANTAGE_PARAMETER, KEY_LEDGER
-]
 
 TRUE = 1
 FALSE = 0
@@ -444,17 +446,86 @@ ALPHA_VANTAGE_REQUIRED_COMBO = {'interval': ['1min', '5min', '15min', '30min', '
                                 'time_period': [60, 200],
                                 'series_type': ['close', 'open', 'high', 'low']
                                 }
-ALPHA_VANTAGE_OPTIONAL_COMBO = {'outputsize': ['compact', 'full']
-                                }
+ALPHA_VANTAGE_OPTIONAL_COMBO = {'outputsize': ['compact', 'full']}
+                                
+"""
+-------------------------- Formbuiltss -----------------------------------------------
+"""                                
+ENTRY = 'Entry'
+COMBO = 'ComboBox'
+CHECK = 'CheckButton'
+TEXT = 'Text'
+
+BUTTON_ALPHA_VANTAGE = 'ALPHA_VANTAGE'
+BUTTON_APPEND = 'APPEND'
+BUTTON_CREDIT = 'SHOW CREDIT'
+BUTTON_CREATE = 'CREATE'
+BUTTON_COPY = 'COPY'
+BUTTON_DEBIT = 'SHOW DEBIT'
+BUTTON_DELETE = 'DELETE'
+BUTTON_DELETE_ALL = 'DELETE ALL'
+BUTTON_DATA = 'DATA'
+BUTTON_INIT = 'INIT'
+BUTTON_PRICES_IMPORT = 'IMPORT PRICES'
+BUTTON_NEXT = 'NEXT'
+BUTTON_NEW = 'NEW'
+BUTTON_OK = 'OK'
+BUTTON_PRINT = 'PRINT'
+BUTTON_PREVIOUS = 'PREVIOUS'
+BUTTON_QUIT = 'QUIT'
+BUTTON_QUIT_ALL = 'QUIT ALL'
+BUTTON_REPLACE = 'REPLACE'
+BUTTON_RESTORE = 'RESTORE'
+BUTTON_SAVE = 'SAVE'
+BUTTON_SAVE_STANDARD = 'SAVE as Standard'
+BUTTON_SELECT_ALL = 'SELECT All'
+BUTTON_SELECT = 'SELECT'
+BUTTON_STANDARD = 'STANDARD'
+BUTTON_STORE = 'STORE'
+BUTTON_UPDATE = 'UPDATE'
+
+COLOR_ERROR = 'red'
+COLOR_NOT_ASSIGNED = 'cyan'
+COLOR_NEGATIVE = 'darkorange'
+COLOR_HOLDING = 'yellow'
+COLUMN_FORMATS_LEFT = 'LEFT'
+COLUMN_FORMATS_RIGHT = 'RIGHT'
+COLUMN_FORMATS_CURRENCY = 'CURRENCY'
+COLUMN_FORMATS_COLOR_NEGATIVE = 'COLOR_NEGATIVE'
+STANDARD = 'STANDARD'
+FORMAT_FIXED = 'F'
+FORMAT_VARIABLE = 'V'
+TYP_ALPHANUMERIC = 'X'
+TYP_DECIMAL = 'D'
+
+TYP_DATE = 'DAT'
+
+# package pandastable: standard values  (see class table self.font and self.fontsize
+ROOT_WINDOW_POSITION = '+100+100'
+BUILTBOX_WINDOW_POSITION = '+200+200'
+BUILTPANDASBOX_WINDOW_POSITION = '+1+1'
+BUILTEXT_WINDOW_POSITION = '+400+0'
+WIDTH_WIDGET = 70
+WIDTH_CANVAS = 700
+HEIGHT_CANVAS = 800
+PANDAS_NAME_SHOW = 'SHOW'
+PANDAS_NAME_ROW = 'ROW'
+
+WM_DELETE_WINDOW = 'WM_DELETE_WINDOW'
+LIGHTBLUE = 'LIGHTBLUE'
+UNDEFINED = 'UNDEFINED'
+FONTSIZE = 8
+MAX_FIELD_LENGTH = 65
+                              
 """
 -------------------------- Forms -----------------------------------------------
 """
 WIDTH_TEXT = 170
 HEIGHT_TEXT = 60
 HEADER = 'HEADER'
-INFORMATION = 'INFORMATION: '
-WARNING = 'WARNING:     '
-ERROR = 'ERROR:       '
+INFORMATION = 'INFORMATION '
+WARNING =     'WARNING     '
+ERROR =       'ERROR       '
 LIGHTBLUE = 'LIGHTBLUE'
 SHOW_MESSAGE = [INFORMATION, WARNING, ERROR]
 FN_ACCOUNT_NAME = 'ACCOUNT_NAME'
@@ -512,16 +583,6 @@ CURRENCY_SIGN = 'CURRENCY_SIGN'
 NUMERIC = 'NUMERIC'
 NO_CURRENCY_SIGN = 'NO_CURRENCY_SIGN'
 """
--------------------------- Forms: Select ... ----------------------------------------
-"""
-EQUAL = 'EQUAL'
-CONTAINS = 'CONTAINS'
-START_WITH = 'START_WITH'
-END_WITH = 'END_WITH'
-GREATER = 'GREATER'
-LESS = 'LESS'
-OPERATORS = [EQUAL, CONTAINS, START_WITH, END_WITH, GREATER, LESS]
-"""
 ---------------  MT940 Field 86 identifiers in element PURPOSE (>identifier sub-field< :  >MARIADB column name<)-----------------------------------------------------
 """
 IDENTIFIER = {
@@ -555,14 +616,6 @@ IDENTIFIER = {
     'ANAM': 'applicant_name',
     'SVWZ': 'sepa_purpose'
 }
-"""
------------------------------ Transactions (Holding) ------------
-"""
-COUNTER_PORTFOLIO = '000'  # transactions from portfolio_data (counter_values 0-9
-COUNTER_MANUAL = '010'  # manual insertion of transactions (counter 10-99)
-COUNTER_MT536 = '100'  # downloaded transactions, Format MT 536
-
-
 """
 ----------------------------- Scraper ------------
 

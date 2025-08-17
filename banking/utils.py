@@ -6,12 +6,9 @@ __updated__ = "2025-05-27"
 
 
 import functools
-import glob
 import inspect
 import operator
-import os
 import re
-import shelve
 import sys
 import traceback
 import requests
@@ -27,9 +24,6 @@ from decimal import Decimal, getcontext, ROUND_HALF_EVEN, DivisionByZero
 from banking.declarations import (
     EURO,
     Informations,
-    KEY_ACCOUNTS, KEY_ACC_ACCOUNT_NUMBER, KEY_BANK_NAME,
-    KEY_ACC_PRODUCT_NAME, KEY_ACC_IBAN,
-    KEY_GEOMETRY,
     MESSAGE_TEXT, MESSAGE_TITLE,
     WIDTH_TEXT
 )
@@ -311,137 +305,6 @@ def dict_sum_all_key(dictionary):
     # return the sum of values of dictionary
     # with same keys in list of dictionary
     return dict(functools.reduce(operator.add, map(Counter, dictionary)))
-
-
-def delete_shelve_files(shelve_name):
-
-    shelve_name = shelve_name
-    shelve_file = (os.path.join(os.getcwd(), shelve_name))
-    try:
-        shelve_file = (os.path.join(os.getcwd(), shelve_name))
-        os.remove(shelve_file) # Backend is dbm.sqlite3 or dbm.gnu
-    except Exception:
-        pass 
-    # dbm.dumb is used, but the path is incomplete. Then dbm.dumb should create two files.   
-    try:
-        shelve_file = (os.path.join(os.getcwd(), shelve_name))
-        os.remove(shelve_file + '.dat')
-    except Exception:
-        pass
-    try:
-        shelve_file = (os.path.join(os.getcwd(), shelve_name))
-        os.remove(shelve_file + '.dir')
-    except Exception:
-        pass
-    try:
-        shelve_file = (os.path.join(os.getcwd(), shelve_name))
-        os.remove(shelve_file + '.bak')
-    except Exception:
-        pass
-
-
-def shelve_exist(shelve_name):
-    """ PARAMETER:     shelve_name = BANK_MARIADB_INI
-        RETURN:        True if shelve_file exists
-    """
-    result = os.path.isfile(shelve_name)
-    return result
-
-
-def shelve_get_keylist(shelve_name, flag='r'):
-    """
-    returns all Keys of shelve_file BANK_MARIADB_INI
-    """
-    with shelve.open(shelve_name, flag=flag, protocol=None, writeback=True) as shelve_file:
-        key_list = []
-        for key in shelve_file.keys():
-            key_list.append(key)
-        return key_list
-
-
-def shelve_del_key(shelve_name, key, flag='w'):
-    """
-    Deletes key in shelve_file
-    """
-    with shelve.open(shelve_name, flag=flag, protocol=None, writeback=True) as shelve_file:
-        try:
-            shelve_file.pop(key)
-        except KeyError:
-            pass
-    return
-
-
-def shelve_get_key(shelve_name, key, none=True, flag='r'):
-    """
-        PARAMETER:     KEY of type LIST
-        RETURN:        DICTIONARY {key:value,...}
-                        (key not found, value = NONE or if none=False empty dict)
-        PARAMETER:     KEY of type STRING
-        RETURN:        Value of Key; key not found, value = NONE
-
-    """
-
-    if os.path.exists(shelve_name):
-        with shelve.open(shelve_name, flag=flag, protocol=None, writeback=False) as shelve_file:
-            if isinstance(key, list):
-                key_exist = []
-                key_missing = []
-                for _item in key:
-                    if _item in shelve_file:
-                        key_exist.append(_item)
-                    else:
-                        key_missing.append(_item)
-                _dict = {}
-                for _item in key_exist:
-                    try:
-                        _dict[_item] = shelve_file[_item]
-                    except Exception:
-                        _dict[_item] = ''
-                if none:
-                    for _item in key_missing:
-                        _dict[_item] = None
-                return _dict
-            if isinstance(key, str):
-                if key in shelve_file:
-                    return shelve_file[key]
-                else:
-                    if key == KEY_GEOMETRY:
-                        return {}
-                    else:
-                        return None
-            type_error()
-    else:
-        # shelve-files incomplete or missing
-        delete_shelve_files(shelve_name)
-        Termination(
-            info=MESSAGE_TEXT['SHELVE_NAME_MISSED'].format(shelve_name))
-
-
-def shelve_put_key(shelve_name, data, flag='w'):
-    """ PARAMETER:   data: LIST of tuples (key, value)   or
-                     data: TUPLE (key, value)
-
-            The optional flag argument can be:
-            Value    Meaning
-            r    Open existing database for reading only (default)
-            w    Open existing database for reading and writing
-            c    Open database for reading and writing, creating it if it not exist
-            n    Always create a new, empty database, open for reading and writing
-    """
-
-    with shelve.open(shelve_name, flag=flag, protocol=None, writeback=True) as shelve_file:
-        if isinstance(data, list):
-            for tupl in data:
-                key, value = tupl
-                shelve_file[key] = value
-            shelve_file.close()
-            return
-        if isinstance(data, tuple):
-            key, value = data
-            shelve_file[key] = value
-            shelve_file.close()
-            return
-        value_error()
 
 
 def create_iban(bank_code=None, account_number=None):
@@ -883,3 +746,34 @@ class Amount():
         if isinstance(other, str) or isinstance(self.amount, str):
             return True
         return self.amount >= other.amount and self.currency == other.currency
+    
+
+class ApplicationStore:
+
+    _instance = None
+    _data = {}
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ApplicationStore, cls).__new__(cls)
+        return cls._instance
+
+    def load_data(self, data):
+        self._data = data
+
+
+    def get(self, keys=None):
+        """
+        Zugriff auf das geladene Dictionary:
+        - None → alles
+        - string key → einzelner Eintrag
+        - list of keys → Teilmenge als Dictionary
+        """
+        if keys is None:
+            return self._data
+        elif isinstance(keys, list):
+            return {key: self._data[key] for key in keys if key in self._data}
+        else:
+            return self._data.get(keys, None)
+        
+application_store = ApplicationStore()        

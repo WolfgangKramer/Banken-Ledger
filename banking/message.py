@@ -10,15 +10,16 @@ import logging
 from fints.client import FinTS3Serializer
 
 from banking.declarations import (
-    BANK_MARIADB_INI, CUSTOMER_ID_ANONYMOUS, KEY_LOGGING, KEY_TAN_REQUIRED, TRUE
+    CUSTOMER_ID_ANONYMOUS, KEY_TAN_REQUIRED
 )
+from banking.declarations_mariadb import DB_logging
 from banking.segment import Segments
-from banking.utils import shelve_get_key, shelve_exist
+from banking.utils import application_store
 
 
 def _serialize(message, mariadb):
 
-    if shelve_exist(BANK_MARIADB_INI) and shelve_get_key(BANK_MARIADB_INI, KEY_LOGGING) == TRUE:
+    if application_store.get(DB_logging):
         fints3serializer = FinTS3Serializer()
         byte_message = fints3serializer.serialize_message(message).split(b"'")
         logging.getLogger(__name__).debug('\n\n>>>>> START' + 80 * '>' + '\n')
@@ -94,6 +95,20 @@ class Messages():
         _serialize(message, self.mariadb)
         return message
 
+    def msg_tan_decoupled(self, bank):
+        """
+        FinTS Message TAN challenge decoupled
+        """
+        message = self.segments.segHNHBK(bank)
+        message = self.segments.segHNSHK(bank, message)
+        message = self.segments.segHKTAN_decoupled(bank, message)
+        message = self.segments.segHNSHA_TAN(bank, message, self.mariadb)
+        if message:
+            message = self.segments.segHNHBS(bank, message)
+            _serialize(message, self.mariadb)
+            return message
+        return None  # input of tan canceled
+
     def msg_tan(self, bank):
         """
         FinTS Message TAN challenge
@@ -106,7 +121,7 @@ class Messages():
             message = self.segments.segHNHBS(bank, message)
             _serialize(message, self.mariadb)
             return message
-        return None  # input of tun canceled
+        return None  # input of tan canceled
 
     def msg_statements(self, bank):
         """

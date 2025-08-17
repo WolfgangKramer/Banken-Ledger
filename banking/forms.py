@@ -18,16 +18,19 @@ from fints.formals import CreditDebit2
 from pandas import DataFrame, to_numeric, concat, to_datetime, set_option
 from pandastable import TableModel
 
+from banking.mariadb import MariaDB
 from banking.declarations_mariadb import (
     TABLE_FIELDS,
-    BANKIDENTIFIER, TRANSACTION_VIEW, STATEMENT, HOLDING_VIEW, HOLDING, TRANSACTION, LEDGER_COA,
+    APPLICATION, APPLICATION_VIEW, BANKIDENTIFIER, TRANSACTION_VIEW, STATEMENT, HOLDING_VIEW, HOLDING, TRANSACTION, LEDGER_COA,
     LEDGER, LEDGER_VIEW, ISIN, PRICES, PRICES_ISIN_VIEW, SERVER, LEDGER_DELETE,
     LEDGER_STATEMENT,
     DATABASE_FIELDS_PROPERTIES, TABLE_FIELDS_PROPERTIES,
+    DB_alpha_vantage,
     DB_account, DB_acquisition_amount, DB_acquisition_price, DB_amount, DB_amount_currency, DB_applicant_name,
     DB_bic, DB_bank_statement_checked,
     DB_closing_balance, DB_closing_currency, DB_closing_status, DB_counter, DB_currency, DB_credit_account, DB_category,
     DB_credit_name,
+    DB_directory,
     DB_date, DB_debit_account, DB_debit_name,
     DB_entry_date, DB_exchange_rate,  DB_exchange_currency_2, DB_exchange_currency_1,
     DB_iban, DB_ISIN, DB_id_no, DB_industry,
@@ -35,23 +38,19 @@ from banking.declarations_mariadb import (
     DB_market_price, DB_name,
     DB_opening_balance, DB_opening_currency, DB_opening_status,   DB_origin, DB_origin_symbol,
     DB_pieces, DB_posted_amount,  DB_price, DB_price_currency, DB_price_date, DB_purpose_wo_identifier, DB_portfolio,
-    DB_status,  DB_server,     DB_symbol,
+    DB_status,  DB_server,     DB_symbol, DB_show_messages,
     DB_total_amount,  DB_type, DB_total_amount_portfolio, DB_transaction_type,  DB_TYPES,
     DB_upload_check,
     DB_validity,
     DB_wkn,
-
-
+    DB_alpha_vantage_price_period
 )
 from banking.declarations import (
-    ALPHA_VANTAGE, ALPHA_VANTAGE_PRICE_PERIOD, ALPHA_VANTAGE_REQUIRED, ALPHA_VANTAGE_REQUIRED_COMBO,
+    ALPHA_VANTAGE, ALPHA_VANTAGE_REQUIRED, ALPHA_VANTAGE_REQUIRED_COMBO,
     ALPHA_VANTAGE_OPTIONAL_COMBO,
-
-    BANK_MARIADB_INI,
     CURRENCIES, CREDIT,
     DEBIT,
     ERROR, EURO, EDIT_ROW,
-    FALSE,
     FN_COMPARATIVE,
     FN_DATE, FN_PROFIT_LOSS, FN_TOTAL_PERCENT, FN_PERIOD_PERCENT, FN_DAILY_PERCENT,
     FN_FROM_DATE, FN_TO_DATE,
@@ -61,18 +60,14 @@ from banking.declarations import (
     Informations,
     PERCENT,
     INFORMATION,
-    KEY_ALPHA_VANTAGE, KEY_ALPHA_VANTAGE_PRICE_PERIOD,
-    KEY_BANK_CODE, KEY_BANK_NAME, KEY_DIRECTORY, KEY_MAX_PIN_LENGTH,
+    KEY_BANK_CODE, KEY_BANK_NAME, KEY_MAX_PIN_LENGTH,
     KEY_DOWNLOAD_ACTIVATED,
     KEY_MAX_TAN_LENGTH, KEY_MIN_PIN_LENGTH,
     KEY_VERSION_TRANSACTION_ALLOWED,
-    KEY_TAN, MAX_PIN_LENGTH, MAX_TAN_LENGTH, KEY_THREADING,
+    KEY_TAN, MAX_PIN_LENGTH, MAX_TAN_LENGTH,
     KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_PRODUCT_NAME, KEY_ACC_BANK_CODE,
-    KEY_LEDGER,
-    KEY_LOGGING,
-    KEY_MARIADB_NAME,
-    KEY_MARIADB_PASSWORD, KEY_MARIADB_USER, KEY_PIN, KEY_BIC, KEY_PRODUCT_ID,
-    KEY_SERVER, KEY_SHOW_MESSAGE, KEY_USER_ID, KEY_IDENTIFIER_DELIMITER,
+    KEY_PIN, KEY_BIC,
+    KEY_SERVER, KEY_USER_ID, KEY_IDENTIFIER_DELIMITER,
     LIGHTBLUE,
     MENU_TEXT,  MESSAGE_TEXT, MESSAGE_TITLE, MIN_PIN_LENGTH, MIN_TAN_LENGTH,
     CURRENCY_SIGN, ORIGINS,
@@ -81,9 +76,11 @@ from banking.declarations import (
     SEPA_AMOUNT, SEPA_CREDITOR_BANK_LOCATION, SEPA_CREDITOR_BANK_NAME, SEPA_CREDITOR_BIC,
     SEPA_CREDITOR_IBAN, SEPA_CREDITOR_NAME, SEPA_EXECUTION_DATE, SEPA_PURPOSE_1, SEPA_PURPOSE_2,
     SEPA_REFERENCE, SEPA_TRANSFER_APPLCANT_NAMES,
-    SHOW_MESSAGE,
     START_DATE_TRANSACTIONS,
-    ToolbarSwitch, TIME_SERIES_DAILY, TRUE,
+    TIME_SERIES_INTRADAY,  TIME_SERIES_DAILY_ADJUSTED,
+    TIME_SERIES_WEEKLY,
+    TIME_SERIES_MONTHLY, TIME_SERIES_WEEKLY_ADJUSTED,
+    ToolbarSwitch, TIME_SERIES_DAILY,
     TRANSACTION_TYPES, TRANSACTION_RECEIPT, TRANSACTION_DELIVERY,
     VALIDITY_DEFAULT, WARNING, KEY_ACC_ACCOUNT_NUMBER, NOT_ASSIGNED, YAHOO,
     WWW_YAHOO)
@@ -97,20 +94,19 @@ from banking.formbuilts import (
     COLOR_HOLDING, COLOR_NOT_ASSIGNED, COLOR_ERROR,
     ENTRY,
     FieldDefinition, FORMAT_FIXED,
-    MessageBoxTermination, MessageBoxInfo,
     quit_widget,
     STANDARD,
     TYP_DECIMAL, TYP_DATE, TYP_ALPHANUMERIC,
     WM_DELETE_WINDOW, )
+from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.utils import (
+    application_store,
     Amount,
     check_iban, Calculate,
     dec2,
     date_years, date_days,
     prices_informations_append,
-    shelve_exist, shelve_get_key, shelve_put_key,
     http_error_code)
-from banking.mariadb import MariaDB
 
 message_transaction_new = True  # Switch to show Message just once
 
@@ -192,7 +188,7 @@ class AlphaVantageParameter(BuiltEnterBox):
         self.quit_widget()
 
 
-class AppCustomizing(BuiltEnterBox):
+class AppCustomizing(BuiltTableRowBox):
     """
     TOP-LEVEL-WINDOW        EnterBox Application Customizing
     PARAMETER:
@@ -202,66 +198,24 @@ class AppCustomizing(BuiltEnterBox):
         field_dict          Dictionary Of Application Customizing Fields
     """
 
-    def __init__(self,  header=MESSAGE_TEXT['APP'], shelve_app={}):
+    def __init__(self,  mariadb, row_dict):
 
         Caller.caller = self.__class__.__name__
-        self.shelve_app = shelve_app
-
-        FieldNames = namedtuple('FieldNames', [
-            KEY_PRODUCT_ID, KEY_ALPHA_VANTAGE, KEY_DIRECTORY, KEY_MARIADB_NAME, KEY_MARIADB_USER,
-            KEY_MARIADB_PASSWORD, KEY_SHOW_MESSAGE,
-            KEY_LOGGING, KEY_THREADING,
-            KEY_ALPHA_VANTAGE_PRICE_PERIOD, KEY_LEDGER])
-        field_defs = FieldNames(
-            FieldDefinition(name=KEY_PRODUCT_ID, length=50),
-            FieldDefinition(name=KEY_ALPHA_VANTAGE,
-                            length=50, mandatory=False),
-            FieldDefinition(name=KEY_DIRECTORY, length=100,
-                            readonly=True, focus_in=True),
-            FieldDefinition(name=KEY_MARIADB_NAME, length=20,
-                            definition=COMBO, combo_values=MariaDB.DATABASES,
-                            combo_positioning=False, combo_insert_value=True,
-                            focus_in=True,),
-            FieldDefinition(name=KEY_MARIADB_USER, length=20),
-            FieldDefinition(name=KEY_MARIADB_PASSWORD, length=20),
-            FieldDefinition(name=KEY_SHOW_MESSAGE, length=25,
-                            definition=COMBO, combo_values=SHOW_MESSAGE),
-            FieldDefinition(name=KEY_LOGGING,
-                            definition=CHECK,
-                            checkbutton_text=MESSAGE_TEXT['LOGGING_ACTIVE']),
-            FieldDefinition(name=KEY_THREADING,
-                            definition=CHECK,
-                            checkbutton_text=MESSAGE_TEXT['THREADING_ACTIVE']),
-            FieldDefinition(name=KEY_ALPHA_VANTAGE_PRICE_PERIOD, length=50,
-                            definition=COMBO, combo_values=ALPHA_VANTAGE_PRICE_PERIOD),
-            FieldDefinition(name=KEY_LEDGER,
-                            definition=CHECK,
-                            checkbutton_text=MESSAGE_TEXT['LEDGER_ACTIVATE']),
-        )
-        if shelve_exist(BANK_MARIADB_INI):
-            _set_defaults(field_defs=field_defs, default_values=(
-                          shelve_app[KEY_PRODUCT_ID], shelve_app[KEY_ALPHA_VANTAGE],
-                          shelve_app[KEY_DIRECTORY],
-                          shelve_app[KEY_MARIADB_NAME], shelve_app[KEY_MARIADB_USER],
-                          shelve_app[KEY_MARIADB_PASSWORD],
-                          shelve_app[KEY_SHOW_MESSAGE], shelve_app[KEY_LOGGING],
-                          shelve_app[KEY_THREADING],
-                          shelve_app[KEY_ALPHA_VANTAGE_PRICE_PERIOD],
-                          shelve_app[KEY_LEDGER]))
-        else:
-            _set_defaults(field_defs=field_defs,
-                          default_values=('', '', '', '', '', '', ERROR, FALSE, TRUE,
-                                          TIME_SERIES_DAILY, FALSE))
-        super().__init__(header=header, grab=False, field_defs=field_defs)
+        alpha_vantage_price_period_list = [TIME_SERIES_INTRADAY,                                                                   
+                              TIME_SERIES_DAILY, TIME_SERIES_DAILY_ADJUSTED,
+                              TIME_SERIES_WEEKLY, TIME_SERIES_WEEKLY_ADJUSTED,
+                              TIME_SERIES_MONTHLY, TIME_SERIES_WEEKLY_ADJUSTED]
+        show_messages_list = [INFORMATION, WARNING, ERROR]
+        combo_dict = {DB_alpha_vantage_price_period: alpha_vantage_price_period_list, DB_show_messages: show_messages_list}
+        super().__init__(APPLICATION, APPLICATION_VIEW, row_dict, mariadb, focus_in=[DB_directory], combo_dict=combo_dict)
 
     def focus_in_action(self, event):
 
-        if event.widget.myId == KEY_DIRECTORY:
+        if event.widget.myId == DB_directory:
             directory = filedialog.askdirectory()
             if directory:
-                getattr(self._field_defs, KEY_DIRECTORY).textvar.set(
-                    directory + '/')
-            getattr(self._field_defs, KEY_MARIADB_NAME).widget.focus_set()
+                getattr(self._field_defs, DB_directory).textvar.set(directory)
+            getattr(self._field_defs, DB_show_messages).widget.focus_set()
 
 
 class SelectLedgerAccountCategory(BuiltSelectBox):
@@ -916,8 +870,7 @@ class IsinTableRowBox(BuiltTableRowBox):
                 getattr(self._field_defs, DB_industry).textvar.set(industry)
         if event.widget.myId == DB_origin_symbol:
             if ALPHA_VANTAGE == getattr(self._field_defs, DB_origin_symbol).widget.get():
-                key_alpha_vantage = shelve_get_key(
-                    BANK_MARIADB_INI, KEY_ALPHA_VANTAGE)
+                key_alpha_vantage = application_store.get(DB_alpha_vantage)
                 if key_alpha_vantage:
                     name = getattr(self._field_defs, DB_name).widget.get()
                     keywords = name.split(' ')[0]
@@ -1237,6 +1190,7 @@ class SelectFields(BuiltCheckButton):
                  ):
 
         Caller.caller = self.__class__.__name__
+        self.mariadb = MariaDB()
         self.standard = standard
         super().__init__(
             title=title, header=MESSAGE_TEXT['CHECKBOX'],
@@ -1249,7 +1203,7 @@ class SelectFields(BuiltCheckButton):
     def button_1_button2(self, event):
 
         self.button_state = self._button2_text
-        standard = shelve_get_key(BANK_MARIADB_INI, self.standard)
+        standard = self.mariadb.selection_get(self.standard)
         if standard:
             for idx, check_text in enumerate(self.checkbutton_texts):
                 if check_text in standard:
@@ -1268,7 +1222,7 @@ class SelectFields(BuiltCheckButton):
             if check_var.get() == 1:
                 self.field_list.append(self.checkbutton_texts[idx])
         self.validate_all()
-        shelve_put_key(BANK_MARIADB_INI, (self.standard, self.field_list))
+        self.mariadb.selection_put(self.standard, self.field_list)
 
     def validate_all(self):
 
@@ -1590,11 +1544,13 @@ class PandasBoxIsinTable(BuiltPandasBox):
         self.message = message
         self.selected_row = selected_row
         if data:
+            self.isins_exist = True
             ToolbarSwitch.toolbar_switch = False
             super().__init__(title=title, dataframe=data,
                              message=message, mode=mode, selected_row=self.selected_row)
         else:
-            self.button_state = self.new_row_insert()
+            self.isins_exist = False
+            self.button_state = self.new_row()
 
     def create_dataframe(self):
 
@@ -1611,6 +1567,7 @@ class PandasBoxIsinTable(BuiltPandasBox):
         isin = BuiltTableRowBox(ISIN, ISIN, row_dict, self.mariadb,
                                 protected=protected,
                                 title=self.title,  button1_text=None, button2_text=None)
+        self.button_state = isin.button_state
         if isin.button_state == WM_DELETE_WINDOW:
             return
         self.quit_widget()
@@ -1623,6 +1580,7 @@ class PandasBoxIsinTable(BuiltPandasBox):
             isin = BuiltTableRowBox(ISIN, ISIN, row_dict, self.mariadb,
                                     protected=protected,
                                     title=self.title, button1_text=BUTTON_DELETE, button2_text=None)
+            self.button_state = isin.button_state
             if isin.button_state == WM_DELETE_WINDOW:
                 return
             elif isin.button_state == BUTTON_DELETE:
@@ -1676,8 +1634,10 @@ class PandasBoxIsinTable(BuiltPandasBox):
         row_dict[DB_currency] = EURO
         isin = BuiltTableRowBox(ISIN, ISIN, row_dict, self.mariadb,
                                 combo_dict=self._create_combo_dict(), mandatory=mandatory,
+                                combo_insert_value=[DB_industry],
                                 focus_out=focus_out, upper=upper,
                                 title=self.title, button1_text=BUTTON_NEW)
+        self.button_state = isin.button_state
         if isin.button_state == WM_DELETE_WINDOW:
             return
         elif isin.button_state == BUTTON_NEW:
@@ -1691,7 +1651,10 @@ class PandasBoxIsinTable(BuiltPandasBox):
                 self.mariadb.execute_insert(ISIN, isin.field_dict)
                 self.message = MESSAGE_TEXT['DATA_INSERTED'].format(
                     ' '.join([self.title, DB_ISIN.upper(), '\n', isin.field_dict[DB_ISIN], isin.field_dict[DB_name]]))
-        self.quit_widget()
+        if self.isins_exist:        
+            self.quit_widget() # see BuiltPandasBox
+        else:
+            isin.quit_widget() # see BuiltTableRowBox
 
     def _create_combo_dict(self):
 
@@ -1701,6 +1664,8 @@ class PandasBoxIsinTable(BuiltPandasBox):
         result = self.mariadb.select_table_distinct(ISIN, DB_industry)
         if result:
             industry_list = sorted([item[0] for item in result])
+        else:
+            industry_list = []     
         industry_dict = {DB_industry: industry_list}
         return {**currency_dict, **type_dict, **origin_symbol_dict, **industry_dict}
 
@@ -1831,6 +1796,7 @@ class PandasBoxHoldingTable(BuiltPandasBox):
         holding = BuiltTableRowBox(HOLDING, HOLDING_VIEW, row_dict, self.mariadb,
                                    protected=protected,
                                    title=self.title,  button1_text=None, button2_text=None)
+        self.button_state = holding.button_state
         if holding.button_state == WM_DELETE_WINDOW:
             return
         self.quit_widget()
@@ -1843,6 +1809,7 @@ class PandasBoxHoldingTable(BuiltPandasBox):
             holding = BuiltTableRowBox(HOLDING, HOLDING_VIEW, row_dict, self.mariadb,
                                        protected=protected,
                                        title=self.title, button1_text=BUTTON_DELETE, button2_text=None)
+            self.button_state = holding.button_state
             if holding.button_state == WM_DELETE_WINDOW:
                 return
             elif holding.button_state == BUTTON_DELETE:
@@ -1868,6 +1835,7 @@ class PandasBoxHoldingTable(BuiltPandasBox):
             holding = BuiltTableRowBox(HOLDING, HOLDING_VIEW, holding_dict, self.mariadb,
                                        protected=protected, mandatory=mandatory,
                                        title=self.title, button1_text=BUTTON_UPDATE)
+            self.button_state = holding.button_state
             if holding.button_state == WM_DELETE_WINDOW:
                 return
             elif holding.button_state == BUTTON_UPDATE:
@@ -1905,6 +1873,7 @@ class PandasBoxHoldingTable(BuiltPandasBox):
         holding = BuiltTableRowBox(HOLDING, HOLDING_VIEW, row_dict, self.mariadb,
                                    combo_dict=combo_dict, combo_positioning_dict=combo_positioning_dict, protected=protected, mandatory=mandatory,
                                    title=self.title, button1_text=BUTTON_NEW)
+        self.button_state = holding.button_state
         if holding.button_state == WM_DELETE_WINDOW:
             return holding
         elif holding.button_state == BUTTON_NEW:
@@ -1975,7 +1944,6 @@ class PandasBoxLedgerAccountCategory(BuiltPandasBox):
 
         for i, row in self.pandas_table.model.df.iterrows():
             if row[DB_id_no] == FN_TOTAL:
-                print(i, row)
                 self.pandas_table.setRowColors(
                     rows=[i], clr='lightblue', cols='all')
 
@@ -1989,6 +1957,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
     def __init__(self, title, data, mariadb, message, mode=EDIT_ROW, color_columns_dict={}, period=None, selected_row=0):
 
         Caller.caller = self.__class__.__name__
+        self.button_state = ''
         self.title = title
         self.data = data
         self.period = period
@@ -2076,6 +2045,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
         ledger = LedgerTableRowBox(LEDGER, LEDGER_VIEW, row_dict, self.mariadb,
                                    protected=protected,
                                    title=self.title,  button1_text=None, button2_text=None)
+        self.button_state = ledger.button_state
         if ledger.button_state == WM_DELETE_WINDOW:
             return
         self.quit_widget()
@@ -2095,6 +2065,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                     statement = BuiltTableRowBox(STATEMENT, STATEMENT, result[0], self.mariadb,
                                                  protected=protected,
                                                  title=self.title,  button1_text=None, button2_text=None)
+                    self.button_state = statement.button_state
                     if statement.button_state == WM_DELETE_WINDOW:
                         return
                 else:
@@ -2121,6 +2092,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
             ledger = LedgerTableRowBox(LEDGER, LEDGER_VIEW, row_dict, self.mariadb,
                                        protected=protected,
                                        title=self.title, button1_text=BUTTON_DELETE, button2_text=None)
+            self.button_state = ledger.button_state
             if ledger.button_state == WM_DELETE_WINDOW:
                 return
             elif ledger.button_state == BUTTON_DELETE:
@@ -2159,6 +2131,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
             ledger = LedgerTableRowBox(LEDGER, LEDGER_VIEW, row_dict, self.mariadb,
                                        protected=protected, mandatory=mandatory, combo_insert_value=combo_insert_value, combo_dict=combo_dict, combo_positioning_dict=combo_positioning_dict,
                                        title=self.title, button1_text=BUTTON_UPDATE, button3_text=button3_text, button4_text=button4_text)
+            self.button_state = ledger.button_state
             if ledger.button_state == WM_DELETE_WINDOW:
                 return
             elif ledger.button_state == BUTTON_UPDATE:
@@ -2239,6 +2212,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                 del ledger_dict[DB_id_no]
             else:
                 break
+        self.button_state = ledger.button_state    
         if ledger.button_state == WM_DELETE_WINDOW:
             return ledger
         elif ledger.button_state == BUTTON_NEW:
@@ -2330,6 +2304,7 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
         ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
                                           protected=protected,
                                           title=self.title,  button1_text=None, button2_text=None)
+        self.button_state = ledger_coa.button_state
         if ledger_coa.button_state == WM_DELETE_WINDOW:
             return
         self.quit_widget()
@@ -2342,6 +2317,7 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
             ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
                                               protected=protected,
                                               title=self.title, button1_text=BUTTON_DELETE, button2_text=None)
+            self.button_state = ledger_coa.button_state
             if ledger_coa.button_state == WM_DELETE_WINDOW:
                 return
             elif ledger_coa.button_state == BUTTON_DELETE:
@@ -2360,6 +2336,8 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
             ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
                                               protected=protected, mandatory=mandatory,
                                               title=self.title, button1_text=BUTTON_UPDATE)
+            
+            self.button_state = ledger_coa.button_state
             if ledger_coa.button_state == WM_DELETE_WINDOW:
                 return
             elif ledger_coa.button_state == BUTTON_UPDATE:
@@ -2380,6 +2358,7 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
         ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict, self.mariadb,
                                           mandatory=mandatory,
                                           title=self.title, button1_text=BUTTON_NEW)
+        self.button_state = ledger_coa.button_state
         if ledger_coa.button_state == WM_DELETE_WINDOW:
             return ledger_coa
         elif ledger_coa.button_state == BUTTON_NEW:
@@ -2521,6 +2500,7 @@ class PandasBoxStatementTable(BuiltPandasBox):
                 STATEMENT, STATEMENT, row_dict[0], self.mariadb, title=self.title,
                 protected=TABLE_FIELDS[STATEMENT],
                 button1_text=None, button2_text=None)
+            self.button_state = statement.button_state
             if statement.button_state == WM_DELETE_WINDOW:
                 return
         self.quit_widget()
@@ -2697,8 +2677,6 @@ class PandasBoxTotals(BuiltPandasBox):
             axis=1).apply(lambda x: dec2.convert(x))
         self.dataframe = self.dataframe.iloc[1:]
         iban_name_dict = self.mariadb.select_dict(LEDGER_COA, DB_iban, DB_name)
-        account_name_dict = self.mariadb.select_dict(
-            LEDGER_COA, DB_account, DB_name)
         self.dataframe.columns = [col[1] for col in self.dataframe.columns]
         self.dataframe = self.dataframe.rename(columns={col: iban_name_dict[col]
                                                         if col in iban_name_dict else col
@@ -2812,6 +2790,7 @@ class PandasBoxTransactionTableShow (BuiltPandasBox):
             TRANSACTION, TRANSACTION_VIEW, row_dict, self.mariadb, title=self.title,
             protected=protected,
             button1_text=None, button2_text=None)
+        self.button_state = transaction.button_state
         if transaction.button_state == WM_DELETE_WINDOW:
             return
         self.quit_widget()
@@ -2831,6 +2810,7 @@ class PandasBoxTransactionTable(PandasBoxTransactionTableShow):
             transaction = BuiltTableRowBox(
                 TRANSACTION, TRANSACTION_VIEW, row_dict, self.mariadb, title=self.title,  protected=protected,
                 button1_text=BUTTON_DELETE, button2_text=None)
+            self.button_state = transaction.button_state
             if transaction.button_state == WM_DELETE_WINDOW:
                 return
             elif transaction.button_state == BUTTON_DELETE:
@@ -2863,6 +2843,7 @@ class PandasBoxTransactionTable(PandasBoxTransactionTableShow):
             transaction = BuiltTableRowBox(TRANSACTION, TRANSACTION_VIEW, row_dict, self.mariadb,
                                            protected=protected, mandatory=mandatory, combo_dict=combo_dict, combo_positioning_dict=combo_positioning_dict,
                                            title=self.title)
+            self.button_state = transaction.button_state
             if transaction.button_state == WM_DELETE_WINDOW:
                 return
             elif transaction.button_state == BUTTON_SAVE:
@@ -2889,6 +2870,7 @@ class PandasBoxTransactionTable(PandasBoxTransactionTableShow):
         transaction = BuiltTableRowBox(TRANSACTION, TRANSACTION_VIEW, row_dict, self.mariadb,
                                        combo_dict=combo_dict, combo_positioning_dict=combo_positioning_dict, protected=protected, mandatory=mandatory,
                                        title=self.title, button1_text=BUTTON_NEW)
+        self.button_state = transaction.button_state
         if transaction.button_state == WM_DELETE_WINDOW:
             return transaction
         elif transaction.button_state == BUTTON_NEW:
@@ -2937,15 +2919,15 @@ class PrintMessageCode(BuiltText):
 
     def set_tags(self, textline, line):
         if len(textline) > 13:
-            if textline[0:13] == ERROR:
+            if textline[0:12] == ERROR:
                 self.text_widget.tag_add(ERROR, str(line + 1) + '.0',
                                          str(line + 1) + '.' + str(len(textline)))
                 self.text_widget.tag_config(ERROR, foreground='RED')
-            elif textline[0:13] == WARNING:
+            elif textline[0:12] == WARNING:
                 self.text_widget.tag_add(WARNING, str(line + 1) + '.0',
                                          str(line + 1) + '.' + str(len(textline)))
                 self.text_widget.tag_config(WARNING, foreground='BLUE')
-            elif textline[0:13] == INFORMATION:
+            elif textline[0:12] == INFORMATION:
                 self.text_widget.tag_add(INFORMATION, str(line + 1) + '.0',
                                          str(line + 1) + '.' + str(len(textline)))
                 self.text_widget.tag_config(INFORMATION, foreground='GREEN')
@@ -2980,6 +2962,7 @@ class VersionTransaction(BuiltEnterBox):
 
         Caller.caller = self.__class__.__name__
         self.bank_code = bank_code
+        self.transaction_versions = transaction_versions
         transaction_version_allowed = mariadb.shelve_get_key(self.bank_code,
                                                              KEY_VERSION_TRANSACTION_ALLOWED)
         if transaction_version_allowed:
@@ -2990,15 +2973,25 @@ class VersionTransaction(BuiltEnterBox):
                 FieldDefinition(definition=COMBO,
                                 name='HKWPD holdings', length=1,
                                 combo_values=transaction_version_allowed['WPD']),
+                FieldDefinition(definition=COMBO,
+                                name='HKTAN holdings', length=1,
+                                combo_values=transaction_version_allowed['TAN']),                
             ]
-            _set_defaults(field_defs,
-                          (transaction_versions['KAZ'], transaction_versions['WPD']))
+            _set_defaults(field_defs, default_values=
+                          (self._get_version('KAZ'), self._get_version('WPD'), self._get_version('TAN')))
             super().__init__(title=title,
                              header='Transaction Versions ({})'.format(
                                  self.bank_code),
                              field_defs=field_defs)
         else:
             MessageBoxTermination()
+            
+    def _get_version(self, transaction):
+        
+        try:            
+            return self.transaction_versions[transaction]
+        except Exception:
+            return'?'
 
     def button_1_button1(self, event):
 

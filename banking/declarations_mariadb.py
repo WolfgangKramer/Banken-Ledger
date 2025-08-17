@@ -35,11 +35,14 @@ DATABASE_FIELDS_PROPERTIES = {
 -------------------------------- MariaDB Tables ----------------------------------
 """
 PRODUCTIVE_DATABASE_NAME = 'banken'
+APPLICATION = 'application'
+APPLICATION_VIEW = 'application_view'
 BANKIDENTIFIER = 'bankidentifier'
 GEOMETRY = 'geometry'
 HOLDING = 'holding'
 HOLDING_VIEW = 'holding_view'
 HOLDING_SYMBOL = 'holding_symbol'
+SELECTION = 'selection'
 SERVER = 'server'
 STATEMENT = 'statement'
 TRANSACTION = 'transaction'
@@ -61,6 +64,30 @@ SHELVES = 'shelves'
 """
 # CREATE_...   copied from HEIDI SQL Create-Tab and IF NOT EXISTS added
 # additionally with VIEWs: ALTER ALGORITHM changed to CREATE ALGORITHM and IF NOT EXISTS added
+
+CREATE_APPLICATION = "CREATE TABLE IF NOT EXISTS `application` (\
+    `row_id` TINYTEXT NOT NULL DEFAULT '1' COMMENT 'row_id: application values, fields 1-9\r\nrow_id: alpha_vantage values fields 10-11' COLLATE 'utf8mb4_uca1400_ai_ci',\
+    `product_id` VARCHAR(50) NULL DEFAULT NULL COMMENT 'Registration ID of FinTS software products' COLLATE 'utf8mb4_uca1400_ai_ci',\
+    `alpha_vantage` VARCHAR(50) NULL DEFAULT NULL COMMENT 'Free key for the Alpha Vantage Stock API © with lifetime access' COLLATE 'utf8mb4_uca1400_ai_ci',\
+    `directory` VARCHAR(200) NULL DEFAULT NULL COMMENT 'Export Directory of Excel Files (Pandas Tables)' COLLATE 'utf8mb4_uca1400_ai_ci',\
+    `show_messages` VARCHAR(20) NULL DEFAULT NULL COMMENT 'Controls the output of FINTS message codes in the log.\nINFORMATION: Outputs codes 0xxx or 1xxx.\nWARNING: Outputs codes 3xxx.\nERROR: Outputs other codes.' COLLATE 'utf8mb4_uca1400_ai_ci',\
+    `logging` TINYINT(4) NOT NULL DEFAULT '0' COMMENT 'True: FINTS logging activated',\
+    `threading` TINYINT(4) NOT NULL DEFAULT '1' COMMENT 'True: Download (FINTS, Prices) threading activated',\
+    `ledger` TINYINT(4) NOT NULL DEFAULT '1' COMMENT 'True: Transfer of bank data to ledger activated',\
+    `alpha_vantage_price_period` VARCHAR(50) NULL DEFAULT NULL COMMENT 'API returns raw (as-traded) time series of the global equity specified' COLLATE 'utf8mb4_uca1400_ai_ci',\
+    `alpha_vantage_function` LONGTEXT NULL DEFAULT NULL COMMENT 'generated alpha_vantage function names' COLLATE 'utf8mb4_bin',\
+    `alpha_vantage_parameter` LONGTEXT NULL DEFAULT NULL COMMENT 'generated alpha_vantage parameter sets' COLLATE 'utf8mb4_bin',\
+    PRIMARY KEY (`row_id`(100)) USING BTREE,\
+    CONSTRAINT `alpha_vantage_function` CHECK (json_valid(`alpha_vantage_function`)),\
+    CONSTRAINT `alpha_vantage_parameter` CHECK (json_valid(`alpha_vantage_parameter`))\
+)\
+COMMENT='data of application form'\
+COLLATE='utf8mb4_uca1400_ai_ci'\
+ENGINE=InnoDB\
+;"
+
+CREATE_APPLICATION_VIEW = "CREATE ALGORITHM  = UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW IF NOT EXISTS  `application_view` AS SELECT product_id, alpha_vantage, directory, show_messages, logging, threading, ledger, alpha_vantage_price_period FROM application WHERE row_id=1;"
+
 CREATE_BANKIDENTIFIER = "CREATE TABLE IF NOT EXISTS `bankidentifier` (\
     `code` CHAR(8) NOT NULL COMMENT 'Bank_Code (BLZ)' COLLATE 'latin1_swedish_ci',\
     `payment_provider` CHAR(1) NOT NULL COMMENT 'Merkmal, ob bankleitzahlführender Zahlungsdienstleister >1< oder nicht >2<. Maßgeblich sind nur Datensätze mit dem Merkmal >1<' COLLATE 'latin1_swedish_ci',\
@@ -265,6 +292,17 @@ ENGINE=InnoDB\
 
 CREATE_PRICES_ISIN_VIEW = "CREATE ALGORITHM  = UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW IF NOT EXISTS  `prices_isin_view` AS SELECT * FROM prices INNER JOIN isin USING (symbol);"
 
+CREATE_SELECTION = "CREATE TABLE IF NOT EXISTS `selection` (\
+    `name` VARCHAR(200) NOT NULL COMMENT 'selection name e.g. title of form' COLLATE 'utf8mb4_uca1400_ai_ci',\
+    `data` LONGTEXT NULL DEFAULT NULL COMMENT 'contains recently used selection values in JSON format' COLLATE 'utf8mb4_uca1400_ai_ci',\
+    PRIMARY KEY (`name`) USING BTREE\
+)\
+COMMENT='Contains contains recently used selection valuesof a selection form'\
+COLLATE='utf8mb4_uca1400_ai_ci'\
+ENGINE=InnoDB\
+;"
+
+
 CREATE_SERVER = "CREATE TABLE IF NOT EXISTS `server` (\
     `code` CHAR(8) NOT NULL COMMENT 'Bankleitzahl' COLLATE 'latin1_swedish_ci',\
     `server` VARCHAR(100) NULL DEFAULT NULL COMMENT 'PIN/TAN-Access URL' COLLATE 'latin1_swedish_ci',\
@@ -376,13 +414,16 @@ ENGINE=InnoDB\
 #  Ledger Tables ------------------------------------------------------------------------------------------
 
 
-CREATE_TABLES = [CREATE_BANKIDENTIFIER,
+CREATE_TABLES = [CREATE_APPLICATION,
+                 CREATE_APPLICATION_VIEW,
+                 CREATE_BANKIDENTIFIER,
                  CREATE_GEOMETRY,
                  CREATE_ISIN,
                  CREATE_HOLDING,
                  CREATE_HOLDING_VIEW,
                  CREATE_PRICES,
                  CREATE_PRICES_ISIN_VIEW,
+                 CREATE_SELECTION,
                  CREATE_SERVER,
                  CREATE_STATEMENT,
                  CREATE_TRANSACTION,
@@ -402,6 +443,10 @@ CREATE_TABLES = [CREATE_BANKIDENTIFIER,
 DB_acquisition_amount = 'acquisition_amount'
 DB_acquisition_price = 'acquisition_price'
 DB_additional_purpose = 'additional_purpose'
+DB_alpha_vantage = 'alpha_vantage'
+DB_alpha_vantage_price_period = 'alpha_vantage_price_period'
+DB_alpha_vantage_function = 'alpha_vantage_function'
+DB_alpha_vantage_parameter = 'alpha_vantage_parameter'
 DB_bankdata = 'bankdata'
 DB_open = 'open'
 DB_low = 'low'
@@ -438,10 +483,12 @@ DB_creditor_id = 'creditor_id'
 DB_currency = 'currency'
 DB_currency_type = 'currency_type'
 DB_customer_reference = 'customer_reference'
+DB_data = 'data'
 DB_date = 'date'
 DB_debitor_id = 'debitor_id'
 DB_different_client = 'different_client'
 DB_different_receiver = 'different_receiver'
+DB_directory = 'directory'
 DB_end_to_end_reference = 'end_to_end_reference'
 DB_entry_date = 'entry_date'
 DB_exchange = 'exchange'
@@ -460,6 +507,8 @@ DB_industry = 'industry'
 DB_intermediary_bank = 'intermediary_bank'
 DB_ISIN = 'isin_code'
 DB_last_price = 'last_price'
+DB_ledger = 'ledger'
+DB_logging = 'logging'
 DB_low_price = 'low_price'
 DB_location = 'location'
 DB_mandate_id = 'mandate_id'
@@ -483,6 +532,7 @@ DB_pieces_cum = 'pieces_cum'
 DB_postal_code = 'postal_code'
 DB_posted_amount = 'posted_amount'
 DB_posting_text = 'posting_text'
+DB_product_id = 'product_id'
 DB_price = 'price'
 DB_price_currency = 'price_currency'
 DB_price_date = 'price_date'
@@ -497,13 +547,16 @@ DB_remittance_information = 'remittance_information'
 DB_return_debit_notes = 'return_debit_notes'
 DB_return_reason = 'return_reason'
 DB_return_reference = 'return_reference'
+DB_row_id = 'row_id'
 DB_sepa_purpose = 'sepa_purpose'
 DB_server = 'server'
+DB_show_messages = 'show_messages'
 DB_bank_statement_no = 'statement_no'
 DB_bank_statement_no_page = 'statement_no_page'
 DB_status = 'status'
 DB_splits = 'splits'
 DB_symbol = 'symbol'
+DB_threading = 'threading'
 DB_total_amount = 'total_amount'
 DB_total_amount_portfolio = 'total_amount_portfolio'
 DB_transaction_code = 'transaction_code'

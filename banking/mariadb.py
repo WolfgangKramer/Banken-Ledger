@@ -24,23 +24,26 @@ from banking.declarations_mariadb import (
     DB_account,
     DB_bankdata,
     DB_code,
+    DB_data,
     DB_id_no, DB_iban,
     DB_entry_date,
+    DB_ledger,
     DB_name, DB_counter, DB_price_date, DB_ISIN,
     DB_purpose_wo_identifier,
+    DB_row_id,
     DB_total_amount, DB_acquisition_amount,
     DB_status, DB_symbol,
+    PRODUCTIVE_DATABASE_NAME,
+    APPLICATION,
     BANKIDENTIFIER,
-
     CREATE_TABLES,
     HOLDING,
     ISIN, PRICES, LEDGER, LEDGER_VIEW, LEDGER_COA, LEDGER_STATEMENT,
-    SERVER, STATEMENT, SHELVES,
+    SELECTION, SERVER, STATEMENT, SHELVES,
     TRANSACTION, TRANSACTION_VIEW,
     DB_credit_account, DB_debit_account,
 )
 from banking.declarations import (
-    BANK_MARIADB_INI,
     CREDIT, DEBIT,
     HoldingAcquisition,
     Informations,
@@ -50,8 +53,6 @@ from banking.declarations import (
     KEY_ACCOUNTS,
     KEY_ACC_IBAN, KEY_ACC_ACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_PRODUCT_NAME, KEY_ACC_OWNER_NAME,
     KEY_BANK_NAME,
-    KEY_GEOMETRY,
-    KEY_LEDGER,
     MESSAGE_TEXT,
     NOT_ASSIGNED,
     ORIGIN,
@@ -60,16 +61,16 @@ from banking.declarations import (
     TRANSACTION_RECEIPT, TRANSACTION_DELIVERY,
     WARNING,
 )
-from banking.formbuilts import (
-    MessageBoxError, MessageBoxInfo,
+from banking.declarations import (
     TYP_ALPHANUMERIC, TYP_DECIMAL, TYP_DATE,
     WM_DELETE_WINDOW
 )
+from banking.messagebox import (MessageBoxError, MessageBoxInfo)
 from banking.ledger import transfer_statement_to_ledger
 from banking.utils import (
+    application_store,
     bankdata_informations_append,
     dec2, date_days, date_yyyymmdd,
-    shelve_get_key,
     Termination,
 )
 from banking.declarations_mariadb import HOLDING_VIEW
@@ -117,59 +118,74 @@ def _sqlalchemy_exception(title, storage, info):
                    message=MESSAGE_TEXT['SQLALCHEMY_ERROR'].format('PARAMS', info.params))
 
 
-class MariaDB(object):
+
+class MariaDB(object):   # Singleton with controlled initialization
     """
+    The parameters are used the first time the function is called (e.g., for configuration).
+    It's okay to omit the parameters on subsequent calls.
+    The values remain available internally without necessarily being used for database access.
+        
     Create Connection MARIADB
     Create MARIADB Tables
     Retrieve Records from MARIADB Tables
     Insert and Modify Records of MARIADB Tables
     """
+    
+    _instance = None
     DATABASES = []
 
-    def __init__(self, user, password, database):
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
-        self.user = user
-        self.password = password
-        self.database = database.lower()
-        self.table_names = []
-        self.host = "localhost"
-        try:
-            conn = connect(
-                host="localhost", user=self.user, password=self.password)
-            cur = conn.cursor()
-            sql_statement = "CREATE DATABASE IF NOT EXISTS " + self.database.upper()
-            cur.execute(sql_statement)
-            sql_statement = "show databases"
-            cur.execute(sql_statement)
-            for databases in cur:
-                if databases[0] not in ['information_schema', 'mysql', 'performance_schema']:
-                    MariaDB.DATABASES.append(databases[0])
-            conn = connect(user=self.user, password=self.password, host=self.host,
-                           database=self.database)
-            self.cursor = conn.cursor()
-            self.conn = conn
-            self.conn.autocommit = True
-            for sql_statement in CREATE_TABLES:
-                self.cursor.execute(sql_statement)
-                if sql_statement.startswith("CREATE ALGORITHM"):
-                    sql_statement = sql_statement.replace(
-                        "CREATE ALGORITHM", "ALTER ALGORITHM")
-                    sql_statement = sql_statement.replace(
-                        "IF NOT EXISTS", "")
-                    # update view data if view already exists
+    def __init__(self, user="root", password="FINTS", database=PRODUCTIVE_DATABASE_NAME):
+
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
+            self.user = user
+            self.password = password
+            self.database = database.lower()
+            self.table_names = []
+            self.host = "localhost"
+            try:
+                conn = connect(
+                    host="localhost", user=self.user, password=self.password)
+                cur = conn.cursor()
+                sql_statement = "CREATE DATABASE IF NOT EXISTS " + self.database.upper()
+                cur.execute(sql_statement)
+                sql_statement = "show databases"
+                cur.execute(sql_statement)
+                for databases in cur:
+                    if databases[0] not in ['information_schema', 'mysql', 'performance_schema']:
+                        MariaDB.DATABASES.append(databases[0])
+                conn = connect(user=self.user, password=self.password, host=self.host,
+                               database=self.database)
+                self.cursor = conn.cursor()
+                self.conn = conn
+                self.conn.autocommit = True
+                for sql_statement in CREATE_TABLES:
                     self.cursor.execute(sql_statement)
-            self._init_database_info()
-        except Error as error:
-            message = MESSAGE_TEXT['MARIADB_ERROR_SQL'].format(
-                sql_statement, '')
-            message = '\n\n'.join([
-                message, MESSAGE_TEXT['MARIADB_ERROR'].format(error.errno, error.errmsg)])
-            filename = stack()[1][1]
-            line = stack()[1][2]
-            method = stack()[1][3]
-            message = '\n\n'.join(
-                [message, MESSAGE_TEXT['STACK'].format(method, line, filename)])
-            MessageBoxInfo(message=message)
+                    if sql_statement.startswith("CREATE ALGORITHM"):
+                        sql_statement = sql_statement.replace(
+                            "CREATE ALGORITHM", "ALTER ALGORITHM")
+                        sql_statement = sql_statement.replace(
+                            "IF NOT EXISTS", "")
+                        # update view data if view already exists
+                        self.cursor.execute(sql_statement)
+                self._init_database_info()
+            except Error as error:
+                message = MESSAGE_TEXT['MARIADB_ERROR_SQL'].format(
+                    sql_statement, '')
+                message = '\n\n'.join([
+                    message, MESSAGE_TEXT['MARIADB_ERROR'].format(error.errno, error.errmsg)])
+                filename = stack()[1][1]
+                line = stack()[1][2]
+                method = stack()[1][3]
+                message = '\n\n'.join(
+                    [message, MESSAGE_TEXT['STACK'].format(method, line, filename)])
+                MessageBoxInfo(message=message)
+                
 
     def _init_database_info(self):
         """
@@ -362,7 +378,7 @@ class MariaDB(object):
                     self.execute_insert(STATEMENT, statement)
                 counter += 1
             self.execute('COMMIT;')
-            if shelve_get_key(BANK_MARIADB_INI, KEY_LEDGER):
+            if application_store.get(DB_ledger):
                 transfer_statement_to_ledger(self, bank)
 
         return statements
@@ -1202,7 +1218,7 @@ class MariaDB(object):
         """
         bank_names = {}
         for bank_code in self.listbank_codes():
-            bank_name = shelve_get_key(bank_code, KEY_BANK_NAME)
+            bank_name = self.shelve_get_key(bank_code, KEY_BANK_NAME)
             if bank_name:
                 bank_names[bank_code] = bank_name
             else:
@@ -1265,6 +1281,7 @@ class MariaDB(object):
         else:
             return None
 
+
     def shelve_del_key(self, shelve_name, key):
         """
         Deletes key in SHELVES field bankdata
@@ -1305,10 +1322,7 @@ class MariaDB(object):
                 if key in bankdata_dict:
                     return bankdata_dict[key]
                 else:
-                    if key == KEY_GEOMETRY:
-                        return {}
-                    else:
-                        return None
+                    return {}
         else:
             Termination(
                 info=MESSAGE_TEXT['SHELVE_NAME_MISSED'].format(shelve_name))
@@ -1330,6 +1344,50 @@ class MariaDB(object):
             bankdata_dict, default=self.shelve_serialize)
         self.execute_replace(
             SHELVES, {DB_code: shelve_name, DB_bankdata: bankdata_json})
+
+    def alpha_vantage_get(self, field_name):
+        """
+        field_name: DB_alpha_vantage_parameter or DB_alpha_vantage_function
+        returns alpha_vantage values of field_name
+        """
+        result = self.select_table(APPLICATION, field_name, row_id=2)
+        if result:
+            alpha_vantage = json.loads(result[0][0])
+        else:
+            alpha_vantage = {}
+        return alpha_vantage
+
+    def alpha_vantage_put(self, field_name, data):
+        """
+        field_name: DB_alpha_vantage_parameter or DB_alpha_vantage_function 
+        data: values of field_name in JSON format
+        """
+        if self.row_exists(APPLICATION, row_id=2):
+            self.execute_update(APPLICATION, {field_name: json.dumps(data)}, row_id=2)
+        else:    
+            self.execute_insert(APPLICATION, {DB_row_id: 2, field_name: json.dumps(data)})            
+   
+    def selection_get(self, selection_name):
+        """
+        get dictionary of last used selection values of selection form
+        or
+        get list of last selected check_button names of selection form
+        """
+        result = self.select_table(SELECTION, DB_data, name=selection_name)
+        if result:
+            selection_dict = json.loads(result[0][0])
+        else:
+            selection_dict = {}
+        return selection_dict
+
+    def selection_put(self, selection_name, selection_dict):
+        """
+        stores a dictionary of last used selection values of  selection form
+        in JSON format
+        stores a list of last selected checkbutton_names of selection form
+        """
+        selection_data = json.dumps(selection_dict)
+        self.execute_replace(SELECTION, {DB_name: selection_name, DB_data: selection_data})
 
     def shelve_serialize(self, obj):
         '''

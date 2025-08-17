@@ -26,10 +26,9 @@ from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
 from banking.declarations import (
     ALPHA_VANTAGE_DOCUMENTATION,
-    BANK_MARIADB_INI, BMW_BANK_CODE,
+    BMW_BANK_CODE,
     DEBIT, CREDIT,
     HTTP_CODE_OK,
-    KEY_ALPHA_VANTAGE_FUNCTION, KEY_ALPHA_VANTAGE_PARAMETER,
     KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_SERVER, KEY_BANK_NAME, KEY_ACCOUNTS,
     MESSAGE_TEXT, MENU_TEXT, PNS,
     SCRAPER_BANKDATA, SHELVE_KEYS,
@@ -37,15 +36,18 @@ from banking.declarations import (
 )
 from banking.declarations_mariadb import (
     STATEMENT,
+    DB_alpha_vantage_function, DB_alpha_vantage_parameter,
     DB_entry_date, DB_date, DB_amount, DB_posting_text, DB_purpose, DB_purpose_wo_identifier, DB_status,
     DB_closing_balance, DB_closing_entry_date, DB_closing_status,
     DB_opening_balance, DB_opening_entry_date, DB_opening_status
 )
-from banking.formbuilts import MessageBoxInfo, MessageBoxError, WM_DELETE_WINDOW
+from banking.formbuilts import WM_DELETE_WINDOW
+from banking.messagebox import (MessageBoxError, MessageBoxInfo)
 from banking.forms import InputPIN
 from banking.utils import (
-    dec2, http_error_code, shelve_get_key, exception_error, shelve_put_key
+    dec2, http_error_code, exception_error
 )
+from banking.mariadb import MariaDB
 
 
 def convert_date(date_):
@@ -127,10 +129,11 @@ class AlphaVantage(object):
         self.progress = progress
         self.parameter_dict = parameter_dict
         self.function_list = function_list
-        if self.parameter_dict and self.function_list:
+        self.mariadb = MariaDB()
+        if parameter_dict and function_list:
             pass
         else:
-            self.refresh
+            self._refresh()
 
     def refresh(self):
 
@@ -185,9 +188,9 @@ class AlphaVantage(object):
                 self.function_list = list(set(self.function_list))
                 self.function_list.sort()
                 self.driver.quit()
-                data = [(KEY_ALPHA_VANTAGE_FUNCTION, self.function_list),
-                        (KEY_ALPHA_VANTAGE_PARAMETER,  self.parameter_dict)]
-                shelve_put_key(BANK_MARIADB_INI, data)
+                self.mariadb.alpha_vantage_put(DB_alpha_vantage_function, self.function_list)
+                self.mariadb.alpha_vantage_put(DB_alpha_vantage_parameter, self.parameter_dict) 
+                
                 return error
             except Exception as error:
                 print(error)

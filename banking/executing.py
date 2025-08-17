@@ -9,24 +9,23 @@ import io
 import sys
 import requests
 import webbrowser
-import base64
-from io import BytesIO
-from PIL import Image, ImageTk
+from PIL import ImageTk
 
 from contextlib import redirect_stdout
 from time import sleep
 from datetime import date, timedelta, datetime
 from threading import Thread
-from tkinter import Tk, Menu, TclError, GROOVE, ttk, Canvas, StringVar, font, PhotoImage
+from tkinter import Tk, Menu, TclError, GROOVE, ttk, Canvas, StringVar, font    
 from tkinter.ttk import Label
+
 from fints.types import ValueList
 from pandas import DataFrame
 from yfinance import Ticker
 
 from banking.bank import InitBank, InitBankSync, InitBankAnonymous
 from banking.declarations import (
-    APP_SHELVE_KEYS, ALPHA_VANTAGE, ALPHA_VANTAGE_DOCUMENTATION,
-    Balance,  BANK_MARIADB_INI,
+    ALPHA_VANTAGE, ALPHA_VANTAGE_DOCUMENTATION,
+    Balance,
     BMW_BANK_CODE, BUNDESBANK_BLZ_MERKBLATT, BUNDEBANK_BLZ_DOWNLOAD,
     CURRENCY_SIGN, CREDIT,
     DEBIT,
@@ -40,17 +39,14 @@ from banking.declarations import (
     FN_PROFIT_LOSS,
     INFORMATION, Informations,
     JSON_KEY_ERROR_MESSAGE, JSON_KEY_META_DATA,
-    KEY_ACCOUNTS, KEY_ACC_BANK_CODE, KEY_ACC_OWNER_NAME, KEY_ALPHA_VANTAGE_PRICE_PERIOD,
-    KEY_ACC_ACCOUNT_NUMBER, KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_IBAN,
-    KEY_ACC_PRODUCT_NAME, KEY_ALPHA_VANTAGE, KEY_ALPHA_VANTAGE_PARAMETER,  KEY_ALPHA_VANTAGE_FUNCTION,
-    KEY_BANK_CODE, KEY_BANK_NAME, KEY_DIRECTORY, KEY_LOGGING, KEY_DOWNLOAD_ACTIVATED,
-    KEY_GEOMETRY,
-    KEY_MARIADB_NAME, KEY_MARIADB_PASSWORD, KEY_MARIADB_USER,
-    KEY_MAX_PIN_LENGTH, KEY_MIN_PIN_LENGTH,
-    KEY_PIN, KEY_BIC, KEY_PRODUCT_ID,
+    KEY_ACCOUNTS, KEY_ACC_BANK_CODE, KEY_ACC_OWNER_NAME, 
+    KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_IBAN,
+    KEY_ACC_ACCOUNT_NUMBER, KEY_MAX_PIN_LENGTH, KEY_MIN_PIN_LENGTH, 
+    KEY_ACC_PRODUCT_NAME, 
+    KEY_BANK_CODE, KEY_BANK_NAME, KEY_DOWNLOAD_ACTIVATED,
+    KEY_PIN, KEY_BIC,
     KEY_SECURITY_FUNCTION,
-    KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_SHOW_MESSAGE, KEY_STORAGE_PERIOD,
-    KEY_THREADING, KEY_LEDGER,
+    KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_STORAGE_PERIOD,
     KEY_USER_ID, KEY_VERSION_TRANSACTION,
     MENU_TEXT, MESSAGE_TEXT, MESSAGE_TITLE,
     NOT_ASSIGNED, NUMERIC, NO_CURRENCY_SIGN,
@@ -62,15 +58,17 @@ from banking.declarations import (
     SEPA_PURPOSE_1, SEPA_PURPOSE_2, SEPA_REFERENCE,
     SHELVE_KEYS,
     START_DATE_HOLDING,
-    TRANSACTION_DELIVERY, TRUE, TRANSFER_DATA_SEPA_EXECUTION_DATE,
-    UNKNOWN,
+    TRANSACTION_DELIVERY, TRANSFER_DATA_SEPA_EXECUTION_DATE,
     WEBSITES, WARNING,
     YAHOO,
 )
 from banking.declarations_mariadb import (
+    PRODUCTIVE_DATABASE_NAME,
     TABLE_FIELDS, TABLE_FIELDS_PROPERTIES,
 
     DB_acquisition_amount, DB_amount_currency, DB_amount, DB_account, DB_applicant_name,
+    DB_alpha_vantage_price_period, DB_alpha_vantage,
+    DB_alpha_vantage_function, DB_alpha_vantage_parameter,
     DB_opening_balance, DB_opening_currency, DB_opening_status, DB_opening_entry_date,
     DB_closing_balance, DB_closing_currency, DB_closing_status, DB_closing_entry_date,
     DB_counter, DB_date, DB_category, DB_code, DB_currency, DB_credit_account,
@@ -79,35 +77,35 @@ from banking.declarations_mariadb import (
     DB_ISIN, DB_iban, DB_id_no,
     DB_market_price,
     DB_name,
+    DB_ledger,
     DB_origin, DB_origin_symbol,
+    DB_row_id,
     DB_pieces, DB_portfolio, DB_purpose_wo_identifier,
+    DB_threading,
     DB_total_amount, DB_price_date,
     DB_total_amount_portfolio, DB_transaction_type,
     DB_symbol, DB_status,
     DB_open, DB_low, DB_high, DB_close, DB_adjclose, DB_volume, DB_dividends, DB_splits,
-
-    PRODUCTIVE_DATABASE_NAME,
-
+    APPLICATION, GEOMETRY,
     HOLDING, HOLDING_VIEW,
     BANKIDENTIFIER, LEDGER_STATEMENT,
     ISIN, PRICES_ISIN_VIEW, PRICES, SERVER, STATEMENT,
     TRANSACTION, TRANSACTION_VIEW,
     LEDGER, LEDGER_COA, LEDGER_VIEW,
     SHELVES,
-
 )
 from banking.formbuilts import (
     BUTTON_SAVE, BUTTON_APPEND, BUTTON_DELETE,
-    BUTTON_PRICES_IMPORT, BUTTON_REPLACE,
+    BUTTON_PRICES_IMPORT, BUTTON_REPLACE, BUTTON_RESTORE,
     BUTTON_ALPHA_VANTAGE,
     BuiltRadioButtons, BuiltPandasBox,
     destroy_widget,
     FileDialogue,
-    MessageBoxInfo, MessageBoxAsk,
     ProgressBar,
     TYP_DECIMAL,
     WM_DELETE_WINDOW,
 )
+from banking.messagebox import (MessageBoxAsk, MessageBoxInfo)
 from banking.forms import (
     AlphaVantageParameter, AppCustomizing,
     BankDataChange, BankDataNew, BankDelete,
@@ -131,26 +129,15 @@ from banking.mariadb import MariaDB
 from banking.scraper import AlphaVantage, BmwBank
 from banking.sepa import SepaCreditTransfer
 from banking.utils import (
+    application_store,
     date_days, date_years, dec2,
     dict_get_first_key,
     exception_error,
     holding_informations_append,
-    prices_informations_append,
-    shelve_exist, shelve_put_key, shelve_get_key, shelve_get_keylist, shelve_del_key,
-    delete_shelve_files,
+    prices_informations_append
 )
 
-
-"""
-Ledger declaratives
-"""
-
-
-PRINT_LENGTH = 140
-PAGE_FEED = 50
-
-
-class FinTS_MariaDB_Banking(object):
+class BankenLedger(object):
     """
     Start of Application
     Execution of Application Customizing
@@ -160,30 +147,15 @@ class FinTS_MariaDB_Banking(object):
     holdings : ignores download (all_banks) holdings if False
     """
 
-    def __init__(self, title=MESSAGE_TITLE, holdings=True):
+    def __init__(self, user, password, database, host, title=MESSAGE_TITLE, holdings=True):
 
+        self.user = user
+        self.database = database
+        self.host = host
         self.holdings = holdings
-        if shelve_exist(BANK_MARIADB_INI):
-            self.shelve_app = shelve_get_key(
-                BANK_MARIADB_INI, APP_SHELVE_KEYS)
-            # Connecting DB
-            try:
-                MariaDBuser = self.shelve_app[KEY_MARIADB_USER]
-                MariaDBpassword = self.shelve_app[KEY_MARIADB_PASSWORD]
-                MariaDBname = self.shelve_app[KEY_MARIADB_NAME]
-            except KeyError:
-                exception_error(message=MESSAGE_TEXT['DBLOGIN'])
-            try:
-                self.mariadb = MariaDB(
-                    MariaDBuser, MariaDBpassword, MariaDBname)
-            except Exception:
-                exception_error(message=MESSAGE_TEXT['CONN'].format(
-                    MariaDBuser, MariaDBname))
-            self.bank_names = self.mariadb.dictbank_names()
-        else:
-            self.bank_names ={}
-            MariaDBname = UNKNOWN
-            self.shelve_app = {}
+        self.mariadb = MariaDB()
+        self._application_store_load_data()
+        self.bank_names = self.mariadb.dictbank_names()
         while True:
             self.wpd_iban = []
             self.kaz_iban = []
@@ -193,54 +165,38 @@ class FinTS_MariaDB_Banking(object):
             self.window.title(title)
             self.window.geometry('600x400+1+1')
             self.window.resizable(0, 0)
-            _canvas = Canvas(self.window)
-            _canvas.pack(expand=True, fill='both')
-            _canvas_image = PhotoImage(file=("background.gif"))
-            _canvas.create_image(0, 0, anchor='nw', image=_canvas_image)
-            if MariaDBname.lower() != PRODUCTIVE_DATABASE_NAME:
+            self.canvas = Canvas(self.window, width=600, height=400)
+            self.canvas.pack(fill="both", expand=True)            
+            try:
+                self.bg_photo = ImageTk.PhotoImage(file="background.gif")
+                self.canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
+            except Exception as e:
+                print('BankenLedger', MESSAGE_TEXT['CONNECT_IMAGE_ERROR'].format(e))
+            if self.database.lower() != PRODUCTIVE_DATABASE_NAME:
                 fill_colour = 'red'
             else:
                 fill_colour = 'lightblue'
-            _canvas.create_text(300, 200, fill=fill_colour, font=('Arial', 20, 'bold'),
-                                text=MESSAGE_TEXT['DATABASE'].format(MariaDBname))
+            self.canvas.create_text(300, 200, fill=fill_colour, font=('Arial', 20, 'bold'),
+                                text=MESSAGE_TEXT['DATABASE'].format(self.database))                
             self._def_styles()
             self.bank_owner_account = self._create_bank_owner_account()
-            self._create_menu(MariaDBname)
+            self._create_menu(self.database)
             self.footer = StringVar()
             self.message_widget = Label(self.window,
                                         textvariable=self.footer, foreground='RED', justify='center')
             self.footer.set('')
             self.message_widget.pack()
+            self.load_timer = None
             self.window.protocol(WM_DELETE_WINDOW, self._wm_deletion_window)
-            if shelve_exist(BANK_MARIADB_INI):
-                self.alpha_vantage = AlphaVantage(self.progress, self.shelve_app[KEY_ALPHA_VANTAGE_FUNCTION],
-                                                  self.shelve_app[KEY_ALPHA_VANTAGE_PARAMETER])
+            if application_store.get(DB_alpha_vantage):
+                self.alpha_vantage_function = self.mariadb.alpha_vantage_get(DB_alpha_vantage_function)
+                self.alpha_vantage_parameter = self.mariadb.alpha_vantage_get(DB_alpha_vantage_parameter)
+                self.alpha_vantage = AlphaVantage(self.progress, self.alpha_vantage_function, self.alpha_vantage_parameter)            
             self.window.mainloop()
         try:
             self.window.destroy()
         except TclError:
             pass
-
-    def gif_file(self):    
-
-
-        
-        
-        # Eingebettetes GIF als Base64-String (aus deiner Datei)
-        GIF_DATA_BASE64 = """
-        R0lGODlhDwAPAJEAAAAAAP///3p6ev///yH5BAEAAAMALAAAAAAPAA8AAAIUjI+ZwKkCzVrJsWmZsvttWEMFADs=
-        """  # <--- gekürzt zur Demo; dein vollständiger Base64-String kommt gleich weiter unten
-        
-        # Base64-String decodieren und in BytesIO laden
-        gif_bytes = base64.b64decode(GIF_DATA_BASE64)
-        gif_file = BytesIO(gif_bytes)
-
-        gif_file.seek(0)
-        img = Image.open(gif_file)
-        tk_img = ImageTk.PhotoImage(img)
-
-        return tk_img
-
 
 
     def _wm_deletion_window(self):
@@ -254,6 +210,15 @@ class FinTS_MariaDB_Banking(object):
         except AttributeError:
             pass
         sys.exit()
+
+    def _application_store_load_data(self):
+
+        result = self.mariadb.select_table(APPLICATION, '*', result_dict=True, row_id=1)
+        if result:
+            application_data = {k: v for d in result for k, v in d.items()}
+        else:
+            application_data = {}
+        application_store.load_data(application_data)  
 
     def _bank_name(self, bank_code):
 
@@ -311,7 +276,7 @@ class FinTS_MariaDB_Banking(object):
 
         self._delete_footer()
         CANCELED = ''
-        if self.shelve_app[KEY_THREADING] == TRUE:
+        if application_store.get(DB_threading):
             banks_credentials = self.mariadb.listbank_codes()
             banks_download = []
             for bank_code in banks_credentials:
@@ -391,34 +356,21 @@ class FinTS_MariaDB_Banking(object):
     def _appcustomizing(self):
 
         self._delete_footer()
+        field_dict = application_store.get(None)
         while True:
-            app_data_box = AppCustomizing(shelve_app=self.shelve_app)
+            app_data_box = AppCustomizing(self.mariadb, field_dict)
             if app_data_box.button_state == WM_DELETE_WINDOW:
                 return
-            data = [(KEY_PRODUCT_ID,  app_data_box.field_dict[KEY_PRODUCT_ID]),
-                    (KEY_ALPHA_VANTAGE,
-                     app_data_box.field_dict[KEY_ALPHA_VANTAGE]),
-                    (KEY_DIRECTORY,  app_data_box.field_dict[KEY_DIRECTORY]),
-                    (KEY_MARIADB_NAME,
-                     app_data_box.field_dict[KEY_MARIADB_NAME]),
-                    (KEY_MARIADB_USER,
-                     app_data_box.field_dict[KEY_MARIADB_USER]),
-                    (KEY_MARIADB_PASSWORD,
-                     app_data_box.field_dict[KEY_MARIADB_PASSWORD]),
-                    (KEY_SHOW_MESSAGE,
-                     app_data_box.field_dict[KEY_SHOW_MESSAGE]),
-                    (KEY_LOGGING,  app_data_box.field_dict[KEY_LOGGING]),
-                    (KEY_THREADING,  app_data_box.field_dict[KEY_THREADING]),
-                    (KEY_ALPHA_VANTAGE_PRICE_PERIOD,
-                     app_data_box.field_dict[KEY_ALPHA_VANTAGE_PRICE_PERIOD]),
-                    (KEY_LEDGER,
-                     app_data_box.field_dict[KEY_LEDGER])
-                    ]
-            shelve_put_key(BANK_MARIADB_INI, data, flag='c')
+            field_dict = app_data_box.field_dict
             if app_data_box.button_state == BUTTON_SAVE:
+                app_data_box.field_dict[DB_row_id]=1 
+                self.mariadb.execute_replace(APPLICATION, app_data_box.field_dict)
                 MessageBoxInfo(message=MESSAGE_TEXT['DATABASE_REFRESH'])
                 self._wm_deletion_window()
-            self.shelve_app = shelve_get_key(BANK_MARIADB_INI, APP_SHELVE_KEYS)
+            elif app_data_box.button_state == BUTTON_RESTORE:
+                field_dict = application_store.get(None)
+            elif app_data_box.button_state == WM_DELETE_WINDOW:
+                break      
 
     def _def_styles(self):
 
@@ -450,16 +402,8 @@ class FinTS_MariaDB_Banking(object):
         bank_name = self._bank_name(bank_code)
         title = ' '.join([bank_name, MENU_TEXT['Customize'],
                           MENU_TEXT['Change Login Data']])
-        try:
-            login_data = self.mariadb.shelve_get_key(bank_code, [KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC,
+        login_data = self.mariadb.shelve_get_key(bank_code, [KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC,
                                                                  KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_DOWNLOAD_ACTIVATED])
-        except KeyError as key_error:
-            MessageBoxInfo(
-                title=title, message=MESSAGE_TEXT['LOGIN'].format(bank_code, key_error))
-            delete_shelve_files(bank_code)
-            MessageBoxInfo(title=title,
-                           message=MESSAGE_TEXT['BANK_DELETED'].format(bank_code))
-            return
         bank_data_box = BankDataChange(
             title, self.mariadb, bank_code, login_data)
         if bank_data_box.button_state == WM_DELETE_WINDOW:
@@ -685,14 +629,13 @@ class FinTS_MariaDB_Banking(object):
         menu_font = font.Font(family='Arial', size=11)
         menu = Menu(self.window)
         self.window.config(menu=menu, borderwidth=10, relief=GROOVE)
-        if MariaDBname != UNKNOWN:
-            if self.shelve_app[KEY_LEDGER]:
-                self._create_menu_ledger(menu, menu_font)
-        if self.bank_names != {} and MariaDBname != UNKNOWN:
+        if application_store.get(DB_ledger):
+            self._create_menu_ledger(menu, menu_font)
+        if self.bank_names != {} and application_store.get(None): # application customizing is done
             self._create_menu_show(menu, self.bank_owner_account, menu_font)
             self._create_menu_download(menu, menu_font)
             self._create_menu_transfer(menu, menu_font)
-        if MariaDBname != UNKNOWN:
+        if application_store.get(None): # application customizing is done
             self._create_menu_database(
                 menu, menu_font, self.bank_owner_account)
         self._create_menu_customizing(menu, menu_font, MariaDBname)
@@ -741,10 +684,9 @@ class FinTS_MariaDB_Banking(object):
             site_menu.add_command(label=website,
                                   command=lambda x=WEBSITES[website]: self._websites(x))
 
-        if self.shelve_app[KEY_ALPHA_VANTAGE]:
+        if application_store.get(DB_alpha_vantage):
             show_menu.add_command(
                 label=MENU_TEXT['Alpha Vantage'], command=self._show_alpha_vantage)
-        if self.shelve_app[KEY_ALPHA_VANTAGE]:
             show_menu.add_command(
                 label=MENU_TEXT['Alpha Vantage Symbol Search'], command=self._show_alpha_vantage_search_symbol)
         show_menu.add_command(
@@ -870,20 +812,20 @@ class FinTS_MariaDB_Banking(object):
         menu.add_cascade(label=MENU_TEXT['Customize'], menu=customize_menu)
         customize_menu.add_command(label=MENU_TEXT['Application INI File'],
                                    command=self._appcustomizing)
-        if self.shelve_app:
-            customize_menu.add_command(label=MENU_TEXT['Reset Screen Positions'],
-                                       command=self._reset)
+        if application_store.get(None): # Customizing is done
             customize_menu.add_separator()
             customize_menu.add_command(label=MENU_TEXT['Import Bankidentifier CSV-File'],
                                        command=self._import_bankidentifier)
             customize_menu.add_command(label=MENU_TEXT['Import Server CSV-File'],
                                        command=self._import_server)
             customize_menu.add_separator()
-            if self.shelve_app[KEY_ALPHA_VANTAGE]:
+            customize_menu.add_command(label=MENU_TEXT['Reset Screen Positions'],
+                                       command=self._reset)            
+            if application_store.get(DB_alpha_vantage):
                 customize_menu.add_command(label=MENU_TEXT['Refresh Alpha Vantage'],
                                            command=self._alpha_vantage_refresh)
                 customize_menu.add_separator()
-            if MariaDBname != UNKNOWN:
+            if application_store.get(None): # application customizing is done
                 if self.mariadb.select_server:
                     customize_menu.add_command(label=MENU_TEXT['New Bank'],
                                                command=self._bank_data_new)
@@ -892,7 +834,6 @@ class FinTS_MariaDB_Banking(object):
                 else:
                     MessageBoxInfo(message=MESSAGE_TEXT['PRODUCT_ID'])
             if self.bank_names:
-                customize_menu.add_separator()
                 for bank_name in self.bank_names.values():
                     bank_code = dict_get_first_key(self.bank_names, bank_name)
                     cust_bank_menu = Menu(customize_menu, tearoff=0,
@@ -900,17 +841,18 @@ class FinTS_MariaDB_Banking(object):
                     cust_bank_menu.add_command(label=MENU_TEXT['Change Login Data'],
                                                command=lambda x=bank_code: self._bank_data_change(x))
                     if bank_code not in list(SCRAPER_BANKDATA.keys()):
-                        cust_bank_menu.add_command(label=MENU_TEXT['Synchronize'],
-                                                   command=lambda x=bank_code: self._bank_sync(x))
                         cust_bank_menu.add_command(label=MENU_TEXT['Change Security Function'],
                                                    command=lambda
                                                    x=bank_code: self._bank_security_function(x, False))
-                        cust_bank_menu.add_command(label=MENU_TEXT['Refresh BankParameterData'],
-                                                   command=lambda
-                                                   x=bank_code: self._bank_refresh_bpd(x))
+                        cust_bank_menu.add_command(label=MENU_TEXT['Synchronize'],
+                                                   command=lambda x=bank_code: self._bank_sync(x))
                         cust_bank_menu.add_command(label=MENU_TEXT['Change FinTS Transaction Version'],
                                                    command=lambda
                                                    x=bank_code: self._bank_version_transaction(x))
+                        customize_menu.add_separator()                        
+                        cust_bank_menu.add_command(label=MENU_TEXT['Refresh BankParameterData'],
+                                                   command=lambda
+                                                   x=bank_code: self._bank_refresh_bpd(x))
                     cust_bank_menu.add_command(label=MENU_TEXT['Show Data'],
                                                command=lambda x=bank_code: self._bank_show_shelve(x))
                     customize_menu.add_cascade(
@@ -1596,7 +1538,7 @@ class FinTS_MariaDB_Banking(object):
                     return
                 state = select_isins.button_state
                 field_list = select_isins.field_list
-                if self.shelve_app[KEY_THREADING] == TRUE:
+                if application_store.get(DB_threading):
                     download_prices = Thread(name=MENU_TEXT['Prices'], target=self._import_prices_run,
                                              args=(self.mariadb, title, field_list, state))
                     download_prices.start()
@@ -1653,7 +1595,7 @@ class FinTS_MariaDB_Banking(object):
                                        'Dividends': DB_dividends, 'Stock Splits': DB_splits,
                                        'Volume': DB_volume}
                         elif origin_symbol == ALPHA_VANTAGE:
-                            function = self.shelve_app[KEY_ALPHA_VANTAGE_PRICE_PERIOD]
+                            function = application_store.get(DB_alpha_vantage_price_period)
                             """
                             By default, outputsize=compact. Strings compact and full are accepted with the following specifications:
                             compact returns only the latest 100 data points;
@@ -1663,10 +1605,10 @@ class FinTS_MariaDB_Banking(object):
                                 symbol + '&outputsize='
                             if from_date == start_date_prices:
                                 url = url + OUTPUTSIZE_FULL + '&apikey=' + \
-                                    self.shelve_app[KEY_ALPHA_VANTAGE]
+                                    application_store.get(DB_alpha_vantage)
                             else:
                                 url = url + OUTPUTSIZE_COMPACT + '&apikey=' + \
-                                    self.shelve_app[KEY_ALPHA_VANTAGE]
+                                    application_store.get(DB_alpha_vantage)
                             data = requests.get(url).json()
                             keys = [*data]  # list of keys of dictionary data
                             dataframe = None
@@ -1871,13 +1813,7 @@ class FinTS_MariaDB_Banking(object):
 
     def _reset(self):
 
-        if shelve_exist(BANK_MARIADB_INI):
-            key_list = shelve_get_keylist(BANK_MARIADB_INI)
-            for key in key_list:
-                if key not in APP_SHELVE_KEYS:
-                    shelve_del_key(BANK_MARIADB_INI, key)
-            GEOMETRY_DICT = {}
-            shelve_put_key(BANK_MARIADB_INI, (KEY_GEOMETRY, GEOMETRY_DICT))
+        self.mariadb.execute_delete(GEOMETRY)
         self.footer.set(MESSAGE_TEXT['TASK_DONE'])
 
     def _show_alpha_vantage(self):
@@ -1887,12 +1823,14 @@ class FinTS_MariaDB_Banking(object):
         alpha_vantage_symbols = self.mariadb.select_dict(
             ISIN, DB_name, DB_symbol, origin_symbol=ALPHA_VANTAGE)
         alpha_vantage_names = list(alpha_vantage_symbols.keys())
+        function_list = self.mariadb.alpha_vantage_get(DB_alpha_vantage_function)
+        parameter_dict = self.mariadb.alpha_vantage_get(DB_alpha_vantage_parameter)
         field_list = []
         while True:
             checkbutton = SelectFields(
                 title=title,
                 button2_text=None, button3_text=None, button4_text=None, default_texts=field_list,
-                checkbutton_texts=self.alpha_vantage.function_list)
+                checkbutton_texts=function_list)
             if checkbutton.button_state == WM_DELETE_WINDOW:
                 return
             field_list = checkbutton.field_list
@@ -1902,8 +1840,8 @@ class FinTS_MariaDB_Banking(object):
                 while True:
                     title_function = ' '.join([title, function])
                     parameters = AlphaVantageParameter(
-                        title_function, function, self.shelve_app[KEY_ALPHA_VANTAGE],
-                        self.alpha_vantage.parameter_dict[function], default_values,
+                        title_function, function, application_store.get(DB_alpha_vantage),
+                        parameter_dict[function], default_values,
                         alpha_vantage_names)
                     if parameters.button_state == WM_DELETE_WINDOW:
                         break
@@ -1960,7 +1898,7 @@ class FinTS_MariaDB_Banking(object):
         title = MENU_TEXT['Alpha Vantage Symbol Search']
         while True:
             parameters = AlphaVantageParameter(
-                title, function, self.shelve_app[KEY_ALPHA_VANTAGE],
+                title, function, application_store.get(DB_alpha_vantage),
                 self.alpha_vantage.parameter_dict[function], [], [])
             if parameters.button_state == WM_DELETE_WINDOW:
                 break
@@ -2240,7 +2178,7 @@ class FinTS_MariaDB_Banking(object):
             [MENU_TEXT['Show'], bank_name, MENU_TEXT['Holding'] + '%', label])
         data_dict = {FN_FROM_DATE: (
             date.today() - timedelta(days=1)), FN_TO_DATE: date.today()}
-        shelve_del_key(BANK_MARIADB_INI, title)
+        self.mariadb.execute_delete(GEOMETRY,caller=title)
         while True:
             input_period = InputDateHolding(title=title, data_dict=data_dict,
                                             mariadb=self.mariadb, container_dict={DB_iban: iban})

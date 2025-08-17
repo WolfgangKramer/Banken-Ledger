@@ -1,0 +1,23 @@
+name: Generate requirements.txt
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-requirements:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install pipreqs
+        run: pip install pipreqs
+
+      - name: Generate requirements.txt
+        run: pipreqs . --force

@@ -9,3 +9,9 @@ sqlalchemy
 tkcalendar
 webdriver_manager
 keyboard
+lxml
+openpyxl
+odfpy
+ta
+xlrd
+xlswriter

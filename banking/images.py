@@ -4,11 +4,6 @@ __updated__ = "2024-11-27"
 @author: Wolfgang Kramer
 '''
 from tkinter import PhotoImage
-import base64
-from io import BytesIO
-from PIL import Image, ImageTk
-
-
 
 def currency_sign():
     '''
@@ -21,6 +16,4 @@ def currency_sign():
         + 'EYRCfReNoB8h6uactNOFcZsTIDoBIltAKcU9WmtYkhgeGh/qvU8poVbiAI1aKzYQhRCwqqANYDFGzCw+'
         + 'doMxBgo1QxflnHvvKNQMAW//bGzTNX/7KhacAAHRDUMsdGzYDmA9AAAAAElFTkSuQmCC')
     )
-    return img
-
-    
+    return img   

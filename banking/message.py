@@ -9,6 +9,7 @@ import logging
 
 from fints.client import FinTS3Serializer
 
+from banking.mariadb import MariaDB
 from banking.declarations import (
     CUSTOMER_ID_ANONYMOUS, KEY_TAN_REQUIRED
 )
@@ -17,7 +18,7 @@ from banking.segment import Segments
 from banking.utils import application_store
 
 
-def _serialize(message, mariadb):
+def _serialize(message):
 
     if application_store.get(DB_logging):
         fints3serializer = FinTS3Serializer()
@@ -48,9 +49,9 @@ class Messages():
     https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Formals_2017-10-06_final_version.pdf
     """
 
-    def __init__(self, mariadb):
+    def __init__(self):
 
-        self.mariadb = mariadb
+        self.mariadb = MariaDB()
         self.segments = Segments()
 
     def msg_dialog_init(self, bank):
@@ -64,7 +65,7 @@ class Messages():
         message = self.segments.segHKTAN(bank, message)
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message
 
     def msg_dialog_anonymous(self, bank):
@@ -77,7 +78,7 @@ class Messages():
         message = self.segments.segHKVVB(bank, message)
         message = self.segments.segHKTAN(bank, message)
         message = self.segments.segHNHBSnoencrypt(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message
 
     def msg_dialog_syn(self, bank):
@@ -92,7 +93,7 @@ class Messages():
         message = self.segments.segHKSYN(bank, message)
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message
 
     def msg_tan_decoupled(self, bank):
@@ -102,10 +103,10 @@ class Messages():
         message = self.segments.segHNHBK(bank)
         message = self.segments.segHNSHK(bank, message)
         message = self.segments.segHKTAN_decoupled(bank, message)
-        message = self.segments.segHNSHA_TAN(bank, message, self.mariadb)
+        message = self.segments.segHNSHA_TAN(bank, message)
         if message:
             message = self.segments.segHNHBS(bank, message)
-            _serialize(message, self.mariadb)
+            _serialize(message)
             return message
         return None  # input of tan canceled
 
@@ -116,10 +117,10 @@ class Messages():
         message = self.segments.segHNHBK(bank)
         message = self.segments.segHNSHK(bank, message)
         message = self.segments.segHKTAN(bank, message)
-        message = self.segments.segHNSHA_TAN(bank, message, self.mariadb)
+        message = self.segments.segHNSHA_TAN(bank, message)
         if message:
             message = self.segments.segHNHBS(bank, message)
-            _serialize(message, self.mariadb)
+            _serialize(message)
             return message
         return None  # input of tan canceled
 
@@ -135,7 +136,7 @@ class Messages():
                 bank, message, segment_name='HKKAZ')
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message
 
     def msg_holdings(self, bank):
@@ -150,7 +151,7 @@ class Messages():
                 bank, message, segment_name='HKWPD')
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message
 
     def msg_trading(self, bank):
@@ -165,7 +166,7 @@ class Messages():
                 bank, message, segment_name='HKWDU')
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message
 
     def msg_transfer(self, bank):
@@ -180,7 +181,7 @@ class Messages():
                 bank, message, segment_name='HKCCS')
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message
 
     def msg_date_transfer(self, bank):
@@ -195,7 +196,7 @@ class Messages():
                 bank, message, segment_name='HKCSE')
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message
 
     def msg_dialog_end(self, bank):
@@ -207,5 +208,5 @@ class Messages():
         message = self.segments.segHKEND(bank, message)
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        _serialize(message, self.mariadb)
+        _serialize(message)
         return message

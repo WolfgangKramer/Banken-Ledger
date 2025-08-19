@@ -222,6 +222,7 @@ MESSAGE_TEXT = {
     'IBAN': 'IBAN invalid',
     'IBAN_USED': 'IBAN is already assigned to account {}',
     'IMPORT_CSV': 'Import CSV_File into Table {}',
+    'ISIN_ALPHABETIC': 'Isin_code must start with an alphabetic character',
     'ISIN_DATA': 'Enter ISIN Data',
     'ISIN_IN_HOLDING': 'No deletion allowed \n {} ({}) \n Used in holding or transaction table',
     'ISDIGIT': 'Invalid Integer Field {}',

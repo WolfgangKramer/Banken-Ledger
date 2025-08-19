@@ -3,6 +3,13 @@ Created on 18.11.2019
 __updated__ = "2025-07-07"
 @author: Wolfgang Kramer
 """
+
+
+import re
+import webbrowser
+from datetime import date
+from random import randint
+from banking.mariadb import MariaDB
 from banking.declarations import (
     CUSTOMER_ID_ANONYMOUS,
     DIALOG_ID_UNASSIGNED,
@@ -20,10 +27,7 @@ from banking.messagebox import MessageBoxError, MessageBoxInfo
 from banking.forms import InputPIN
 
 from banking.utils import application_store, http_error_code
-from datetime import date
-from random import randint
-import re
-import webbrowser
+
 
 
 class InitBank(object):
@@ -31,8 +35,9 @@ class InitBank(object):
     Data Bank Dialogue
     """
 
-    def __init__(self, bank_code, mariadb):
+    def __init__(self, bank_code):
 
+        mariadb = MariaDB()
         self.scraper = False
         self.bank_code = bank_code
         shelve_file = mariadb.shelve_get_key(
@@ -60,7 +65,7 @@ class InitBank(object):
                 message=MESSAGE_TEXT['LOGIN_SCRAPER'].format('', self.bank_code))
             return None  # thread checking
         else:
-            self.dialogs = Dialogs(mariadb)
+            self.dialogs = Dialogs()
             try:
                 self.security_function = shelve_file[KEY_SECURITY_FUNCTION]
             except KeyError as key_error:
@@ -123,8 +128,9 @@ class InitBankSync(object):
     Data Bank Synchronization
     """
 
-    def __init__(self, bank_code, mariadb):
+    def __init__(self, bank_code):
 
+        mariadb = MariaDB()
         self.bank_code = bank_code
         self.scraper = False
         shelve_keys = [KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_BPD, KEY_SERVER,
@@ -145,7 +151,7 @@ class InitBankSync(object):
             return None  # thread checking
         if bank_code not in PNS.keys():
             try:
-                inputpin = InputPIN(bank_code, mariadb)
+                inputpin = InputPIN(bank_code)
                 PNS[bank_code] = inputpin.pin
             except TypeError:
                 MessageBoxError(
@@ -195,8 +201,9 @@ class InitBankAnonymous(object):
     Data Bank Anonymous Dialogue
     """
 
-    def __init__(self, bank_code, mariadb):
+    def __init__(self, bank_code):
 
+        mariadb = MariaDB()
         # Dialog Identification
         self.bank_code = bank_code
         self.scraper = False
@@ -237,4 +244,4 @@ class InitBankAnonymous(object):
         self.tan_process = 4
         self.security_reference = randint(10000, 99999)
         self.warning_message = False
-        self.dialogs = Dialogs(mariadb)
+        self.dialogs = Dialogs()

@@ -24,6 +24,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
+from banking.mariadb import MariaDB
 from banking.declarations import (
     ALPHA_VANTAGE_DOCUMENTATION,
     BMW_BANK_CODE,
@@ -47,7 +48,6 @@ from banking.forms import InputPIN
 from banking.utils import (
     dec2, http_error_code, exception_error
 )
-from banking.mariadb import MariaDB
 
 
 def convert_date(date_):
@@ -205,15 +205,15 @@ class BmwBank(object):
     savings and daily transactions
     """
 
-    def __init__(self, mariadb):
+    def __init__(self):
 
-        self.mariadb = mariadb
+        self.mariadb = MariaDB()
         self.bank_code = BMW_BANK_CODE
         self.server, self.identifier_delimiter, self.storage_period = SCRAPER_BANKDATA[
             BMW_BANK_CODE]
         self.scraper = True
         self.user_id = None
-        shelve_file = mariadb.shelve_get_key(self.bank_code, SHELVE_KEYS)
+        shelve_file = self.mariadb.shelve_get_key(self.bank_code, SHELVE_KEYS)
         self.bank_name = shelve_file[KEY_BANK_NAME]
         self.title = self.bank_name
         try:
@@ -296,7 +296,7 @@ class BmwBank(object):
                 try:
                     if self.bank_code not in PNS.keys():
                         inputpin = InputPIN(
-                            self.bank_code, self.mariadb, self.bank_name)
+                            self.bank_code, self.bank_name)
                         if inputpin.button_state == WM_DELETE_WINDOW:
                             return None
                         PNS[self.bank_code] = inputpin.pin

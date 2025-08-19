@@ -358,7 +358,7 @@ class BankenLedger(object):
         self._delete_footer()
         field_dict = application_store.get(None)
         while True:
-            app_data_box = AppCustomizing(self.mariadb, field_dict)
+            app_data_box = AppCustomizing(field_dict)
             if app_data_box.button_state == WM_DELETE_WINDOW:
                 return
             field_dict = app_data_box.field_dict
@@ -405,7 +405,7 @@ class BankenLedger(object):
         login_data = self.mariadb.shelve_get_key(bank_code, [KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC,
                                                                  KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_DOWNLOAD_ACTIVATED])
         bank_data_box = BankDataChange(
-            title, self.mariadb, bank_code, login_data)
+            title, bank_code, login_data)
         if bank_data_box.button_state == WM_DELETE_WINDOW:
             return
         try:
@@ -445,7 +445,7 @@ class BankenLedger(object):
                 title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(SERVER.upper()))
         else:
             bank_data_box = BankDataNew(
-                title, self.mariadb, bank_codes=bank_codes)
+                title, bank_codes=bank_codes)
             if bank_data_box.button_state == WM_DELETE_WINDOW:
                 return
             bank_code = bank_data_box.field_dict[KEY_BANK_CODE]
@@ -529,15 +529,15 @@ class BankenLedger(object):
 
         if bank_code in list(SCRAPER_BANKDATA.keys()):
             if bank_code == BMW_BANK_CODE:
-                bank = BmwBank(self.mariadb)
+                bank = BmwBank()
         else:
-            bank = InitBank(bank_code, self.mariadb)
+            bank = InitBank(bank_code)
         return bank
 
     def _bank_refresh_bpd(self, bank_code):
 
         self._delete_footer()
-        bank = InitBankAnonymous(bank_code, self.mariadb)
+        bank = InitBankAnonymous(bank_code)
         bank.dialogs.anonymous(bank)
         bank_name = self._bank_name(bank_code)
         message = ' '.join([bank_name, MENU_TEXT['Customize'],
@@ -595,7 +595,7 @@ class BankenLedger(object):
     def _bank_sync(self, bank_code):
 
         self._delete_footer()
-        bank = InitBankSync(bank_code, self.mariadb)
+        bank = InitBankSync(bank_code)
         bank.dialogs.sync(bank)
         bank_name = self._bank_name(bank_code)
         message = ' '.join(
@@ -612,7 +612,7 @@ class BankenLedger(object):
             bank_code, KEY_VERSION_TRANSACTION)
         try:
             transaction_version_box = VersionTransaction(
-                title, bank_code, transaction_versions, self.mariadb)
+                title, bank_code, transaction_versions)
             if transaction_version_box.button_state == WM_DELETE_WINDOW:
                 return
             for key in transaction_version_box.field_dict.keys():
@@ -1188,7 +1188,7 @@ class BankenLedger(object):
             data = self.mariadb.select_table(
                 ISIN, '*', result_dict=True, order=DB_name)
             isin_table = PandasBoxIsinTable(
-                title, data, self.mariadb, message, mode=EDIT_ROW, selected_row=selected_row)
+                title, data, message, mode=EDIT_ROW, selected_row=selected_row)
             selected_row = isin_table.selected_row
             message = isin_table.message
             if isin_table.button_state == WM_DELETE_WINDOW:
@@ -1224,7 +1224,7 @@ class BankenLedger(object):
             if data:
                 while True:
                     holding_table = PandasBoxHoldingTable(
-                        title_period, data, self.mariadb, message, iban, mode=EDIT_ROW)
+                        title_period, data, message, iban, mode=EDIT_ROW)
                     message = holding_table.message
                     if holding_table.button_state == WM_DELETE_WINDOW:
                         break
@@ -1304,7 +1304,7 @@ class BankenLedger(object):
                 ISIN, '*', result_dict=True, isin_code=holding_dict[DB_ISIN])
             message = None
             isin_table = PandasBoxIsinTable(
-                title, data, self.mariadb, message, mode=EDIT_ROW)
+                title, data, message, mode=EDIT_ROW)
             message = isin_table.message
             if isin_table.button_state == WM_DELETE_WINDOW:
                 return
@@ -1336,7 +1336,7 @@ class BankenLedger(object):
             data_dict[DB_iban] = iban
         while True:
             date_transations = InputDateTransactions(
-                title=title, data_dict=data_dict, mariadb=self.mariadb, upper=[DB_name])
+                title=title, data_dict=data_dict, upper=[DB_name])
             if date_transations.button_state == WM_DELETE_WINDOW:
                 return
             data_dict = date_transations.field_dict
@@ -1412,7 +1412,7 @@ class BankenLedger(object):
                 data = self.mariadb.select_table(
                     TRANSACTION_VIEW, field_list, result_dict=True, iban=iban, isin_code=isin, period=(from_date, to_date))
                 transaction_table = PandasBoxTransactionTable(
-                    title_period, data, self.mariadb, message, iban, isin, name, mode=EDIT_ROW)
+                    title_period, data, message, iban, isin, name, mode=EDIT_ROW)
                 message = transaction_table.message
                 if transaction_table.button_state == WM_DELETE_WINDOW:
                     break
@@ -1447,7 +1447,7 @@ class BankenLedger(object):
                      FN_TO_DATE: date_days.convert(date.today())}
         while True:
             date_prices = InputDatePrices(
-                title=title, data_dict=data_dict, mariadb=self.mariadb, separator=[FN_TO_DATE, DB_splits])
+                title=title, data_dict=data_dict, separator=[FN_TO_DATE, DB_splits])
             if date_prices.button_state == WM_DELETE_WINDOW:
                 return
             data_dict = date_prices.field_dict
@@ -1496,7 +1496,7 @@ class BankenLedger(object):
             if data_total_amounts:
                 while True:
                     table = PandasBoxTotals(
-                        title_period, data_total_amounts, self.mariadb)
+                        title_period, data_total_amounts)
                     if table.button_state == WM_DELETE_WINDOW:
                         break
             else:
@@ -1750,7 +1750,7 @@ class BankenLedger(object):
         bank.iban = account[KEY_ACC_IBAN]
         bank.subaccount_number = account[KEY_ACC_SUBACCOUNT_NUMBER]
         sepa_credit_box = SepaCreditBox(
-            bank, self.mariadb, account, title=title)
+            bank, account, title=title)
         if sepa_credit_box.button_state == WM_DELETE_WINDOW:
             return
         transfer_data = {}
@@ -1781,7 +1781,7 @@ class BankenLedger(object):
     def _bank_security_function(self, bank_code, new):
 
         self._delete_footer()
-        bank = InitBankAnonymous(bank_code, self.mariadb)
+        bank = InitBankAnonymous(bank_code)
         bank.dialogs.anonymous(bank)
         security_function_dict = {}
         default_value = None
@@ -1903,7 +1903,7 @@ class BankenLedger(object):
             if parameters.button_state == WM_DELETE_WINDOW:
                 break
             elif parameters.button_state == MENU_TEXT['ISIN Table']:
-                self._isin_table()
+                self._data_isin_table()
             elif parameters.button_state == BUTTON_ALPHA_VANTAGE:
                 self._websites(ALPHA_VANTAGE_DOCUMENTATION)
             else:
@@ -2119,7 +2119,7 @@ class BankenLedger(object):
             if data:
                 while True:
                     table = PandasBoxStatementTable(
-                        title_period, data, self.mariadb, message, mode=EDIT_ROW)
+                        title_period, data, message, mode=EDIT_ROW)
                     message = table.message
                     if table.button_state == WM_DELETE_WINDOW:
                         break
@@ -2157,7 +2157,7 @@ class BankenLedger(object):
             if data:
                 while True:
                     table = PandasBoxTransactionTableShow(
-                        title_period, data, self.mariadb, iban, message, mode=EDIT_ROW)
+                        title_period, data, iban, message, mode=EDIT_ROW)
                     message = table.message
                     if table.button_state == WM_DELETE_WINDOW:
                         break
@@ -2181,7 +2181,7 @@ class BankenLedger(object):
         self.mariadb.execute_delete(GEOMETRY,caller=title)
         while True:
             input_period = InputDateHolding(title=title, data_dict=data_dict,
-                                            mariadb=self.mariadb, container_dict={DB_iban: iban})
+                                            container_dict={DB_iban: iban})
             if input_period.button_state == WM_DELETE_WINDOW:
                 return
             data_dict = input_period.field_dict
@@ -2457,7 +2457,7 @@ class BankenLedger(object):
                 date_name=DB_entry_date, period=period, upload_check=False, origin=ORIGIN)
             if data:
                 table = PandasBoxLedgerTable(
-                    title, data, self.mariadb, None)
+                    title, data, None)
                 if table.button_state == WM_DELETE_WINDOW:
                     break
             else:
@@ -2485,7 +2485,7 @@ class BankenLedger(object):
             datetime.now().year, 12, 31)}
         while True:
             select_ledger_account = SelectLedgerAccountCategory(
-                title=title, mariadb=self.mariadb, data_dict=data_dict)
+                title=title, data_dict=data_dict)
             if select_ledger_account.button_state == WM_DELETE_WINDOW:
                 return
             data_dict = select_ledger_account.field_dict
@@ -2519,7 +2519,7 @@ class BankenLedger(object):
             datetime.now().year, 12, 31)}
         while True:
             select_ledger_account = SelectLedgerAccount(
-                title=title, mariadb=self.mariadb, data_dict=data_dict)
+                title=title, data_dict=data_dict)
             if select_ledger_account.button_state == WM_DELETE_WINDOW:
                 return
             data_dict = select_ledger_account.field_dict
@@ -2543,7 +2543,7 @@ class BankenLedger(object):
 
                 if data:
                     table = PandasBoxLedgerTable(
-                        title_period, data, self.mariadb, None, mode=EDIT_ROW, selected_row=selected_row)
+                        title_period, data, None, mode=EDIT_ROW, selected_row=selected_row)
                     selected_row = table.selected_row
                     if table.button_state == WM_DELETE_WINDOW:
                         break
@@ -2575,7 +2575,7 @@ class BankenLedger(object):
                     date_name=DB_entry_date, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
                 if data:
                     table = PandasBoxLedgerTable(
-                        title_period, data, self.mariadb, message, mode=EDIT_ROW, selected_row=selected_row)
+                        title_period, data, message, mode=EDIT_ROW, selected_row=selected_row)
                     message = table.message
                     selected_row = table.selected_row
                     if table.button_state == WM_DELETE_WINDOW:
@@ -2597,7 +2597,7 @@ class BankenLedger(object):
             data = self.mariadb.select_table(
                 LEDGER_COA, field_list, result_dict=True)
             ledger_coa_table = PandasBoxLedgerCoaTable(
-                title, data, self.mariadb, message, mode=EDIT_ROW, selected_row=selected_row)
+                title, data, message, mode=EDIT_ROW, selected_row=selected_row)
             message = ledger_coa_table.message
             selected_row = ledger_coa_table.selected_row
             if ledger_coa_table.button_state == WM_DELETE_WINDOW:

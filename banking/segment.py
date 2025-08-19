@@ -436,7 +436,7 @@ class Segments():
         )
         return message
 
-    def segHNSHA_TAN(self, bank, message, mariadb):
+    def segHNSHA_TAN(self, bank, message):
         """
         Segment Signaturabschluss (PIN/TAN)
             FINTS Dokument: Sicherheitsverfahren HBCI
@@ -449,7 +449,7 @@ class Segments():
             message += HKSYN3(SynchronizationMode.NEW_SYSTEM_ID)
         if bank.tan_process != 'S':
             # tan decoupled
-            input_tan = InputTAN(bank.bank_code, bank.bank_name, mariadb)
+            input_tan = InputTAN(bank.bank_code, bank.bank_name)
             if input_tan.button_state == WM_DELETE_WINDOW:
                 return None
             message += HNSHA2(

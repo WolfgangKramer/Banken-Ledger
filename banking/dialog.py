@@ -26,6 +26,7 @@ from fints.segments.statement import HIKAZ6, HIKAZ7
 from fints.utils import Password
 from mt940.models import Transactions
 
+from banking.mariadb import MariaDB
 from banking.declarations_mariadb import (
     STATEMENT, TABLE_FIELDS,
     DB_show_messages, DB_logging
@@ -41,7 +42,7 @@ from banking.declarations import (
     KEY_BPD, KEY_UPD, KEY_BANK_NAME, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS,
     KEY_MIN_PIN_LENGTH, KEY_MAX_PIN_LENGTH, KEY_MAX_TAN_LENGTH,
     KEY_VERSION_TRANSACTION, KEY_VERSION_TRANSACTION_ALLOWED,
-    KEY_SEPA_FORMATS, KEY_SHOW_MESSAGE, KEY_TAN_REQUIRED,
+    KEY_SEPA_FORMATS, KEY_TAN_REQUIRED,
     KEY_ACC_IBAN, KEY_ACC_ACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS,
     KEY_ACC_BANK_CODE, KEY_ACC_CURRENCY, KEY_ACC_CUSTOMER_ID, KEY_ACC_OWNER_NAME,
     KEY_ACC_PRODUCT_NAME, KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_TYPE,
@@ -89,10 +90,10 @@ class Dialogs(object):
     Dialogues: Customer - Bank
     """
 
-    def __init__(self, mariadb):
+    def __init__(self):
 
-        self.mariadb = mariadb
-        self.messages = Messages(mariadb)
+        self.mariadb = MariaDB()
+        self.messages = Messages()
         result = application_store.get([DB_logging, DB_show_messages])
         if result:
             self._show_message = result[DB_show_messages]
@@ -112,7 +113,7 @@ class Dialogs(object):
                 bank.message_number = 1
                 if bank.bank_code not in PNS.keys():
                     input_pin = InputPIN(
-                        bank.bank_code, self.mariadb, bank_name=bank.bank_name)
+                        bank.bank_code, bank_name=bank.bank_name)
                     if input_pin.button_state == WM_DELETE_WINDOW:
                         return None
                     PNS[bank.bank_code] = input_pin.pin

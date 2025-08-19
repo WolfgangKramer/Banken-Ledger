@@ -1184,7 +1184,7 @@ class BuiltSelectBox(BuiltEnterBox):
     Field_Row = namedtuple(
         'FieldRow', ['name', 'definition', 'length', 'typ', 'comment'])
 
-    def __init__(self, title=MESSAGE_TITLE, header=None, table=None, mariadb=None,
+    def __init__(self, title=MESSAGE_TITLE, header=None, table=None,
                  button1_text=BUTTON_OK, button2_text=BUTTON_RESTORE,
                  button3_text=None, button4_text=None,
                  selection_name=None,
@@ -1201,7 +1201,6 @@ class BuiltSelectBox(BuiltEnterBox):
         self.selection_name = selection_name
         self.data_dict = data_dict
         self.get_selection()
-        self.mariadb = mariadb
         self.check_button_exist = False
         self.upper = upper
         self.separator = separator
@@ -1354,7 +1353,7 @@ class BuiltTableRowBox(BuiltEnterBox):
 
     """
 
-    def __init__(self, table, table_view, data_row_dict, mariadb,
+    def __init__(self, table, table_view, data_row_dict,
                  combo_dict={}, combo_positioning_dict={}, combo_insert_value=[],
                  protected=[], mandatory=[], focus_in=[], focus_out=[], upper=[],
                  title=MESSAGE_TITLE, header=None,
@@ -1364,7 +1363,6 @@ class BuiltTableRowBox(BuiltEnterBox):
         Caller.caller = self.__class__.__name__
         self.title = title
         self.header = header
-        self.mariadb = mariadb
         self.table = table
         self.table_view = table_view
         self.data_row_dict = data_row_dict
@@ -1615,6 +1613,7 @@ class BuiltPandasBox(Frame):
 
         Caller.caller = self.caller = self.__class__.__name__
         self.button_state = ''
+        self.title = title
         self.mariadb = MariaDB()
         # Changes must be made in the duplicate (deepcopy) of the DataFrame, if a DataFrame is passed,
         # because Pandastable saves changes in the passed original
@@ -2049,7 +2048,7 @@ class BuiltPandasBox(Frame):
         file_dialogue = FileDialogue(title=self.title, create_file=True)
         filename = file_dialogue.filename.removesuffix('.xlsx')
         with ExcelWriter(filename + ".xlsx", mode='w') as writer:
-            self.dataframe.to_excel(writer, sheet_name=sheet_name)
+            self.dataframe.to_excel(writer, sheet_name=sheet_name[:30])
         MessageBoxInfo(title=self.title,
                        message=MESSAGE_TEXT['EXCEL'].format(file_dialogue.filename))
 

@@ -388,13 +388,12 @@ class BankenLedger(object):
     def _alpha_vantage_refresh(self):
 
         self.footer.set(MESSAGE_TEXT['ALPHA_VANTAGE_REFRESH_RUN'])
-        self.progress.start()
         refresh = self.alpha_vantage.refresh()
         if refresh:
             self.footer.set(MESSAGE_TEXT['ALPHA_VANTAGE_REFRESH'])
         else:
             self.footer.set(MESSAGE_TEXT['ALPHA_VANTAGE_ERROR'])
-        self.progress.stop()
+
 
     def _bank_data_change(self, bank_code):
 
@@ -478,16 +477,13 @@ class BankenLedger(object):
                 self._bank_security_function(bank_code, True)
                 MessageBoxInfo(title=title, message=MESSAGE_TEXT['BANK_DATA_NEW'].format(
                     bank_name, bank_code))
-            try:
-                self.window.destroy()
-            except Exception:
-                pass
+            self._wm_deletion_window() # to show new bank in menu after restart
 
     def _bank_data_delete(self):
 
         self._delete_footer()
         title = ' '.join([MENU_TEXT['Customize'], MENU_TEXT['Delete Bank']])
-        deletebank = BankDelete(title, self.mariadb)
+        deletebank = BankDelete(title)
         if deletebank.button_state == WM_DELETE_WINDOW:
             return
         bank_code = deletebank.field_dict[KEY_BANK_CODE]
@@ -498,6 +494,7 @@ class BankenLedger(object):
                     bank_name, table.upper()))
                 return
         self.mariadb.execute_delete(SHELVES, code=bank_code)
+        del self.bank_names[bank_code]
         MessageBoxInfo(
             title=title,
             message=MESSAGE_TEXT['BANK_DELETED'].format(bank_name, bank_code))
@@ -751,7 +748,7 @@ class BankenLedger(object):
                         account_menu.add_command(
                             label=label,
                             command=(lambda x=bank_code,
-                                     y=acc: self.sepa_credit_transfer(x, y)))
+                                     y=acc: self._sepa_credit_transfer(x, y)))
             transfer_menu.add_cascade(
                 label=bank_name, menu=account_menu, underline=0)
 
@@ -1736,7 +1733,7 @@ class BankenLedger(object):
             dataframe = DataFrame(data)
             BuiltPandasBox(title=title, dataframe=dataframe)
 
-    def sepa_credit_transfer(self, bank_code, account):
+    def _sepa_credit_transfer(self, bank_code, account):
 
         self._delete_footer()
         bank = self._bank_init(bank_code)

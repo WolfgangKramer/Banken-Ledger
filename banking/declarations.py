@@ -166,7 +166,7 @@ MESSAGE_TEXT = {
     'BALANCE_DIFFERENCE':   'Bank Account {} {}:  {}  \n Ledger Account {} {}:  {}  \n Balance Difference: {}',
     'BANK_CODE_EXIST': 'Bank Code exists',
     'BANK_DATA_ACCOUNTS_MISSED': 'BankCode {}: Accounts missed, Run Customizing',
-    'BANK_DATA_NEW': 'Created {} ({}. Next Step: SYNCHRONIZE Bank',
+    'BANK_DATA_NEW': 'Created {} ({}. Next Step: SYNCHRONIZE Bank \n\n Then restart application',
     'BANK_DATA_NEW_SCRAPER': 'Created {} ({})',
     'BANK_DELETED': 'DELETE BANK LOGIN DATA \nBankcode: {}',
     'BANK_DELETE_failed': 'DELETE BANK {} failed!! \n IBAN of bank exists in table {}',

@@ -46,7 +46,7 @@ from banking.declarations import (
     FN_COLUMNS_EURO, FN_COLUMNS_PERCENT, FN_FROM_DATE, FN_TO_DATE,
     HEIGHT_TEXT,
     MESSAGE_TEXT, MESSAGE_TITLE,
-    NO_CURRENCY_SIGN, NUMERIC,
+    NO_CURRENCY_SIGN, NUMERIC, NOT_ASSIGNED,
 )
 from banking.pandastable_extension import Table, TableRowEdit
 from banking.utils import (
@@ -183,7 +183,7 @@ def field_validation(name, field_def):
             return MESSAGE_TEXT['ISDIGIT'].format(name)
     if field_value:
         if field_def.lformat == FORMAT_FIXED:
-            if len(field_value) != field_def.length:
+            if len(field_value) != field_def.length and field_value!=NOT_ASSIGNED:
                 return MESSAGE_TEXT['FIXED'].format(name, field_def.length)
         else:
             if len(field_value) > field_def.length:
@@ -293,7 +293,7 @@ class FieldDefinition(object):
 
     >definiton<           String      Defintion (Entry, Combobox, Checkbutton)
     >name<                String      Description of EntryField
-    >format<              String      Fixed ('F') or variable ('V')
+    >lformat<             String      Fixed ('F') or variable ('V')
                                       EntryField Length (max. Length see >Length<)
     >length<              Integer     Max. Length of EntryField
     >typ>                 String      Type ('X'), ('D') Decimal, ('DAT') Date
@@ -1420,6 +1420,8 @@ class BuiltTableRowBox(BuiltEnterBox):
                                             combo_insert_value=combo_insert_value,
                                             combo_positioning=False,
                                             combo_values=self.combo_dict[field_name])
+                if fields_properties[field_name].data_type=='char':
+                    field_def.lformat = FORMAT_FIXED                
             elif field_name in self.combo_positioning_dict.keys():
                 # combo field with positioning, new items allowed if fieldname in self.combo_insert_value
                 field_def = FieldDefinition(definition=COMBO, name=field_name,
@@ -1428,11 +1430,15 @@ class BuiltTableRowBox(BuiltEnterBox):
                                             combo_insert_value=combo_insert_value,
                                             combo_positioning=True,
                                             combo_values=self.combo_positioning_dict[field_name])
+                if fields_properties[field_name].data_type=='char':
+                    field_def.lformat = FORMAT_FIXED
             else:
                 field_def = FieldDefinition(definition=ENTRY, name=field_name,
                                             length=fields_properties[field_name].length,
                                             typ=fields_properties[field_name].typ,
                                             )
+                if fields_properties[field_name].data_type=='char':
+                    field_def.lformat = FORMAT_FIXED                
             if field_name in self.protected:
                 field_def.protected = True
             if field_name not in self.mandatory:

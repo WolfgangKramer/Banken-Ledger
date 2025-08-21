@@ -97,7 +97,7 @@ from banking.formbuilts import (
     quit_widget,
     STANDARD,
     TYP_DECIMAL, TYP_DATE, TYP_ALPHANUMERIC,
-    WM_DELETE_WINDOW, )
+    WM_DELETE_WINDOW, FORMAT_VARIABLE, )
 from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.utils import (
     application_store,
@@ -805,7 +805,7 @@ class BankDelete(BuiltEnterBox):
             field_defs=FieldNames(
                 FieldDefinition(definition=COMBO,
                                 name=KEY_BANK_CODE, length=8, selected=True, readonly=True,
-                                combo_values=self.mariadb.listbank_codes()),
+                                combo_values=MariaDB().listbank_codes()),
                 FieldDefinition(name=KEY_BANK_NAME,
                                 length=70, protected=True)
             )
@@ -958,9 +958,11 @@ class LedgerTableRowBox(BuiltTableRowBox):
         if field_def.name == DB_credit_account:
             field_def.length = DATABASE_FIELDS_PROPERTIES[DB_credit_account].length + \
                 DATABASE_FIELDS_PROPERTIES[DB_credit_name].length
+            field_def.lformat = FORMAT_VARIABLE   # standard data_type char would be FORMAT_FIXED 
         elif field_def.name == DB_debit_account:
             field_def.length = DATABASE_FIELDS_PROPERTIES[DB_debit_account].length + \
                 DATABASE_FIELDS_PROPERTIES[DB_debit_name].length
+            field_def.lformat = FORMAT_VARIABLE   # standard data_type char would be FORMAT_FIXED                
         elif field_def.name == DB_category:
             field_def.upper = True
         return field_def

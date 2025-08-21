@@ -204,44 +204,57 @@ class Dialogs(object):
                 break
         transaction_versions_allowed = {}
         transaction_versions_allowed['TAN'] = []
-        seg = response.find_segment_first(HITANS6)
-        if seg is not None:
-            transaction_versions_allowed['TAN'].append(seg.header.version)
+
         seg = response.find_segment_first(HITANS7)
         if seg is not None:
             transaction_versions_allowed['TAN'].append(seg.header.version)
-        transaction_versions_allowed['KAZ'] = []
-        seg = response.find_segment_first(HIKAZS6)
+        seg = response.find_segment_first(HITANS6)
         if seg is not None:
-            transaction_versions_allowed['KAZ'].append(seg.header.version)
+            transaction_versions_allowed['TAN'].append(seg.header.version)            
+
+        transaction_versions_allowed['KAZ'] = []
         seg = response.find_segment_first(HIKAZS7)
         if seg is not None:
             transaction_versions_allowed['KAZ'].append(seg.header.version)
-        transaction_versions_allowed['WPD'] = []
-        seg = response.find_segment_first(HIWPDS5)
+        seg = response.find_segment_first(HIKAZS6)
         if seg is not None:
-            transaction_versions_allowed['WPD'].append(seg.header.version)
+            transaction_versions_allowed['KAZ'].append(seg.header.version)            
+
+        transaction_versions_allowed['WPD'] = []
         seg = response.find_segment_first(HIWPDS6)
         if seg is not None:
             transaction_versions_allowed['WPD'].append(seg.header.version)
+        seg = response.find_segment_first(HIWPDS5)
+        if seg is not None:
+            transaction_versions_allowed['WPD'].append(seg.header.version)
+
         self.mariadb.shelve_put_key(bank.bank_code, (KEY_VERSION_TRANSACTION_ALLOWED,
                                                      transaction_versions_allowed))
         if self.mariadb.shelve_get_key(bank.bank_code, KEY_VERSION_TRANSACTION):
             bank.transaction_versions = self.mariadb.shelve_get_key(
                 bank.bank_code, KEY_VERSION_TRANSACTION)
         else:
-            # use lowest version
+            # use highest version
             bank.transaction_versions = {}
+            
             bank.transaction_versions['TAN'] = 7
-            seg = response.find_segment_first(HITANS6)
+            seg = response.find_segment_first(HITANS7)
+            if seg is None:
+                seg = response.find_segment_first(HITANS6) 
             if seg is not None:
-                bank.transaction_versions['TAN'] = seg.header.version            
+                bank.transaction_versions['TAN'] = seg.header.version
+                
             bank.transaction_versions['KAZ'] = 7
-            seg = response.find_segment_first(HIKAZS6)
+            seg = response.find_segment_first(HIKAZS7)
+            if seg is None:
+                seg = response.find_segment_first(HIKAZS6)             
             if seg is not None:
                 bank.transaction_versions['KAZ'] = seg.header.version
+                
             bank.transaction_versions['WPD'] = 6
-            seg = response.find_segment_first(HIWPDS5)
+            seg = response.find_segment_first(HIWPDS6)
+            if seg is None:
+                seg = response.find_segment_first(HITANS5)             
             if seg is not None:
                 bank.transaction_versions['WPD'] = seg.header.version
             self.mariadb.shelve_put_key(

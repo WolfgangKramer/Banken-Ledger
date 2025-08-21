@@ -173,6 +173,7 @@ class InitBankSync(object):
         self.system_id = SYSTEM_ID_UNASSIGNED
         self.security_identifier = '0'
         self.bank_name = None
+        self.transaction_versions = shelve_file[KEY_VERSION_TRANSACTION]
         self.storage_period = 90
         self.twostep_parameters = []
         self.upd_version = mariadb.shelve_get_key(bank_code, KEY_UPD)
@@ -193,7 +194,7 @@ class InitBankSync(object):
         self.from_date = date.today()
         self.dialog_id = DIALOG_ID_UNASSIGNED
         self.warning_message = False
-        self.dialogs = Dialogs(mariadb)
+        self.dialogs = Dialogs()
 
 
 class InitBankAnonymous(object):

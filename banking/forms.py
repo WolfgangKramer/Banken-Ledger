@@ -1005,7 +1005,7 @@ class LedgerTableRowBox(BuiltTableRowBox):
             result = self.mariadb.select_table(STATEMENT, '*', order=None, result_dict=True, date_name=None,
                                                iban=ledger_statement[DB_iban], entry_date=ledger_statement[DB_entry_date], counter=ledger_statement[DB_counter])
             if result:
-                statement = BuiltTableRowBox(STATEMENT, STATEMENT, result[0], self.mariadb,
+                statement = BuiltTableRowBox(STATEMENT, STATEMENT, result[0],
                                              protected=protected,
                                              title=title,  button1_text=None, button2_text=None)
                 if statement.button_state == WM_DELETE_WINDOW:

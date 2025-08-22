@@ -137,6 +137,8 @@ class Connect(object):
             cursor = conn.cursor()
             cursor.execute("SHOW DATABASES")
             self.databases = [db[0] for db in cursor.fetchall()]
+            mariadb_databases = ['information_schema', 'mysql', 'performance_schema', 'sys']
+            self.databases[:] = [x for x in self.databases if x not in set(mariadb_databases)]            
             self.db_combo['values'] = self.databases
             if self.databases:
                 self.db_combo.set(self.databases[0])

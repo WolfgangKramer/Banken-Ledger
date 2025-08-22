@@ -211,7 +211,8 @@ MESSAGE_TEXT = {
     'ENTRY_DATE': 'Entry_date missed',
     'FIELDLIST_MIN': 'Select at least {} positions in fieldlist',
     'FIXED': '{} MUST HAVE {} Characters ',
-    'HI': 'Bank: {} \n Bank Account: {}  {}       \n     Could not find HITAN7 task_reference',
+    'HELP_PANDASTABLE': 'Show Row Menu: \n  Select row\n  Click on row number with the left mouse button',
+    'HITAN6': 'Bank: {} \n Bank Account: {}  {}       \n     Could not find HITAN6/7 task_reference',
     'HIKAZ':  'Response HIKAZ missing: bank_name {}, account_number {}, account_product_name {}',
     'HITAN': 'Security clearance is provided via another channel\n{}',
     'HITAN_MISSED': 'Response HITAN missing: bank_name {}, account_number {}, account_product_name {}',
@@ -450,7 +451,7 @@ ALPHA_VANTAGE_REQUIRED_COMBO = {'interval': ['1min', '5min', '15min', '30min', '
 ALPHA_VANTAGE_OPTIONAL_COMBO = {'outputsize': ['compact', 'full']}
                                 
 """
--------------------------- Formbuiltss -----------------------------------------------
+-------------------------- Formbuilts -----------------------------------------------
 """                                
 ENTRY = 'Entry'
 COMBO = 'ComboBox'

@@ -1492,8 +1492,8 @@ class PandasBoxHoldingTransaction(PandasBoxHolding):
             self.dataframe = DataFrame(self.dataframe)
         if DB_transaction_type in self.dataframe.columns and DB_posted_amount in self.dataframe.columns:
             deliveries = self.dataframe[DB_transaction_type] == TRANSACTION_DELIVERY
-            self.dataframe[DB_posted_amount].where(
-                deliveries, -self.dataframe[DB_posted_amount], inplace=True)
+            self.dataframe[DB_posted_amount] = self.dataframe[DB_posted_amount].where(
+                deliveries, -self.dataframe[DB_posted_amount])
 
 
 class PandasBoxPrices(BuiltPandasBox):
@@ -2194,7 +2194,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
         elif not self.mariadb.row_exists(LEDGER_STATEMENT, id_no=ledger_dict[DB_id_no], status=status):
             # account not changed, its a bank account, but ledger statement connection not yet done
             PandasBoxLedgerStatement(
-                self.title, self.mariadb, ledger_coa[0][DB_iban], status, ledger_dict)
+                self.title, ledger_coa[0][DB_iban], status, ledger_dict)
 
     def new_row(self):
 
@@ -2741,17 +2741,15 @@ class PandasBoxTransactionDetail(BuiltPandasBox):
             columns=[DB_price_date, DB_counter, DB_transaction_type,
                      DB_price, DB_pieces, DB_posted_amount])
         deliveries = self.dataframe[DB_transaction_type] == TRANSACTION_RECEIPT
-        self.dataframe[DB_pieces].where(  # Replace values where the condition is False.
-            deliveries, -self.dataframe[DB_pieces], inplace=True)
+        # Replace values where the condition is False.
+        self.dataframe[DB_pieces] = self.dataframe[DB_pieces].where(deliveries, -self.dataframe[DB_pieces])
         self.dataframe[FN_PIECES_CUM] = self.dataframe[DB_pieces].cumsum()
 
         receipts = self.dataframe[DB_transaction_type] == TRANSACTION_DELIVERY
-        self.dataframe[DB_posted_amount].where(receipts, -self.dataframe[DB_posted_amount],
-                                               inplace=True)
+        self.dataframe[DB_posted_amount] = self.dataframe[DB_posted_amount].where(receipts, -self.dataframe[DB_posted_amount])
         self.dataframe[FN_PROFIT_CUM] = self.dataframe[DB_posted_amount].cumsum()
         closed_postion = self.dataframe[FN_PIECES_CUM] == 0
-        self.dataframe[FN_PROFIT_CUM].where(
-            closed_postion, other=0, inplace=True)
+        self.dataframe[FN_PROFIT_CUM] = self.dataframe[FN_PROFIT_CUM].where(closed_postion, other=0)
         self.dataframe.drop(
             columns=[DB_counter], inplace=True)
 

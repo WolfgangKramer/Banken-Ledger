@@ -859,36 +859,35 @@ class Dialogs(object):
 
         if self._start_dialog(bank):
             bank.tan_process = 4
-            response, _ = self._send_msg(
+            response, hirms_codes = self._send_msg(
                 bank, self.messages.msg_transfer(bank))
-            seg = response.find_segment_first(HITAN6)
-            if not seg:
-                MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
-                return False  # thread checking
-            bank.task_reference = seg.task_reference
-            response, _ = self._get_tan(bank, response)
-            if response:
-                self._end_dialog(bank)
-            else:
-                return None
-        else:
-            return None
+            if self._decoupled_process(bank, response, hirms_codes):
+                self._send_msg(bank, self.messages.msg_tan_decoupled(bank))
+            else:                  
+                seg = response.find_segment_first(HITAN7)
+                if not seg:
+                    seg = response.find_segment_first(HITAN6)
+                    if not seg:            
+                        MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
+                bank.task_reference = seg.task_reference
+                self._get_tan(bank, response)
+            self._end_dialog(bank)
 
     def date_transfer(self, bank):
 
         if self._start_dialog(bank):
             bank.tan_process = 4
-            response, _ = self._send_msg(
+            response, hirms_codes = self._send_msg(
                 bank, self.messages.msg_date_transfer(bank))
-            seg = response.find_segment_first(HITAN6)
-            if not seg:
-                MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
-                return False  # thread checking
-            bank.task_reference = seg.task_reference
-            response, _ = self._get_tan(bank, response)
-            if response:
-                self._end_dialog(bank)
-            else:
-                return None  # input of Tan canceled
-        else:
-            return None
+            if self._decoupled_process(bank, response, hirms_codes):
+                self._send_msg(bank, self.messages.msg_tan_decoupled(bank))
+            else:                  
+                seg = response.find_segment_first(HITAN7)
+                if not seg:
+                    seg = response.find_segment_first(HITAN6)
+                    if not seg:            
+                        MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
+                bank.task_reference = seg.task_reference
+                self._get_tan(bank, response)
+            self._end_dialog(bank)
+

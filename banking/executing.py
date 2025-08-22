@@ -163,7 +163,7 @@ class BankenLedger(object):
             self.window = Tk()
             self.progress = ProgressBar(self.window)
             self.window.title(title)
-            self.window.geometry('600x400+1+1')
+            self.window.geometry('600x450+1+1')
             self.window.resizable(0, 0)
             self.canvas = Canvas(self.window, width=600, height=400)
             self.canvas.pack(fill="both", expand=True)            
@@ -184,8 +184,8 @@ class BankenLedger(object):
             self.footer = StringVar()
             self.message_widget = Label(self.window,
                                         textvariable=self.footer, foreground='RED', justify='center')
-            self.footer.set('')
-            self.message_widget.pack()
+            #self.footer.set('')
+            self.message_widget.pack(side='bottom', fill='x')
             self.load_timer = None
             self.window.protocol(WM_DELETE_WINDOW, self._wm_deletion_window)
             if application_store.get(DB_alpha_vantage):
@@ -1180,8 +1180,8 @@ class BankenLedger(object):
         self._delete_footer()
         title = ' '.join([MENU_TEXT['Database'], MENU_TEXT['ISIN Table']])
         selected_row = 0
+        message = MESSAGE_TEXT['HELP_PANDASTABLE']
         while True:
-            message = None
             data = self.mariadb.select_table(
                 ISIN, '*', result_dict=True, order=DB_name)
             isin_table = PandasBoxIsinTable(
@@ -1195,6 +1195,7 @@ class BankenLedger(object):
                     self.mariadb, title, [isin_table.selected_row_dict[DB_name]], BUTTON_REPLACE)
                 self._show_informations()
             self.footer.set(message)
+            message = None
 
     def _data_holding_table(self, bank_name, iban):
 
@@ -1202,6 +1203,7 @@ class BankenLedger(object):
         title = ' '.join([bank_name,
                           MENU_TEXT['Holding Table']])
         data_dict = {FN_FROM_DATE: date.today(), FN_TO_DATE: date.today()}
+        message = MESSAGE_TEXT['HELP_PANDASTABLE']
         while True:
             date_holding_view = InputDateTable(
                 title=title, data_dict=data_dict, table=HOLDING_VIEW)
@@ -1210,7 +1212,6 @@ class BankenLedger(object):
             data_dict = date_holding_view.field_dict
             selected_check_button = list(
                 filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
-            message = None
             period = ' '.join(
                 [data_dict[FN_FROM_DATE], '-', data_dict[FN_TO_DATE]])
             title_period = ' '.join([title, period])
@@ -1226,6 +1227,7 @@ class BankenLedger(object):
                     if holding_table.button_state == WM_DELETE_WINDOW:
                         break
                     self.footer.set(message)
+                    message = None
 
     def _data_update_holding_prices(self, bank_name, iban):
         """
@@ -1299,7 +1301,7 @@ class BankenLedger(object):
             # import price data
             data = self.mariadb.select_table(
                 ISIN, '*', result_dict=True, isin_code=holding_dict[DB_ISIN])
-            message = None
+            message = MESSAGE_TEXT['HELP_PANDASTABLE']
             isin_table = PandasBoxIsinTable(
                 title, data, message, mode=EDIT_ROW)
             message = isin_table.message
@@ -1404,7 +1406,7 @@ class BankenLedger(object):
             to_date = input_isin.field_dict[FN_TO_DATE]
             title_period = ' '.join(
                 [title, name, isin, from_date, '-', to_date])
-            message = None
+            message = MESSAGE_TEXT['HELP_PANDASTABLE']
             while True:
                 data = self.mariadb.select_table(
                     TRANSACTION_VIEW, field_list, result_dict=True, iban=iban, isin_code=isin, period=(from_date, to_date))
@@ -1415,6 +1417,7 @@ class BankenLedger(object):
                     break
                 else:
                     self.footer.set(message)
+                    message = None
 
     def _data_profit_delivery_negative(self, dict_):
         """ set delivery pieces negative """
@@ -2107,7 +2110,7 @@ class BankenLedger(object):
                 data_dict[DB_opening_status] = 1
             selected_check_button = list(
                 filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
-            message = None
+            message = MESSAGE_TEXT['HELP_PANDASTABLE']
             period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
             data = self.mariadb.select_table(
                 STATEMENT, selected_check_button, result_dict=True,
@@ -2137,6 +2140,7 @@ class BankenLedger(object):
                           MENU_TEXT['Transactions'], label])
         data_dict = {FN_FROM_DATE: date_days.subtract(
             date.today(), 360), FN_TO_DATE: date.today()}
+        message = MESSAGE_TEXT['HELP_PANDASTABLE']        
         while True:
             date_transaction_view = InputDateTable(
                 title=title, data_dict=data_dict, table=TRANSACTION_VIEW)
@@ -2145,7 +2149,6 @@ class BankenLedger(object):
             data_dict = date_transaction_view.field_dict
             selected_check_button = list(
                 filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
-            message = None
             period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
             data = self.mariadb.select_table(
                 TRANSACTION_VIEW, selected_check_button, result_dict=True,
@@ -2557,6 +2560,7 @@ class BankenLedger(object):
         field_list = TABLE_FIELDS[LEDGER_VIEW]
         data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
             datetime.now().year, 12, 31)}
+        message = MESSAGE_TEXT['HELP_PANDASTABLE']        
         while True:
             input_period = InputPeriod(title=title, data_dict=data_dict)
             if input_period.button_state == WM_DELETE_WINDOW:
@@ -2564,7 +2568,6 @@ class BankenLedger(object):
             data_dict = input_period.field_dict
             title_period = ' '.join(
                 [title, data_dict[FN_FROM_DATE], '-', data_dict[FN_TO_DATE]])
-            message = None
             selected_row = 0
             while True:
                 data = self.mariadb.select_table(
@@ -2588,7 +2591,7 @@ class BankenLedger(object):
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Chart of Accounts']])
         field_list = TABLE_FIELDS[LEDGER_COA]
-        message = None
+        message = MESSAGE_TEXT['HELP_PANDASTABLE']
         selected_row = 0
         while True:
             data = self.mariadb.select_table(

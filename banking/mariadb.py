@@ -549,7 +549,7 @@ class MariaDB(object):   # Singleton with controlled initialization
         """
         try:
             if vars_:
-                result = self.cursor.execute(sql_statement, vars_)
+                self.cursor.execute(sql_statement, vars_)
             else:
                 self.cursor.execute(sql_statement)
             if select_statement.match(sql_statement.upper()):

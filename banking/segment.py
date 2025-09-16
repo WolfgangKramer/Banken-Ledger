@@ -260,7 +260,7 @@ class Segments():
         """
         if bank.task_reference == 'noref':
             bank.task_reference = None
-        try:    
+        try:
             hktan = _get_segment(bank, 'TAN')
         except Exception:
             hktan = HKTAN6
@@ -282,16 +282,16 @@ class Segments():
         """
         if bank.task_reference == 'noref':
             bank.task_reference = None
-        try:    
+        try:
             hktan = _get_segment(bank, 'TAN')
         except Exception:
-            hktan = HKTAN6            
+            hktan = HKTAN6
         message += hktan(
             bank.tan_process,
             segment_name,
             task_reference=bank.task_reference,
             further_tan_follows=False,
-            tan_medium_name = bank.security_function            
+            tan_medium_name=bank.security_function
         )
         return message
 

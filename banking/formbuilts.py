@@ -53,7 +53,7 @@ from banking.utils import (
     application_store,
     Amount, check_main_thread, dec2, list_positioning,
     )
-from banking.messagebox import (  MessageBoxInfo, MessageBoxTermination)
+from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.mariadb import MariaDB
 
 ENTRY = 'Entry'
@@ -183,7 +183,7 @@ def field_validation(name, field_def):
             return MESSAGE_TEXT['ISDIGIT'].format(name)
     if field_value:
         if field_def.lformat == FORMAT_FIXED:
-            if len(field_value) != field_def.length and field_value!=NOT_ASSIGNED:
+            if len(field_value) != field_def.length and field_value != NOT_ASSIGNED:
                 return MESSAGE_TEXT['FIXED'].format(name, field_def.length)
         else:
             if len(field_value) > field_def.length:
@@ -559,6 +559,8 @@ class BuiltBox(object):
                 canvas.create_window(
                     (0, 0), window=self._box_window, anchor="nw")
                 canvas.grid(row=self._row, column=0, sticky="nsew")
+                self.frame.grid_rowconfigure(0, weight=1)
+                self.frame.grid_columnconfigure(0, weight=1)                
                 scrollbar = Scrollbar(
                     self.frame, orient="vertical", command=canvas.yview)
                 canvas.configure(yscrollcommand=scrollbar.set,
@@ -598,6 +600,7 @@ class BuiltBox(object):
         # Get the number of rows and columns
         _, columns = self._box_window_top.grid_size()
         # Get the bounding box of the column
+        rows, columns = self._box_window_top.grid_size()
         width_canvas = 0
         for column_index in range(columns):
             bbox = self._box_window_top.grid_bbox(column=column_index, row=0)
@@ -719,7 +722,7 @@ class BuiltBox(object):
                 height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
         else:
             geometry = BUILTBOX_WINDOW_POSITION
-        self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.caller, DB_geometry: geometry})    
+        self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.caller, DB_geometry: geometry})
 
     def button_1_button1(self, event):
 
@@ -1050,7 +1053,7 @@ class BuiltEnterBox(BuiltBox):
                 widget_entry.bind("<FocusIn>", self.focus_in_action)
             if field_def.protected:
                 widget_entry.config(state=DISABLED)
-            #if field_def.name in [KEY_PIN]:
+            # if field_def.name in [KEY_PIN]:
             #    widget_entry.config(show='*')
             if field_def.definition == CHECK:
                 if field_def.default_value:
@@ -1173,11 +1176,11 @@ class BuiltSelectBox(BuiltEnterBox):
     """
     TOP-LEVEL-WINDOW        EnterBox of Selction Criteria
 
-     selection_name --> Storage name for last used selection values 
+     selection_name --> Storage name for last used selection values
      data_dict --> default values of select_data
      upper --> list of fields with upper_in field_property
      separator --> list of fields followed by a separator
-     data_container --> contains additional data from caller  
+     data_container --> contains additional data from caller
 
 
     """
@@ -1222,21 +1225,24 @@ class BuiltSelectBox(BuiltEnterBox):
         """
         initializes the selection fields with the used values of last session
         """
-
         if not self.selection_name:
             self.selection_name = self.title
-        result = self.mariadb.selection_get(self.selection_name)    
-        if result:
-            self.data_dict = result
+        if not self.data_dict:
+            result = self.mariadb.selection_get(self.selection_name)
+            if result:
+                self.data_dict = result
 
     def create_check_field(self, name, comment):
 
         if ((self.table == STATEMENT and name in [DB_iban, DB_entry_date, DB_counter])
-                    or (self.table in [HOLDING, HOLDING_VIEW] and name in [DB_iban, DB_price_date, DB_ISIN])
-                    or (self.table in [PRICES, PRICES_ISIN_VIEW] and name in [DB_symbol, DB_price_date])
-                    or (self.table in [TRANSACTION, TRANSACTION_VIEW] in [DB_iban, DB_ISIN, DB_price_date, DB_counter])
-                    or name == DB_id_no
-                ):
+                or
+                (self.table in [HOLDING, HOLDING_VIEW] and name in [DB_iban, DB_price_date, DB_ISIN])
+                or
+                (self.table in [PRICES, PRICES_ISIN_VIEW] and name in [DB_symbol, DB_price_date])
+                or
+                (self.table in [TRANSACTION, TRANSACTION_VIEW] in [DB_iban, DB_ISIN, DB_price_date, DB_counter])
+                or
+                name == DB_id_no):
             # Mandatory fields are always selected and cannot be removed from the selection
             self.data_dict[name] = 1
             field_def = FieldDefinition(definition=CHECK, name=name,
@@ -1343,7 +1349,7 @@ class BuiltTableRowBox(BuiltEnterBox):
      combo_dict --> dictionary af combo fields, key: field_name, value: combo_list
      combo_positioning_dict   --> dictionary af combo fields, key: field_name, value: combo_list
                                   only values of combo_list are allowed if combo_field_name not in combo_insert_value
-     combo_insert_value --> list of combo fields which allows new items                             
+     combo_insert_value --> list of combo fields which allows new items
      protected --> list of protected fields
      mandatory --> list of mandatory fields
      focus_in --> list of fields with focus_in field_property
@@ -1420,8 +1426,8 @@ class BuiltTableRowBox(BuiltEnterBox):
                                             combo_insert_value=combo_insert_value,
                                             combo_positioning=False,
                                             combo_values=self.combo_dict[field_name])
-                if fields_properties[field_name].data_type=='char':
-                    field_def.lformat = FORMAT_FIXED                
+                if fields_properties[field_name].data_type == 'char':
+                    field_def.lformat = FORMAT_FIXED
             elif field_name in self.combo_positioning_dict.keys():
                 # combo field with positioning, new items allowed if fieldname in self.combo_insert_value
                 field_def = FieldDefinition(definition=COMBO, name=field_name,
@@ -1430,15 +1436,15 @@ class BuiltTableRowBox(BuiltEnterBox):
                                             combo_insert_value=combo_insert_value,
                                             combo_positioning=True,
                                             combo_values=self.combo_positioning_dict[field_name])
-                if fields_properties[field_name].data_type=='char':
+                if fields_properties[field_name].data_type == 'char':
                     field_def.lformat = FORMAT_FIXED
             else:
                 field_def = FieldDefinition(definition=ENTRY, name=field_name,
                                             length=fields_properties[field_name].length,
                                             typ=fields_properties[field_name].typ,
                                             )
-                if fields_properties[field_name].data_type=='char':
-                    field_def.lformat = FORMAT_FIXED                
+                if fields_properties[field_name].data_type == 'char':
+                    field_def.lformat = FORMAT_FIXED
             if field_name in self.protected:
                 field_def.protected = True
             if field_name not in self.mandatory:
@@ -1592,6 +1598,7 @@ class BuiltPandasBox(Frame):
                                                  standard column menu,
                                                  right side toolbar,
                                                  decimals without currency_symbol
+        instant_plotting    True:        Shows instant plotting of table of the whole dataframe
         cellwidth_resizeable     True:    F1-, F2, F3 keys change cellwidth (standard)
     """
     RIGHT = ['int', 'smallint', 'decimal', 'bigint', TYP_DECIMAL]
@@ -1613,7 +1620,7 @@ class BuiltPandasBox(Frame):
 
     def __init__(self, title='MESSAGE_TITLE', root=None,
                  dataframe=None, dataframe_sum=[], dataframe_typ=TYP_ALPHANUMERIC,
-                 message=None, mode=NO_CURRENCY_SIGN,
+                 message=None, mode=NO_CURRENCY_SIGN, instant_plotting=False,
                  cellwidth_resizeable=True, selected_row=0
                  ):
 
@@ -1640,48 +1647,55 @@ class BuiltPandasBox(Frame):
         self.dataframe_window.bind_all("<F3>", self._standard_col_width)
         self.dataframe_window.title(title)
         self.create_dataframe()
-        self.create_dataframe_append_sum()
-        if message is not None:
-            message_widget = Label(self.dataframe_window,
-                                   text=message, foreground='RED')
-            message_widget.pack(side=TOP, anchor=W)
-        Frame.__init__(self)
-        self.frame_widget = Frame(self.dataframe_window)
-        self.frame_widget.pack(side=BOTTOM, fill=BOTH, expand=True)
-        self.selected_row_dict = {}  # selected pandastable row
-        if not isinstance(self.dataframe, DataFrame):
-            quit_widget(self.dataframe_window)
-            return
-        if mode == EDIT_ROW:
-            self.pandas_table = TableRowEdit(
-                title=title, root=self, parent=self.frame_widget, dataframe=self.dataframe)
-        else:
-            self.pandas_table = Table(
-                title=title, root=self, parent=self.frame_widget, dataframe=self.dataframe,
-                mode=mode)
-        # self.pandas_table.setSelectedRow(self.selected_row)
-        self.pandas_table.fontsize = FONTSIZE
-        self.font = Font(family=self.pandas_table.font,
-                         size=self.pandas_table.fontsize)
-        self.column_width = self._get_col_width()
-        self.pandas_table.set_defaults()
-        self.pandas_table.showindex = True
-        self.set_geometry()
-        self._set_options()
-        self.set_properties()
-        self.set_column_format()
-        self.set_row_format()
-        self.pandas_table.updateModel(TableModel(self.dataframe))
-        self.pandas_table.show()
-        self.first_scroll_page_row = 0
-        self._move_to_selection()
-        self.pandas_table.yview_scroll(10, "units")
-        self.pandas_table.rowheader.bind('<Button-1>', self._handle_click)
-        self.pandas_table.rowheader.bind('<Configure>', self._on_scroll)
-        # --------------------------------------------------------------
-        self.dataframe_window.protocol(
-            WM_DELETE_WINDOW, self._wm_deletion_window)
-        self.dataframe_window.mainloop()
+        if not hasattr(self, "abort"):
+            self.create_dataframe_append_sum()
+            if message is not None:
+                message_widget = Label(self.dataframe_window,
+                                       text=message, foreground='RED',
+                                       font=('Arial', 10, 'bold'))
+                message_widget.pack(side=TOP, anchor=W)
+            Frame.__init__(self)
+            self.frame_widget = Frame(self.dataframe_window)
+            self.frame_widget.pack(side=BOTTOM, fill=BOTH, expand=True)
+            self.selected_row_dict = {}  # selected pandastable row
+            if not isinstance(self.dataframe, DataFrame):
+                quit_widget(self.dataframe_window)
+                return
+            if mode == EDIT_ROW:
+                self.pandas_table = TableRowEdit(
+                    title=title, root=self, parent=self.frame_widget, dataframe=self.dataframe)
+            else:
+                self.pandas_table = Table(
+                    title=title, root=self, parent=self.frame_widget, dataframe=self.dataframe,
+                    mode=mode, instant_plotting=instant_plotting)
+            # self.pandas_table.setSelectedRow(self.selected_row)
+            self.pandas_table.fontsize = FONTSIZE
+            self.font = Font(family=self.pandas_table.font,
+                             size=self.pandas_table.fontsize)
+            if instant_plotting:
+                self.set_geometry()
+                self.pandas_table. plotSelected()
+                self.dataframe_window.withdraw()
+            else:
+                self.column_width = self._get_col_width()
+                self.pandas_table.set_defaults()
+                self.pandas_table.showindex = True
+                self.set_geometry()
+                self._set_options()
+                self.set_properties()
+                self.set_column_format()
+                self.set_row_format()
+                self.pandas_table.updateModel(TableModel(self.dataframe))
+                self.pandas_table.show()
+                self.first_scroll_page_row = 0
+                self._move_to_selection()
+                self.pandas_table.yview_scroll(10, "units")
+                self.pandas_table.rowheader.bind('<Button-1>', self._handle_click)
+                self.pandas_table.rowheader.bind('<Configure>', self._on_scroll)
+            # --------------------------------------------------------------
+            self.dataframe_window.protocol(
+                WM_DELETE_WINDOW, self._wm_deletion_window)
+            self.dataframe_window.mainloop()
         destroy_widget(self.dataframe_window)
 
     def _handle_click(self, event):
@@ -1695,6 +1709,9 @@ class BuiltPandasBox(Frame):
     def _move_to_selection(self):
 
         self.pandas_table.redraw()
+        last_row_index = self.pandas_table.model.df.shape[0] - 1
+        if self.selected_row > last_row_index:
+            self.selected_row = last_row_index
         self.pandas_table.movetoSelection(row=self.selected_row)
 
     def _on_scroll(self, event):
@@ -1777,13 +1794,11 @@ class BuiltPandasBox(Frame):
                 height = window.winfo_height()
                 geometry = ''.join([str(width), 'x', str(
                     height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
-                self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.caller, DB_geometry: geometry, DB_column_width: self.column_width})              
+                self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.caller, DB_geometry: geometry, DB_column_width: self.column_width})
             except AttributeError:
                 pass  # column_with used in subclasses
 
-
     def set_geometry(self):
-
 
         result = self.mariadb.select_table(GEOMETRY, DB_geometry, caller=self.caller)
         if result:
@@ -1793,7 +1808,7 @@ class BuiltPandasBox(Frame):
             geometry_values = geometry.split()
             if len(geometry_values) == 4:
                 height = self._get_pandastable_height()
-                if height != geometry_values[1]:                
+                if height != geometry_values[1]:
                     # geometry = >width<x>height<+>x-position<+>y-position<
                     geometry = ''.join(
                         [geometry_values[0], 'x', str(height), '+', geometry_values[2], '+', geometry_values[3]])
@@ -1836,7 +1851,6 @@ class BuiltPandasBox(Frame):
             self.selected_row = self.pandas_table.getSelectedRow()
         quit_widget(self.dataframe_window)
 
-
     def insert_row(self, row_dict):
         self.df = self.df._append(row_dict, ignore_index=True)
         self.table.model.df = self.df
@@ -1854,7 +1868,7 @@ class BuiltPandasBox(Frame):
             for _key in keys:
                 row_dict[_key.lower()] = row_dict.pop(_key)
             return row_dict
-        except:
+        except Exception:
             return {}
 
     def create_dataframe(self):

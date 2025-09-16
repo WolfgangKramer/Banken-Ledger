@@ -9,13 +9,16 @@ __updated__ = "2025-05-25"
     and
     https://readthedocs.org/projects/pandastable/downloads/pdf/latest/
 """
+import webbrowser
 
-from tkinter import PhotoImage, Menu, HORIZONTAL, VERTICAL
-from tkinter.ttk import Frame
+from collections import OrderedDict
+from tkinter import PhotoImage, Menu, HORIZONTAL, VERTICAL, BOTH, TOP, BOTTOM, LEFT, BooleanVar, IntVar, X, RIGHT
+from tkinter.ttk import Frame, Checkbutton, Label, Entry
 from pandastable import (
-    Table, addButton, images, util,
-    ColumnHeader, RowHeader, IndexHeader, AutoScrollbar, ToolBar, statusBar,
+    Table, addButton, images, util, PlotViewer, handlers,
+    ColumnHeader, RowHeader, IndexHeader, AutoScrollbar, ToolBar, statusBar
 )
+from pandastable.plotting import addFigure
 from pandastable.headers import createSubMenu
 from pandastable.dialogs import applyStyle
 from banking.declarations import (
@@ -27,6 +30,91 @@ BUTTON_NEW = 'NEW'
 BUTTON_DELETE = 'DELETE'
 BUTTON_RESTORE = 'RESTORE'
 BUTTON_UPDATE = 'UPDATE'
+
+
+class MyPlotViewer(PlotViewer):
+    """
+    Copy of pandastable, plotting.py
+    Label Info added
+    """
+
+    def setupGUI(self):
+        """Add GUI elements"""
+
+        # import tkinter as tk
+        # self.m = PanedWindow(self.main, orient=self.orient)
+        self.m = Frame(self.main)
+        self.m.pack(fill=BOTH, expand=1)
+        # frame for figure
+        self.plotfr = Frame(self.m)
+        # add it to the panedwindow
+        self.fig, self.canvas = addFigure(self.plotfr)
+        self.ax = self.fig.add_subplot(111)
+
+        # self.m.add(self.plotfr, weight=12)
+        self.plotfr.pack(side=TOP, fill=BOTH, expand=1)
+
+        # frame for controls
+        self.ctrlfr = Frame(self.main)
+        # self.m.add(self.ctrlfr, weight=4)
+        self.ctrlfr.pack(side=BOTTOM, fill=BOTH)
+
+        # button frame
+        bf = Frame(self.ctrlfr, padding=2)
+        bf.pack(side=TOP, fill=BOTH)
+
+        side = LEFT
+        # add button toolbar
+        addButton(bf, 'Plot', self.replot, images.plot(),
+                  'plot current data', side=side, compound="left", width=16)
+        addButton(bf, 'Apply Options', self.updatePlot, images.refresh(),
+                  'refresh plot with current options', side=side,
+                  width=20)
+        addButton(bf, 'Zoom Out', lambda: self.zoom(False), images.zoom_out(),
+                  'zoom out', side=side)
+        addButton(bf, 'Zoom In', self.zoom, images.zoom_in(),
+                  'zoom in', side=side)
+        addButton(bf, 'Clear', self.clear, images.plot_clear(),
+                  'clear plot', side=side)
+        addButton(bf, 'Save', self.savePlot, images.save(),
+                  'save plot', side=side)
+
+        # dicts to store global options, can be saved with projects
+        self.globalvars = {}
+        self.globalopts = OrderedDict({'dpi': 80, 'grid layout': False, '3D plot': False})
+        from functools import partial
+        for n in self.globalopts:
+            val = self.globalopts[n]
+            if type(val) is bool:
+                v = self.globalvars[n] = BooleanVar()
+                v.set(val)
+                b = Checkbutton(bf, text=n, variable=v, command=partial(self.setGlobalOption, n))
+            else:
+                v = self.globalvars[n] = IntVar()
+                v.set(val)
+                Label(bf, text=n).pack(side=LEFT, fill=X, padx=2)
+                b = Entry(bf, textvariable=v, width=5)
+                v.trace("w", partial(self.setGlobalOption, n))
+            b.pack(side=LEFT, padx=2)
+        addButton(bf, 'Hide', self.toggle_options, images.prefs(),
+                  'show/hide plot options', side=RIGHT)
+        addButton(bf, 'Info', self.info_website, None,
+                  'Info WebSite', side=RIGHT)
+        self.addWidgets()
+
+        # def onpick(event):
+        #     print(event)
+        # self.fig.canvas.mpl_connect(k)'pick_event', onpick)
+        # self.fig.canvas.mpl_connect('button_release_event', onpic
+        dr = handlers.DragHandler(self)
+        dr.connect()
+        return
+
+    def info_website(self):
+
+        indicator = self.table.title.split(" ", 1)[0]
+        url = ''.join(["https://www.google.com/search?q=", indicator])
+        webbrowser.open(url)
 
 
 class ToolBarBanking(Frame):
@@ -338,10 +426,12 @@ class Table(Table):
     def __init__(self, title=MESSAGE_TITLE, root=None,
                  parent=None, model=None, dataframe=None,
                  width=None, height=None, rows=20, cols=5,
-                 mode=NUMERIC):
+                 mode=NUMERIC, instant_plotting=False):
         self.title = title
         self.root = root
+        self.dataframe = dataframe
         self.toolbar_switch = ToolbarSwitch.toolbar_switch
+        self.instant_plotting = instant_plotting
         if mode == EDIT_ROW:
             showtoolbar = False
             enable_menus = True
@@ -361,6 +451,7 @@ class Table(Table):
             showtoolbar = False
             enable_menus = True
             editable = False
+
         super().__init__(parent=parent, model=model, dataframe=dataframe,
                          width=width, height=height, rows=rows, cols=cols,
                          showtoolbar=showtoolbar,
@@ -423,17 +514,23 @@ class Table(Table):
 
     def plotSelected(self):
 
-        super().plotSelected()
-        self.pf.setOption(
-            'title', self.title)  # Plot title
-        self.pf.replot()
+        if self.instant_plotting:
+            self.pf = MyPlotViewer(table=self)
+            self.pf.setOption('title', self.title)  # Plot title
+            self.pf.setOption('grid', 1)  # grid lines
+            self.pf.replot(data=self.dataframe)
+        else:
+            super().plotSelected()
+            self.pf.setOption('title', self.title)  # Plot title
+            self.pf.setOption('grid', 1)  # grid lines
+            self.pf.replot()
         return
 
     def popupMenu(self, event, rows=None, cols=None, outside=None):
         """Add left and right click behaviour for canvas, should not have to override
             this function, it will take its values from defined dicts in constructor"""
-        
-        if self.root:    
+
+        if self.root:
             defaultactions = {
                 "Copy": lambda: self.copy(rows, cols),
                 # "Undo" : lambda: self.undo(),
@@ -480,13 +577,12 @@ class Table(Table):
                 "Preferences": self.showPreferences,
                 "Clear Formatting": self.clearFormatting,
                 "Copy Table": self.copyTable,
-            }                
+            }
 
         main = ["Copy", "Set Color"]
         general = ["Select All", "Filter Rows",
                    "Table Info", "Preferences"]
 
-        
         filecommands = ['Export']
         tablecommands = ['Clear Formatting']
 

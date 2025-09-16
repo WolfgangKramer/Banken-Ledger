@@ -32,7 +32,7 @@ from banking.declarations_mariadb import (
     DB_show_messages, DB_logging
     )
 from banking.declarations import (
-        CODE_0030, CODE_3010, CODE_3040, CODE_3955,
+    CODE_0030, CODE_3010, CODE_3040, CODE_3955,
     DIALOG_ID_UNASSIGNED,
     ERROR,
     Informations, INFORMATION, IDENTIFIER,
@@ -47,9 +47,9 @@ from banking.declarations import (
     KEY_ACC_BANK_CODE, KEY_ACC_CURRENCY, KEY_ACC_CUSTOMER_ID, KEY_ACC_OWNER_NAME,
     KEY_ACC_PRODUCT_NAME, KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_TYPE,
     PNS,
-    WARNING )
+    WARNING)
 from banking.fints_extension import HIKAZS6, HIKAZS7,  HIWPDS5, HIWPDS6
-from banking.formbuilts import   WM_DELETE_WINDOW
+from banking.formbuilts import WM_DELETE_WINDOW
 from banking.messagebox import (MessageBoxTermination, MessageBoxInfo, MessageBoxAsk)
 from banking.forms import PrintMessageCode, InputPIN
 from banking.message import Messages
@@ -136,8 +136,8 @@ class Dialogs(object):
             bank.dialog_id = seg.dialog_id
             seg = response.find_segment_first(HITAN7)
             if not seg:
-                seg = response.find_segment_first(HITAN6) 
-                if not seg:               
+                seg = response.find_segment_first(HITAN6)
+                if not seg:
                     MessageBoxInfo(message=MESSAGE_TEXT['HITAN_MISSED'].format(
                         bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
             bank.task_reference = seg.task_reference
@@ -210,7 +210,7 @@ class Dialogs(object):
             transaction_versions_allowed['TAN'].append(seg.header.version)
         seg = response.find_segment_first(HITANS6)
         if seg is not None:
-            transaction_versions_allowed['TAN'].append(seg.header.version)            
+            transaction_versions_allowed['TAN'].append(seg.header.version)
 
         transaction_versions_allowed['KAZ'] = []
         seg = response.find_segment_first(HIKAZS7)
@@ -218,7 +218,7 @@ class Dialogs(object):
             transaction_versions_allowed['KAZ'].append(seg.header.version)
         seg = response.find_segment_first(HIKAZS6)
         if seg is not None:
-            transaction_versions_allowed['KAZ'].append(seg.header.version)            
+            transaction_versions_allowed['KAZ'].append(seg.header.version)
 
         transaction_versions_allowed['WPD'] = []
         seg = response.find_segment_first(HIWPDS6)
@@ -236,25 +236,22 @@ class Dialogs(object):
         else:
             # use highest version
             bank.transaction_versions = {}
-            
             bank.transaction_versions['TAN'] = 7
             seg = response.find_segment_first(HITANS7)
             if seg is None:
-                seg = response.find_segment_first(HITANS6) 
+                seg = response.find_segment_first(HITANS6)
             if seg is not None:
                 bank.transaction_versions['TAN'] = seg.header.version
-                
             bank.transaction_versions['KAZ'] = 7
             seg = response.find_segment_first(HIKAZS7)
             if seg is None:
-                seg = response.find_segment_first(HIKAZS6)             
+                seg = response.find_segment_first(HIKAZS6)
             if seg is not None:
                 bank.transaction_versions['KAZ'] = seg.header.version
-                
             bank.transaction_versions['WPD'] = 6
             seg = response.find_segment_first(HIWPDS6)
             if seg is None:
-                seg = response.find_segment_first(HITANS5)             
+                seg = response.find_segment_first(HITANS5)
             if seg is not None:
                 bank.transaction_versions['WPD'] = seg.header.version
             self.mariadb.shelve_put_key(
@@ -363,7 +360,7 @@ class Dialogs(object):
             seg = response.find_segment_first(HITAN7)
             if not seg:
                 seg = response.find_segment_first(HITAN6)
-                if not seg:               
+                if not seg:
                     MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
                         bank.bank_name, bank.account_number, bank.account_product_name), bank=bank, information=WARNING)
                     return [], hirms_codes
@@ -374,7 +371,7 @@ class Dialogs(object):
                 MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
                     bank.bank_name, bank.account_number, bank.account_product_name), bank=bank, information=WARNING)
         return response, hirms_codes
-    
+
     def _decoupled_process(self, bank, response, hirms_codes):
 
         if CODE_3955 in hirms_codes:
@@ -386,8 +383,6 @@ class Dialogs(object):
                     bank.tan_process = 'S'
                     return True
         return False
-
-  
 
     def _send_msg(self, bank, message, dialog_init=False):
 
@@ -820,7 +815,7 @@ class Dialogs(object):
                 bank, self.messages.msg_statements(bank))
             if self._decoupled_process(bank, response, hirms_codes):
                 response, hirms_codes = self._send_msg(
-                    bank, self.messages.msg_tan_decoupled(bank))                
+                    bank, self.messages.msg_tan_decoupled(bank))
             response, hirms_codes = self._receive_msg(
                 bank, response, hirms_codes)
             if not response:
@@ -863,11 +858,11 @@ class Dialogs(object):
                 bank, self.messages.msg_transfer(bank))
             if self._decoupled_process(bank, response, hirms_codes):
                 self._send_msg(bank, self.messages.msg_tan_decoupled(bank))
-            else:                  
+            else:
                 seg = response.find_segment_first(HITAN7)
                 if not seg:
                     seg = response.find_segment_first(HITAN6)
-                    if not seg:            
+                    if not seg:
                         MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
                 bank.task_reference = seg.task_reference
                 self._get_tan(bank, response)
@@ -881,13 +876,12 @@ class Dialogs(object):
                 bank, self.messages.msg_date_transfer(bank))
             if self._decoupled_process(bank, response, hirms_codes):
                 self._send_msg(bank, self.messages.msg_tan_decoupled(bank))
-            else:                  
+            else:
                 seg = response.find_segment_first(HITAN7)
                 if not seg:
                     seg = response.find_segment_first(HITAN6)
-                    if not seg:            
+                    if not seg:
                         MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
                 bank.task_reference = seg.task_reference
                 self._get_tan(bank, response)
             self._end_dialog(bank)
-

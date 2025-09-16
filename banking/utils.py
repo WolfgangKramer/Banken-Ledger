@@ -6,6 +6,7 @@ __updated__ = "2025-05-27"
 
 
 import functools
+import importlib
 import inspect
 import operator
 import re
@@ -59,6 +60,105 @@ def check_main_thread():
         return True
     else:
         return False
+
+
+def check_function_exists(package: str, module: str, func: str) -> bool:
+    """
+    Check if a function exists inside a given package.module
+
+    Args:
+        package (str): package name (e.g., 'ta')
+        module (str): module name inside the package (e.g., 'trend')
+        func (str): function name to check (e.g., 'sma_indicator')
+
+    Returns:
+        bool: True if function exists, False otherwise
+    """
+    try:
+        # Import the module dynamically
+        mod = importlib.import_module(f"{package}.{module}")
+    except ImportError:
+        print(f"Module {package}.{module} not found.")
+        return False
+
+    # Check if function exists in the module
+    return hasattr(mod, func) and inspect.isfunction(getattr(mod, func))
+
+
+def check_class_exists(package: str, module: str, class_name: str) -> bool:
+    """
+    Check if a class exists inside a given package.module
+
+    Args:
+        package (str): package name (e.g., 'ta')
+        module (str): module name inside the package (e.g., 'trend')
+        class_name (str): class name to check (e.g., 'SMAIndicator')
+
+    Returns:
+        bool: True if class exists, False otherwise
+    """
+    try:
+        # Import the module dynamically
+        mod = importlib.import_module(f"{package}.{module}")
+    except ImportError:
+        print(f"Module {package}.{module} not found.")
+        return False
+
+    # Check if class exists in the module
+    return hasattr(mod, class_name) and inspect.isclass(getattr(mod, class_name))
+
+
+def get_signature(obj):
+    """
+    Returns signature string of function/method
+    """
+    sig = inspect.signature(obj)
+    parts = []
+
+    for name, param in sig.parameters.items():
+        if name == "self":
+            continue
+
+        # Annotation (type hint)
+        annotation = ""
+        if param.annotation != inspect._empty:
+            annotation = (
+                f": {param.annotation.__name__}"
+                if hasattr(param.annotation, "__name__")
+                else f": {param.annotation}"
+            )
+
+        # Default value
+        default = ""
+        if param.default != inspect._empty:
+            default = f" = {repr(param.default)}"
+
+        # Handle *args / **kwargs
+        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+            parts.append(f"*{name}{annotation}")
+        elif param.kind == inspect.Parameter.VAR_KEYWORD:
+            parts.append(f"**{name}{annotation}")
+        else:
+            parts.append(f"{name}{annotation}{default}")
+
+    return "(" + ", ".join(parts) + ")"
+
+
+def get_args(obj, wanted):
+    """
+    Return: list of wanted postional args of function/method
+            list of other positional args of function/method
+    """
+    args = get_signature(obj).split(",")
+    if args == ['()']:
+        return [], []
+    args = [item.translate(str.maketrans('', '', ",)(")) for item in args]
+    args = [item.replace(" ", "") for item in args]
+    args = [item for item in args if '=' not in item]
+    args = [item.split(":")[0] for item in args]
+    others = [item for item in args if item not in wanted]
+
+    return args, others
 
 
 def date_before_date(date_before, date_current):
@@ -602,7 +702,7 @@ class Datulate(object):
         3    Thursday
         4    Friday
         5    Saturday
-        6    Sunday        
+        6    Sunday
         """
         if isinstance(x, str):
             x = self.convert(x)
@@ -746,7 +846,7 @@ class Amount():
         if isinstance(other, str) or isinstance(self.amount, str):
             return True
         return self.amount >= other.amount and self.currency == other.currency
-    
+
 
 class ApplicationStore:
 
@@ -761,7 +861,6 @@ class ApplicationStore:
     def load_data(self, data):
         self._data = data
 
-
     def get(self, keys=None):
         """
         Zugriff auf das geladene Dictionary:
@@ -775,5 +874,6 @@ class ApplicationStore:
             return {key: self._data[key] for key in keys if key in self._data}
         else:
             return self._data.get(keys, None)
-        
-application_store = ApplicationStore()        
+
+
+application_store = ApplicationStore()

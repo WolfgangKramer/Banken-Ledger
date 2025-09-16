@@ -21,7 +21,7 @@ from banking.declarations_mariadb import (
     TABLE_FIELDS_PROPERTIES,
     DATABASE_FIELDS_PROPERTIES,
     FieldsProperty,
-    DB_account,
+    DB_account, DB_amount,
     DB_bankdata,
     DB_code,
     DB_data,
@@ -118,19 +118,18 @@ def _sqlalchemy_exception(title, storage, info):
                    message=MESSAGE_TEXT['SQLALCHEMY_ERROR'].format('PARAMS', info.params))
 
 
-
 class MariaDB(object):   # Singleton with controlled initialization
     """
     The parameters are used the first time the function is called (e.g., for configuration).
     It's okay to omit the parameters on subsequent calls.
     The values remain available internally without necessarily being used for database access.
-        
+
     Create Connection MARIADB
     Create MARIADB Tables
     Retrieve Records from MARIADB Tables
     Insert and Modify Records of MARIADB Tables
     """
-    
+
     _instance = None
     DATABASES = []
 
@@ -148,6 +147,7 @@ class MariaDB(object):   # Singleton with controlled initialization
             self.database = database.lower()
             self.table_names = []
             self.host = "localhost"
+            self.engine = self._create_engine()
             try:
                 conn = connect(
                     host="localhost", user=self.user, password=self.password)
@@ -185,7 +185,19 @@ class MariaDB(object):   # Singleton with controlled initialization
                 message = '\n\n'.join(
                     [message, MESSAGE_TEXT['STACK'].format(method, line, filename)])
                 MessageBoxInfo(message=message)
-                
+
+    def _create_engine(self):
+
+        credentials = ''.join(
+            [self.user, ":", self.password, "@", self.host, "/", self.database])
+        try:
+            engine = sqlalchemy.create_engine(
+                "mariadb+mariadbconnector://" + credentials)
+            return engine
+        except sqlalchemy.exc.SQLAlchemyError as info:
+            _sqlalchemy_exception(
+                self.database, Informations.PRICES_INFORMATIONS, info)
+            return None
 
     def _init_database_info(self):
         """
@@ -586,7 +598,7 @@ class MariaDB(object):   # Singleton with controlled initialization
                 try:
                     message = '\n\n'.join([
                         message, MESSAGE_TEXT['MARIADB_ERROR'].format(error.errno, error.errmsg)])
-                except:
+                except Exception:
                     message = str(error)
                 if sql_statement.upper().startswith('LOAD'):
                     MessageBoxInfo(message=message)
@@ -732,12 +744,6 @@ class MariaDB(object):   # Singleton with controlled initialization
     def import_prices(self, title, dataframe):
         """
         Insert/Replace prices
-        """
-        # engine = sqlalchemy.create_engine(
-        #    "mariadb+mariadbconnector://root:" + self.password + "@127.0.0.1:3306/" + self.database)
-        credentials = ''.join(
-            [self.user, ":", self.password, "@", self.host, "/", self.database])
-        """
         if_exists{>fail<, >replace<, >append<}, default >fail<
             How to behave if the table already exists.
             fail: Raise a ValueError.
@@ -745,9 +751,7 @@ class MariaDB(object):   # Singleton with controlled initialization
             append: Insert new values to the existing table.
         """
         try:
-            engine = sqlalchemy.create_engine(
-                "mariadb+mariadbconnector://" + credentials)
-            dataframe.to_sql(PRICES, con=engine, if_exists="append",
+            dataframe.to_sql(PRICES, con=self.engine, if_exists="append",
                              index_label=['symbol', 'price_date'])
             self.execute('COMMIT')
             return True
@@ -1130,8 +1134,7 @@ class MariaDB(object):   # Singleton with controlled initialization
         List of tuples from the LEDGER table:
                                 (account number, date, amount)
         """
-        where, vars_ = self._where_clause(**kwargs)
-        where_entry_date = where.replace(DB_price_date, DB_entry_date)
+        where, vars_ = self._where_clause(**kwargs, date_name=DB_entry_date)
         from_date, _ = vars_
         vars_ = vars_ + vars_
         sql_statement = ("WITH total_amounts AS ("
@@ -1167,21 +1170,61 @@ class MariaDB(object):   # Singleton with controlled initialization
         """
         ledger_coa = self.select_table(
             LEDGER_COA, DB_account, order=DB_account, asset_accounting=True, download=False)
+        credit_clause, debit_clause = self._opening_aaccount_clause()          
         for item in ledger_coa:
             account, = item
             sql_statement = ("WITH amounts AS ("
-                             "SELECT credit_account as iban, entry_date AS date, '" + CREDIT +
+                             "SELECT credit_account as iban, debit_account, entry_date AS date, '" + CREDIT +
                              "' AS status, amount AS saldo  FROM "
-                             + LEDGER + where_entry_date + " AND credit_account='" + account + "'" +
+                             + LEDGER + where + " AND credit_account='" + account + "'" + debit_clause +
                              " UNION "
-                             "SELECT debit_account as iban, entry_date AS date, '" + DEBIT +
+                             "SELECT debit_account as iban, debit_account, entry_date AS date, '" + DEBIT +
                              "' AS status, amount AS saldo  FROM "
-                             + LEDGER + where_entry_date + " AND debit_account='" + account + "'" + ") "
+                             + LEDGER + where + " AND debit_account='" + account + "'" + credit_clause + ") "
                              "SELECT iban, date, status, saldo FROM amounts  GROUP BY iban, date ")
             ledger = self.execute(sql_statement, vars_=vars_)
             total_amounts = total_amounts + ledger
         return total_amounts
 
+    def _opening_aaccount_clause(self):
+        opening_balance_accounts = self.select_table(LEDGER_COA, DB_account, opening_balance_account=True)
+        debit_clause  = ''
+        credit_clause = ''
+        if opening_balance_accounts:
+            opening_balance_accounts = str(opening_balance_accounts[0])
+            opening_balance_accounts = opening_balance_accounts.replace(',', '')
+            credit_clause =  " AND credit_account not in " + opening_balance_accounts + " "
+            debit_clause =  " AND debit_account not in " + opening_balance_accounts + " "
+        return credit_clause, debit_clause            
+
+    def select_ledger_total_amount(self, iban, **kwargs): 
+        """
+        Returns dict {last_date, status, amount} 
+        ledger account may not be posted in the opening balance account !!
+        """
+
+        ledger_total_amount = None
+        credit_clause, debit_clause = self._opening_aaccount_clause() 
+        result = self.select_table(LEDGER_COA, DB_account, iban=iban) 
+        if result:
+            account = result[0][0]       
+            sql_statement = ("WITH amounts AS ("
+                             "SELECT credit_account as iban, entry_date AS date, '" + CREDIT +
+                             "' AS status, amount AS saldo  FROM "
+                             + LEDGER + " WHERE credit_account='" + account + "'" + debit_clause +
+                             " UNION "
+                             "SELECT debit_account as iban, entry_date AS date, '" + DEBIT +
+                             "' AS status, amount AS saldo  FROM "
+                             + LEDGER  + " WHERE debit_account='" + account + "'" + credit_clause + ") "
+                             "SELECT iban, date, status, saldo FROM amounts  GROUP BY iban, date ")
+            ledger_total_amount = self.execute(sql_statement)
+            if ledger_total_amount:
+                ledger_total_amount = ledger_total_amount[0]
+                return {DB_entry_date: ledger_total_amount[1], DB_status: ledger_total_amount[2], DB_amount: ledger_total_amount[3]}
+            else:
+                return {}
+
+    
     def _dict_all_ibans(self):
         """
         Returns a list of all ibans
@@ -1281,7 +1324,6 @@ class MariaDB(object):   # Singleton with controlled initialization
         else:
             return None
 
-
     def shelve_del_key(self, shelve_name, key):
         """
         Deletes key in SHELVES field bankdata
@@ -1359,14 +1401,14 @@ class MariaDB(object):   # Singleton with controlled initialization
 
     def alpha_vantage_put(self, field_name, data):
         """
-        field_name: DB_alpha_vantage_parameter or DB_alpha_vantage_function 
+        field_name: DB_alpha_vantage_parameter or DB_alpha_vantage_function
         data: values of field_name in JSON format
         """
         if self.row_exists(APPLICATION, row_id=2):
             self.execute_update(APPLICATION, {field_name: json.dumps(data)}, row_id=2)
-        else:    
-            self.execute_insert(APPLICATION, {DB_row_id: 2, field_name: json.dumps(data)})            
-   
+        else:
+            self.execute_insert(APPLICATION, {DB_row_id: 2, field_name: json.dumps(data)})
+
     def selection_get(self, selection_name):
         """
         get dictionary of last used selection values of selection form

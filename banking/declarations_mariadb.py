@@ -567,7 +567,7 @@ DB_ultimate_debitor = 'ultimate_debitor'
 DB_validity = 'validity'
 DB_volume = 'volume'
 DB_wkn = 'wkn'
-DB_TYPES = ['SHARE', 'BOND', 'SUBSCRIPTION RIGHT']
+DB_TYPES = ['SHARE', 'BOND', 'INDEX', 'SUBSCRIPTION RIGHT']
 
 """
 -------------------------------- Ledger MariaDB Table Fields --------------------------------------------------------

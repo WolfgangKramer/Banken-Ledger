@@ -121,6 +121,7 @@ MENU_TEXT = {
     'Statement': 'Statement',
     'Synchronize': 'Synchronize',
     'Synchronize Transactions': 'Synchronize Transactions',
+    'Technical Indicators': 'Technical Indicators',
     'Transactions': 'Transactions',
     'Transaction Detail': 'Transaction Detail',
     'Transactions Table': 'Transactions Table',
@@ -132,7 +133,6 @@ MENU_TEXT = {
     'Onvista': 'Onvista',
     'Boerse.de': 'Boerse.de',
 }
-
 
 POPUP_MENU_TEXT = {
     'Show selected Row': 'Show selected Row',
@@ -157,7 +157,7 @@ MESSAGE_TEXT = {
     'ACQUISITION_AMOUNT': 'Bank: {} \n Bank Account: {}  {}  {}      \n     Acquisition Amount must be adjusted manually',
     'ALPHA_VANTAGE': 'DOWNLOAD Prices from ALPHA_VANTAGE ({}/{}) failed (see ERROR Message before)',
     'ALPHA_VANTAGE_REFRESH_RUN': 'AlphaVantage Functions Creation started',
-    'ALPHA_VANTAGE_REFRESH': 'AlphaVantage Functions successfully created',
+    'ALPHA_VANTAGE_REFRESH': 'AlphaVantage Functions successfully created\ntest\ntest\ntest\ntest\ntest\ntest\ntest\ntest\ntest\ntest',
     'ALPHA_VANTAGE_ERROR': 'API Parameter Information not created',
     'ALPHA_VANTAGE_ERROR_MSG': 'AlphaVantage Error Message: \n{} \n\n Generated URl: \n{}',
     'ALPHA_VANTAGE_NO_DATA': 'AlphaVantage API returns no Data \n {}',
@@ -211,7 +211,8 @@ MESSAGE_TEXT = {
     'ENTRY_DATE': 'Entry_date missed',
     'FIELDLIST_MIN': 'Select at least {} positions in fieldlist',
     'FIXED': '{} MUST HAVE {} Characters ',
-    'HELP_PANDASTABLE': 'Show Row Menu: \n  Select row\n  Click on row number with the left mouse button',
+    'HELP_PANDASTABLE': 'Show Row Menu: \n          Select row\n          Click on row number with the right mouse button',
+    'HELP_CHECK_UPLOAD': 'Start with FIRST row to be checked\n\n Show Row Menu: \n          Select row\n          Click on row number with the right mouse button\n          Then select Update Selected Row and UPDATE if the row and all previous rows are OK',
     'HITAN6': 'Bank: {} \n Bank Account: {}  {}       \n     Could not find HITAN6/7 task_reference',
     'HIKAZ':  'Response HIKAZ missing: bank_name {}, account_number {}, account_product_name {}',
     'HITAN': 'Security clearance is provided via another channel\n{}',
@@ -265,7 +266,7 @@ MESSAGE_TEXT = {
     'SCROLL': 'Scroll forward: CTRL+RIGHT   Scroll backwards: CTRL+LEFT',
     'SEGMENT_VERSION': 'Segment {}{} Version {} not implemented',
     'SELECT': 'Enter your Selection',
-    'SELECT_ROW': 'Select row by left clicking on row number',
+    'SELECT_ROW': 'Select row, then right clicking on row number',
     'SEPA_CRDT_TRANSFER': 'SEPA Credit Transfer \nBank:    {}  \nAccount:    {} ({})',
     'SQLALCHEMY_ERROR': "Error Calling SQLAlchemy {}:    {}",
     'SHELVE': '\n LOGON Data, Synchronization Data >>>>> BANK: {}\n\n',
@@ -275,6 +276,11 @@ MESSAGE_TEXT = {
     'SYMBOL_USED': 'Symbol already used in {}',
     'SYNC': 'Synchronization Data incomplete    \nSynchronization must be done \nBank: {} ',
     'SYNC_START': 'Next Stepp: You must start Synchronization Bank: {} ',
+    'TA_OTHER_PARAMETER': 'function contains additional parameters: \n  {}',
+    'TA_NO_RESULT': 'Technical Analysis no result!\n Category: {}  Indicator: {}',
+    'TA_METHOD_ERROR': 'Indicator {}: Name creation of the calling method not successful',
+    'TA_CLASS_NO_METHOD': 'Category: {} \nMethods in class {} not found',
+    'TA_NO_OHLC': 'Category: {} \n No OHCL Series parameter of Class {}',
     'TASK_DONE': 'Task finished.',
     'TASK_WARNING': 'Finished with Warnings',
     'TASK_STARTED': '{}: Task started.',
@@ -449,10 +455,10 @@ ALPHA_VANTAGE_REQUIRED_COMBO = {'interval': ['1min', '5min', '15min', '30min', '
                                 'series_type': ['close', 'open', 'high', 'low']
                                 }
 ALPHA_VANTAGE_OPTIONAL_COMBO = {'outputsize': ['compact', 'full']}
-                                
+
 """
 -------------------------- Formbuilts -----------------------------------------------
-"""                                
+"""
 ENTRY = 'Entry'
 COMBO = 'ComboBox'
 CHECK = 'CheckButton'
@@ -518,7 +524,7 @@ LIGHTBLUE = 'LIGHTBLUE'
 UNDEFINED = 'UNDEFINED'
 FONTSIZE = 8
 MAX_FIELD_LENGTH = 65
-                              
+
 """
 -------------------------- Forms -----------------------------------------------
 """
@@ -526,8 +532,8 @@ WIDTH_TEXT = 170
 HEIGHT_TEXT = 60
 HEADER = 'HEADER'
 INFORMATION = 'INFORMATION '
-WARNING =     'WARNING     '
-ERROR =       'ERROR       '
+WARNING = 'WARNING     '
+ERROR = 'ERROR       '
 LIGHTBLUE = 'LIGHTBLUE'
 SHOW_MESSAGE = [INFORMATION, WARNING, ERROR]
 FN_ACCOUNT_NAME = 'ACCOUNT_NAME'
@@ -577,7 +583,7 @@ SEPA_PURPOSE_2 = 'Purpose_2'
 SEPA_REFERENCE = 'Reference'
 SEPA_EXECUTION_DATE = 'Execution_Date'
 NOTPROVIDED = 'NOTPROVIDED'
-""" 
+"""
 -------------------------- BuilPandasBox param mode
 """
 EDIT_ROW = 'EDIT_ROW'

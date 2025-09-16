@@ -5,6 +5,7 @@ __updated__ = "2024-11-27"
 '''
 from tkinter import PhotoImage
 
+
 def currency_sign():
     '''
     Button activate/deactivate Toolbar
@@ -16,4 +17,4 @@ def currency_sign():
         + 'EYRCfReNoB8h6uactNOFcZsTIDoBIltAKcU9WmtYkhgeGh/qvU8poVbiAI1aKzYQhRCwqqANYDFGzCw+'
         + 'doMxBgo1QxflnHvvKNQMAW//bGzTNX/7KhacAAHRDUMsdGzYDmA9AAAAAElFTkSuQmCC')
     )
-    return img   
+    return img

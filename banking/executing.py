@@ -3,24 +3,18 @@ Created on 09.12.2019
 __updated__ = "2025-07-17"
 Author: Wolfang Kramer
 """
-
-
-import io
 import sys
 import requests
 import webbrowser
 from PIL import ImageTk
 
-from contextlib import redirect_stdout
 from time import sleep
 from datetime import date, timedelta, datetime
 from threading import Thread
-from tkinter import Tk, Menu, TclError, GROOVE, ttk, Canvas, StringVar, font    
+from tkinter import Tk, Menu, TclError, GROOVE, ttk, Canvas, StringVar, font
 from tkinter.ttk import Label
-
 from fints.types import ValueList
 from pandas import DataFrame
-from yfinance import Ticker
 
 from banking.bank import InitBank, InitBankSync, InitBankAnonymous
 from banking.declarations import (
@@ -29,7 +23,7 @@ from banking.declarations import (
     BMW_BANK_CODE, BUNDESBANK_BLZ_MERKBLATT, BUNDEBANK_BLZ_DOWNLOAD,
     CURRENCY_SIGN, CREDIT,
     DEBIT,
-    ERROR, EDIT_ROW,
+    EDIT_ROW,
     FINTS_SERVER, FINTS_SERVER_ADDRESS,
     START_DATE_PRICES, START_DATE_TRANSACTIONS,
     FN_COMPARATIVE,
@@ -39,10 +33,10 @@ from banking.declarations import (
     FN_PROFIT_LOSS,
     INFORMATION, Informations,
     JSON_KEY_ERROR_MESSAGE, JSON_KEY_META_DATA,
-    KEY_ACCOUNTS, KEY_ACC_BANK_CODE, KEY_ACC_OWNER_NAME, 
+    KEY_ACCOUNTS, KEY_ACC_BANK_CODE, KEY_ACC_OWNER_NAME,
     KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_IBAN,
-    KEY_ACC_ACCOUNT_NUMBER, KEY_MAX_PIN_LENGTH, KEY_MIN_PIN_LENGTH, 
-    KEY_ACC_PRODUCT_NAME, 
+    KEY_ACC_ACCOUNT_NUMBER, KEY_MAX_PIN_LENGTH, KEY_MIN_PIN_LENGTH,
+    KEY_ACC_PRODUCT_NAME,
     KEY_BANK_CODE, KEY_BANK_NAME, KEY_DOWNLOAD_ACTIVATED,
     KEY_PIN, KEY_BIC,
     KEY_SECURITY_FUNCTION,
@@ -50,7 +44,7 @@ from banking.declarations import (
     KEY_USER_ID, KEY_VERSION_TRANSACTION,
     MENU_TEXT, MESSAGE_TEXT, MESSAGE_TITLE,
     NOT_ASSIGNED, NUMERIC, NO_CURRENCY_SIGN,
-    OUTPUTSIZE_FULL, OUTPUTSIZE_COMPACT, ORIGIN, ORIGIN_PRICES, ORIGIN_INSERTED,
+    ORIGIN, ORIGIN_PRICES, ORIGIN_INSERTED,
     PERCENT,
     SCRAPER_BANKDATA,
     SEPA_AMOUNT, SEPA_CREDITOR_BIC,
@@ -60,18 +54,18 @@ from banking.declarations import (
     START_DATE_HOLDING,
     TRANSACTION_DELIVERY, TRANSFER_DATA_SEPA_EXECUTION_DATE,
     WEBSITES, WARNING,
-    YAHOO,
 )
 from banking.declarations_mariadb import (
     PRODUCTIVE_DATABASE_NAME,
     TABLE_FIELDS, TABLE_FIELDS_PROPERTIES,
 
     DB_acquisition_amount, DB_amount_currency, DB_amount, DB_account, DB_applicant_name,
-    DB_alpha_vantage_price_period, DB_alpha_vantage,
+    DB_alpha_vantage,
     DB_alpha_vantage_function, DB_alpha_vantage_parameter,
     DB_opening_balance, DB_opening_currency, DB_opening_status, DB_opening_entry_date,
     DB_closing_balance, DB_closing_currency, DB_closing_status, DB_closing_entry_date,
     DB_counter, DB_date, DB_category, DB_code, DB_currency, DB_credit_account,
+    DB_close,
     DB_debit_account,
     DB_entry_date,
     DB_ISIN, DB_iban, DB_id_no,
@@ -85,7 +79,7 @@ from banking.declarations_mariadb import (
     DB_total_amount, DB_price_date,
     DB_total_amount_portfolio, DB_transaction_type,
     DB_symbol, DB_status,
-    DB_open, DB_low, DB_high, DB_close, DB_adjclose, DB_volume, DB_dividends, DB_splits,
+    DB_splits,
     APPLICATION, GEOMETRY,
     HOLDING, HOLDING_VIEW,
     BANKIDENTIFIER, LEDGER_STATEMENT,
@@ -95,7 +89,7 @@ from banking.declarations_mariadb import (
     SHELVES,
 )
 from banking.formbuilts import (
-    BUTTON_SAVE, BUTTON_APPEND, BUTTON_DELETE,
+    BUTTON_SAVE,
     BUTTON_PRICES_IMPORT, BUTTON_REPLACE, BUTTON_RESTORE,
     BUTTON_ALPHA_VANTAGE,
     BuiltRadioButtons, BuiltPandasBox,
@@ -107,6 +101,7 @@ from banking.formbuilts import (
 )
 from banking.messagebox import (MessageBoxAsk, MessageBoxInfo)
 from banking.forms import (
+    import_prices_run,
     AlphaVantageParameter, AppCustomizing,
     BankDataChange, BankDataNew, BankDelete,
     InputISIN,
@@ -123,6 +118,7 @@ from banking.forms import (
     PrintList, PrintMessageCode,
     SelectFields, SelectLedgerAccount, SelectLedgerAccountCategory,
     SepaCreditBox,
+    TechnicalIndicators,
     VersionTransaction, SelectDownloadPrices,
 )
 from banking.mariadb import MariaDB
@@ -134,8 +130,8 @@ from banking.utils import (
     dict_get_first_key,
     exception_error,
     holding_informations_append,
-    prices_informations_append
 )
+
 
 class BankenLedger(object):
     """
@@ -163,10 +159,10 @@ class BankenLedger(object):
             self.window = Tk()
             self.progress = ProgressBar(self.window)
             self.window.title(title)
-            self.window.geometry('600x450+1+1')
-            self.window.resizable(0, 0)
+            self.window.geometry('600x500+1+1')
+            self.window.resizable(0, 1)
             self.canvas = Canvas(self.window, width=600, height=400)
-            self.canvas.pack(fill="both", expand=True)            
+            self.canvas.pack(fill="both", expand=True)
             try:
                 self.bg_photo = ImageTk.PhotoImage(file="background.gif")
                 self.canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
@@ -176,28 +172,27 @@ class BankenLedger(object):
                 fill_colour = 'red'
             else:
                 fill_colour = 'lightblue'
-            self.canvas.create_text(300, 200, fill=fill_colour, font=('Arial', 20, 'bold'),
-                                text=MESSAGE_TEXT['DATABASE'].format(self.database))                
+            self.canvas.create_text(300, 200, fill=fill_colour, font=(
+                'Arial', 20, 'bold'), text=MESSAGE_TEXT['DATABASE'].format(self.database))
             self._def_styles()
             self.bank_owner_account = self._create_bank_owner_account()
             self._create_menu(self.database)
             self.footer = StringVar()
             self.message_widget = Label(self.window,
                                         textvariable=self.footer, foreground='RED', justify='center')
-            #self.footer.set('')
-            self.message_widget.pack(side='bottom', fill='x')
+            # self.footer.set('')
+            self.message_widget.pack(side='bottom', fill='both', expand=True)
             self.load_timer = None
             self.window.protocol(WM_DELETE_WINDOW, self._wm_deletion_window)
             if application_store.get(DB_alpha_vantage):
                 self.alpha_vantage_function = self.mariadb.alpha_vantage_get(DB_alpha_vantage_function)
                 self.alpha_vantage_parameter = self.mariadb.alpha_vantage_get(DB_alpha_vantage_parameter)
-                self.alpha_vantage = AlphaVantage(self.progress, self.alpha_vantage_function, self.alpha_vantage_parameter)            
+                self.alpha_vantage = AlphaVantage(self.progress, self.alpha_vantage_function, self.alpha_vantage_parameter)
             self.window.mainloop()
         try:
             self.window.destroy()
         except TclError:
             pass
-
 
     def _wm_deletion_window(self):
 
@@ -218,7 +213,7 @@ class BankenLedger(object):
             application_data = {k: v for d in result for k, v in d.items()}
         else:
             application_data = {}
-        application_store.load_data(application_data)  
+        application_store.load_data(application_data)
 
     def _bank_name(self, bank_code):
 
@@ -363,14 +358,14 @@ class BankenLedger(object):
                 return
             field_dict = app_data_box.field_dict
             if app_data_box.button_state == BUTTON_SAVE:
-                app_data_box.field_dict[DB_row_id]=1 
+                app_data_box.field_dict[DB_row_id] = 1
                 self.mariadb.execute_replace(APPLICATION, app_data_box.field_dict)
                 MessageBoxInfo(message=MESSAGE_TEXT['DATABASE_REFRESH'])
                 self._wm_deletion_window()
             elif app_data_box.button_state == BUTTON_RESTORE:
                 field_dict = application_store.get(None)
             elif app_data_box.button_state == WM_DELETE_WINDOW:
-                break      
+                break
 
     def _def_styles(self):
 
@@ -394,15 +389,14 @@ class BankenLedger(object):
         else:
             self.footer.set(MESSAGE_TEXT['ALPHA_VANTAGE_ERROR'])
 
-
     def _bank_data_change(self, bank_code):
 
         self._delete_footer()
         bank_name = self._bank_name(bank_code)
         title = ' '.join([bank_name, MENU_TEXT['Customize'],
                           MENU_TEXT['Change Login Data']])
-        login_data = self.mariadb.shelve_get_key(bank_code, [KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC,
-                                                                 KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_DOWNLOAD_ACTIVATED])
+        login_data = self.mariadb.shelve_get_key(
+            bank_code, [KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_DOWNLOAD_ACTIVATED])
         bank_data_box = BankDataChange(
             title, bank_code, login_data)
         if bank_data_box.button_state == WM_DELETE_WINDOW:
@@ -477,7 +471,7 @@ class BankenLedger(object):
                 self._bank_security_function(bank_code, True)
                 MessageBoxInfo(title=title, message=MESSAGE_TEXT['BANK_DATA_NEW'].format(
                     bank_name, bank_code))
-            self._wm_deletion_window() # to show new bank in menu after restart
+            self._wm_deletion_window()  # to show new bank in menu after restart
 
     def _bank_data_delete(self):
 
@@ -628,11 +622,11 @@ class BankenLedger(object):
         self.window.config(menu=menu, borderwidth=10, relief=GROOVE)
         if application_store.get(DB_ledger):
             self._create_menu_ledger(menu, menu_font)
-        if self.bank_names != {} and application_store.get(None): # application customizing is done
+        if self.bank_names != {} and application_store.get(None):  # application customizing is done
             self._create_menu_show(menu, self.bank_owner_account, menu_font)
             self._create_menu_download(menu, menu_font)
             self._create_menu_transfer(menu, menu_font)
-        if application_store.get(None): # application customizing is done
+        if application_store.get(None):  # application customizing is done
             self._create_menu_database(
                 menu, menu_font, self.bank_owner_account)
         self._create_menu_customizing(menu, menu_font, MariaDBname)
@@ -759,6 +753,8 @@ class BankenLedger(object):
         database_menu = Menu(
             menu, tearoff=0, font=menu_font, bg='Lightblue')
         menu.add_cascade(label=MENU_TEXT['Database'], menu=database_menu)
+        database_menu.add_command(
+            label=MENU_TEXT['Technical Indicators'], command=self._data_technical_indicators)
         bank_names = {}
         for bank_name in self.bank_names.values():
             bank_code = dict_get_first_key(self.bank_names, bank_name)
@@ -809,7 +805,7 @@ class BankenLedger(object):
         menu.add_cascade(label=MENU_TEXT['Customize'], menu=customize_menu)
         customize_menu.add_command(label=MENU_TEXT['Application INI File'],
                                    command=self._appcustomizing)
-        if application_store.get(None): # Customizing is done
+        if application_store.get(None):  # Customizing is done
             customize_menu.add_separator()
             customize_menu.add_command(label=MENU_TEXT['Import Bankidentifier CSV-File'],
                                        command=self._import_bankidentifier)
@@ -817,12 +813,12 @@ class BankenLedger(object):
                                        command=self._import_server)
             customize_menu.add_separator()
             customize_menu.add_command(label=MENU_TEXT['Reset Screen Positions'],
-                                       command=self._reset)            
+                                       command=self._reset)
             if application_store.get(DB_alpha_vantage):
                 customize_menu.add_command(label=MENU_TEXT['Refresh Alpha Vantage'],
                                            command=self._alpha_vantage_refresh)
                 customize_menu.add_separator()
-            if application_store.get(None): # application customizing is done
+            if application_store.get(None):  # application customizing is done
                 if self.mariadb.select_server:
                     customize_menu.add_command(label=MENU_TEXT['New Bank'],
                                                command=self._bank_data_new)
@@ -846,7 +842,7 @@ class BankenLedger(object):
                         cust_bank_menu.add_command(label=MENU_TEXT['Change FinTS Transaction Version'],
                                                    command=lambda
                                                    x=bank_code: self._bank_version_transaction(x))
-                        customize_menu.add_separator()                        
+                        customize_menu.add_separator()
                         cust_bank_menu.add_command(label=MENU_TEXT['Refresh BankParameterData'],
                                                    command=lambda
                                                    x=bank_code: self._bank_refresh_bpd(x))
@@ -997,7 +993,7 @@ class BankenLedger(object):
     def _create_bank_owner_account(self):
         """
         create  multiple bank_owner_account hierarchy as dicts
-        returns: dict : key--> bank_name: 
+        returns: dict : key--> bank_name:
                             value/key--> owner:
                                 value --> list  accounts
                                     list_item  --> dict account_data
@@ -1065,8 +1061,9 @@ class BankenLedger(object):
 
         self._delete_footer()
         title = ' '.join([bank_name, MENU_TEXT['Holding ISIN Comparision']])
+        from_date = date_days.subtract(date.today(), 360)
         data_dict_period = {
-            FN_FROM_DATE: date.today(),  FN_TO_DATE: date.today()}
+            FN_FROM_DATE: from_date,  FN_TO_DATE: date.today()}
         while True:
             input_period = InputPeriod(
                 title=title, data_dict=data_dict_period, selection_name=title + 'A')
@@ -1128,8 +1125,10 @@ class BankenLedger(object):
         """
         self._delete_footer()
         title = ' '.join([bank_name, MENU_TEXT['Holding ISIN Comparision %']])
+        from_date = date_days.subtract(date.today(), 360)
         data_dict_period = {
-            FN_FROM_DATE: date.today(),  FN_TO_DATE: date.today()}
+            FN_FROM_DATE: from_date,  FN_TO_DATE: date.today()}
+
         while True:
             input_period = InputPeriod(
                 title=title, data_dict=data_dict_period, selection_name=title + 'A')
@@ -1191,8 +1190,7 @@ class BankenLedger(object):
             if isin_table.button_state == WM_DELETE_WINDOW:
                 break
             if isin_table.button_state == BUTTON_PRICES_IMPORT:
-                self._import_prices_run(
-                    self.mariadb, title, [isin_table.selected_row_dict[DB_name]], BUTTON_REPLACE)
+                import_prices_run(title, self.mariadb, [isin_table.selected_row_dict[DB_name]], BUTTON_REPLACE)
                 self._show_informations()
             self.footer.set(message)
             message = None
@@ -1233,7 +1231,7 @@ class BankenLedger(object):
         """
         For a working day:
         Replaces market_price (table HOLDING) by close price (table PRICES)
-        If not existing: creates holding positions 
+        If not existing: creates holding positions
         """
         title = ' '.join(
             [bank_name, MENU_TEXT['Update Holding Market Price by Closing Price']])
@@ -1308,8 +1306,7 @@ class BankenLedger(object):
             if isin_table.button_state == WM_DELETE_WINDOW:
                 return
             if isin_table.button_state == BUTTON_PRICES_IMPORT:
-                self._import_prices_run(
-                    self.mariadb, title, [isin_table.selected_row_dict[DB_name]], BUTTON_REPLACE)
+                import_prices_run(title, self.mariadb, [isin_table.selected_row_dict[DB_name]], BUTTON_REPLACE)
         if price:
             # update holding market price
             price_dict = price[0]
@@ -1324,6 +1321,23 @@ class BankenLedger(object):
                                                                DB_price_date.upper(), date_days.convert(holding_dict[DB_price_date]), '\n']))
             return True
         return False
+
+    def _data_technical_indicators(self):
+
+        self._delete_footer()
+        title = MENU_TEXT['Technical Indicators']
+        names_dict = dict(self.mariadb.select_isin_with_ticker([DB_name, DB_symbol], order=DB_name))
+        data_dict = {FN_FROM_DATE: date_days.subtract(date.today(), 360),
+                     FN_TO_DATE: date.today()}
+        while True:
+            ta_data = TechnicalIndicators(
+                title=title, data_dict=data_dict, container_dict=names_dict, selection_name=title)
+            if ta_data.button_state == WM_DELETE_WINDOW:
+                return
+            data_dict[DB_ISIN] = ta_data.field_dict[DB_ISIN]
+            data_dict[DB_name] = ta_data.field_dict[DB_name]
+            data_dict[FN_FROM_DATE] = ta_data.field_dict[FN_FROM_DATE]
+            data_dict[FN_TO_DATE] = ta_data.field_dict[FN_TO_DATE]
 
     def _data_transaction_detail(self, bank_name, iban):
 
@@ -1377,7 +1391,7 @@ class BankenLedger(object):
         if select_holding_last:
             if select_holding_last[0] < select_isin_transaction[-1][0]:
                 return select_isin_transaction
-            self.period = (self.period[0], select_holding_last[0])
+            period = (period[0], select_holding_last[0])
             select_holding_last = (
                 select_holding_last[0], 0, TRANSACTION_DELIVERY,  *select_holding_last[1:])
             select_isin_transaction.append(select_holding_last)
@@ -1389,21 +1403,19 @@ class BankenLedger(object):
         title = ' '.join([bank_name,
                           MENU_TEXT['Transactions Table']])
         field_list = TABLE_FIELDS[TRANSACTION_VIEW]
-        from_date = date(2000, 1, 1)
-        to_date = date(datetime.now().year, 12, 31)
-        name_isin_dict = dict(self.mariadb.select_table(
-            ISIN, [DB_name, DB_ISIN], order=DB_name))
-        isin = ''
-        name = ''
+        data_dict = {DB_name: '', DB_ISIN: '',
+                     FN_FROM_DATE: START_DATE_TRANSACTIONS,
+                     FN_TO_DATE: date(datetime.now().year, 12, 31)}
+        names_dict = self.mariadb.select_dict(
+                    ISIN, DB_ISIN, DB_name, iban=iban, order=DB_name)
         while True:
-            input_isin = InputISIN(title=title, default_values=(
-                name, isin, from_date, to_date), names=name_isin_dict)
+            input_isin = InputISIN(title=title, data_dict=data_dict, container_dict=names_dict)
             if input_isin.button_state == WM_DELETE_WINDOW:
                 return
-            isin = input_isin.field_dict[DB_ISIN]
-            name = input_isin.field_dict[DB_name]
-            from_date = input_isin.field_dict[FN_FROM_DATE]
-            to_date = input_isin.field_dict[FN_TO_DATE]
+            isin = data_dict[DB_ISIN] = input_isin.field_dict[DB_ISIN]
+            name = data_dict[DB_name] = input_isin.field_dict[DB_name]
+            from_date = data_dict[FN_FROM_DATE] = input_isin.field_dict[FN_FROM_DATE]
+            to_date = data_dict[FN_TO_DATE] = input_isin.field_dict[FN_TO_DATE]
             title_period = ' '.join(
                 [title, name, isin, from_date, '-', to_date])
             message = MESSAGE_TEXT['HELP_PANDASTABLE']
@@ -1539,158 +1551,13 @@ class BankenLedger(object):
                 state = select_isins.button_state
                 field_list = select_isins.field_list
                 if application_store.get(DB_threading):
-                    download_prices = Thread(name=MENU_TEXT['Prices'], target=self._import_prices_run,
-                                             args=(self.mariadb, title, field_list, state))
+                    download_prices = Thread(name=MENU_TEXT['Prices'], target=import_prices_run,
+                                             args=(title, self.mariadb, field_list, state))
                     download_prices.start()
                 else:
-                    self._import_prices_run(
-                        self.mariadb, title, field_list, state)
+                    import_prices_run(title, self.mariadb, field_list, state)
         else:
             self.footer.set(MESSAGE_TEXT['SYMBOL_MISSING_ALL'].format(title))
-
-    def _import_prices_run(self, mariadb, title, field_list, state):
-
-        for name in field_list:
-            select_isin_data = self.mariadb.select_table(
-                ISIN, [DB_ISIN, DB_symbol, DB_origin_symbol], name=name, result_dict=True)
-            if select_isin_data:
-                select_isin_data = select_isin_data[0]
-                symbol = select_isin_data[DB_symbol]
-                origin_symbol = select_isin_data[DB_origin_symbol]
-                message_symbol = symbol + '/' + origin_symbol
-                isin = select_isin_data[DB_ISIN]
-                if state == BUTTON_DELETE:
-                    self.mariadb.execute_delete(PRICES, symbol=symbol)
-                    MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                   message=MESSAGE_TEXT['PRICES_DELETED'].format(
-                                       name, message_symbol, isin))
-                else:
-                    if symbol == NOT_ASSIGNED or origin_symbol == NOT_ASSIGNED:
-                        MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS, information=WARNING,
-                                       message=MESSAGE_TEXT['SYMBOL_MISSING'].format(isin, name))
-                    else:
-                        from_date = date_days.convert('2000-01-01')
-                        start_date_prices = from_date
-                        if state == BUTTON_APPEND:
-                            max_price_date = self.mariadb.select_max_column_value(
-                                PRICES, DB_price_date, symbol=symbol)
-                            if max_price_date:
-                                from_date = max_price_date + timedelta(days=1)
-                        to_date = date_days.subtract(date.today(), 1)
-                        if from_date > to_date:
-                            MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                           message=MESSAGE_TEXT['PRICES_ALREADY'].format(
-                                               name, message_symbol, origin_symbol, isin, '', to_date))
-                        if origin_symbol == YAHOO:
-                            tickers = Ticker(symbol)
-                            f = io.StringIO()
-                            with redirect_stdout(f):
-                                dataframe = tickers.history(auto_adjust=False,
-                                                            period=None, start=from_date, end=to_date)
-                            if f.getvalue():
-                                prices_informations_append(
-                                    INFORMATION, f.getvalue())
-                            columns = {"Date": DB_price_date, 'Open': DB_open, 'High': DB_high,
-                                       'Low': DB_low, 'Close': DB_close, 'Adj Close': DB_adjclose,
-                                       'Dividends': DB_dividends, 'Stock Splits': DB_splits,
-                                       'Volume': DB_volume}
-                        elif origin_symbol == ALPHA_VANTAGE:
-                            function = application_store.get(DB_alpha_vantage_price_period)
-                            """
-                            By default, outputsize=compact. Strings compact and full are accepted with the following specifications:
-                            compact returns only the latest 100 data points;
-                            full returns the full-length time series of 20+ years of historical data
-                            """
-                            url = 'https://www.alphavantage.co/query?function=' + function + '&symbol=' + \
-                                symbol + '&outputsize='
-                            if from_date == start_date_prices:
-                                url = url + OUTPUTSIZE_FULL + '&apikey=' + \
-                                    application_store.get(DB_alpha_vantage)
-                            else:
-                                url = url + OUTPUTSIZE_COMPACT + '&apikey=' + \
-                                    application_store.get(DB_alpha_vantage)
-                            data = requests.get(url).json()
-                            keys = [*data]  # list of keys of dictionary data
-                            dataframe = None
-                            if len(keys) == 2:
-                                try:
-                                    """
-                                    2. item of dict data contains Time Series as a dict ( *data[1})
-                                    example: TIME_SERIES_DAILY                                                                {
-                                                "Meta Data": {
-                                                    "1. Information": "Daily Prices (open, high, low, close) and Volumes",
-                                                    "2. Symbol": "IBM",
-                                                    "3. Last Refreshed": "2023-07-26",
-                                                    "4. Output Size": "Compact",
-                                                    "5. Time Zone": "US/Eastern"
-                                                },
-                                                "Time Series (Daily)": {
-                                                    "2023-07-26": {
-                                                        "1. open": "140.4400",
-                                                        "2. high": "141.2500",
-                                                        "3. low": "139.8800",
-                                                        "4. close": "141.0700",
-                                                        "5. volume": "4046441"
-                                                    },
-                                                    "2023-07-25": {
-                                                        "1. open": "139.4200",
-                                                        "2. high": "140.4300",
-                                    """
-                                    data = data[keys[1]]
-                                    dataframe = DataFrame(data)
-                                    dataframe = dataframe.T
-                                    if 'ADJUSTED' in function:
-                                        columns = {"index": DB_price_date, '1. open': DB_open,
-                                                   '2. high': DB_high, '3. low': DB_low, '4. close': DB_close,
-                                                   '5. adjusted close': DB_adjclose, '6. volume': DB_volume,
-                                                   '7. dividend amount': DB_dividends,
-                                                   '8. split coefficient': DB_splits}
-                                    else:
-                                        columns = {"index": DB_price_date, '1. open': DB_open,
-                                                   '2. high': DB_high, '3. low': DB_low, '4. close': DB_close,
-                                                   '5. volume': DB_volume}
-                                except Exception:
-                                    prices_informations_append(ERROR, data)
-                                    MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                                   message=MESSAGE_TEXT['ALPHA_VANTAGE'].format(isin, name))
-                                    return
-                            else:
-                                try:
-                                    data = data['Information']
-                                except Exception:
-                                    pass
-                                prices_informations_append(ERROR, data)
-                                MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                               message=MESSAGE_TEXT['ALPHA_VANTAGE'].format(isin, name))
-                                return
-                        if dataframe.empty:
-                            MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                           message=MESSAGE_TEXT['PRICES_NO'].format(
-                                               name, message_symbol, origin_symbol, isin, ''))
-                        else:
-                            dataframe = dataframe.reset_index()
-                            dataframe[DB_symbol] = symbol
-                            dataframe.rename(columns=columns, inplace=True)
-                            if origin_symbol == YAHOO:
-                                dataframe[DB_origin] = YAHOO
-                            elif origin_symbol == ALPHA_VANTAGE:
-                                dataframe[DB_origin] = ALPHA_VANTAGE
-                            try:
-                                dataframe[DB_price_date] = dataframe[DB_price_date].apply(
-                                    lambda x: x.date())
-                            except Exception:
-                                pass
-                            dataframe = dataframe.set_index(
-                                [DB_symbol, DB_price_date])
-                            dataframe.sort_index(inplace=True)
-                            period = (
-                                dataframe.index[0][1], dataframe.index[-1][1])
-                            self.mariadb.execute_delete(
-                                PRICES, symbol=symbol, period=period)
-                            if mariadb.import_prices(title, dataframe):
-                                MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                               message=MESSAGE_TEXT['PRICES_LOADED'].format(
-                                                   name, period, message_symbol, isin))
 
     def _import_server(self):
 
@@ -2034,12 +1901,14 @@ class BankenLedger(object):
 
                 else:
                     # HOLDING Account
+                    all_max_price_date = self.mariadb.select_max_column_value(
+                        HOLDING, DB_price_date)
                     max_price_date = self.mariadb.select_max_column_value(
                         HOLDING, DB_price_date, iban=iban)
                     price_date = date_days.subtract(date.today(), 1)
                     if date_days.isweekend(price_date):
                         price_date = date_days.subtract(price_date, 1)
-                    if max_price_date and max_price_date >= price_date:
+                    if max_price_date and max_price_date >= all_max_price_date:  # if its an emty holding account
                         fields = [DB_total_amount_portfolio,
                                   DB_amount_currency]
                         balance = self.mariadb.select_table(
@@ -2070,17 +1939,33 @@ class BankenLedger(object):
                                                     balance_previous[DB_amount_currency]
                                                     ))
                     else:
-                        balances.append(Balance(bank_code,
-                                                acc[KEY_ACC_ACCOUNT_NUMBER],
-                                                acc[KEY_ACC_PRODUCT_NAME],
-                                                price_date,
-                                                '',
-                                                0,
-                                                '',
-                                                '',
-                                                0,
-                                                ''
-                                                ))
+                        ledger_total_amount = self.mariadb.select_ledger_total_amount(iban)
+                        if ledger_total_amount:
+                            balances.append(Balance(bank_code,
+                                                    acc[KEY_ACC_ACCOUNT_NUMBER],
+                                                    acc[KEY_ACC_PRODUCT_NAME],
+                                                    ledger_total_amount[DB_entry_date],
+                                                    ledger_total_amount[DB_status],
+                                                    ledger_total_amount[DB_amount],
+                                                    ledger_total_amount[DB_entry_date],
+                                                    ledger_total_amount[DB_status],
+                                                    ledger_total_amount[DB_amount],
+                                                    ''
+                                                    ))                        
+                        
+                        
+                        else:
+                            balances.append(Balance(bank_code,
+                                                    acc[KEY_ACC_ACCOUNT_NUMBER],
+                                                    acc[KEY_ACC_PRODUCT_NAME],
+                                                    price_date,
+                                                    '',
+                                                    0,
+                                                    '',
+                                                    '',
+                                                    0,
+                                                    ''
+                                                    ))
         return balances
 
     def _show_statements(self, bank_code, account):
@@ -2140,7 +2025,7 @@ class BankenLedger(object):
                           MENU_TEXT['Transactions'], label])
         data_dict = {FN_FROM_DATE: date_days.subtract(
             date.today(), 360), FN_TO_DATE: date.today()}
-        message = MESSAGE_TEXT['HELP_PANDASTABLE']        
+        message = MESSAGE_TEXT['HELP_PANDASTABLE']
         while True:
             date_transaction_view = InputDateTable(
                 title=title, data_dict=data_dict, table=TRANSACTION_VIEW)
@@ -2176,9 +2061,10 @@ class BankenLedger(object):
         bank_name = self._bank_name(bank_code)
         title = ' '.join(
             [MENU_TEXT['Show'], bank_name, MENU_TEXT['Holding'] + '%', label])
-        data_dict = {FN_FROM_DATE: (
-            date.today() - timedelta(days=1)), FN_TO_DATE: date.today()}
-        self.mariadb.execute_delete(GEOMETRY,caller=title)
+        data_dict = {FN_FROM_DATE: date_days.convert(date.today() - timedelta(days=1)),
+                     FN_TO_DATE: date_days.convert(date.today())}
+        self.mariadb.selection_put(title, data_dict)    # start with current day
+        self.mariadb.execute_delete(GEOMETRY, caller=title)
         while True:
             input_period = InputDateHolding(title=title, data_dict=data_dict,
                                             container_dict={DB_iban: iban})
@@ -2451,13 +2337,15 @@ class BankenLedger(object):
         from_date = date(datetime.now().year - 1, 1, 1)
         to_date = date(datetime.now().year, 12, 31)
         period = (from_date, to_date)
+        message = MESSAGE_TEXT['HELP_CHECK_UPLOAD']
         while True:
             data = self.mariadb.select_table(
                 LEDGER_VIEW, field_list, result_dict=True,
                 date_name=DB_entry_date, period=period, upload_check=False, origin=ORIGIN)
             if data:
                 table = PandasBoxLedgerTable(
-                    title, data, None)
+                    title, data, message)
+                message = table.message
                 if table.button_state == WM_DELETE_WINDOW:
                     break
             else:
@@ -2515,8 +2403,10 @@ class BankenLedger(object):
         if title is None:
             title = ' '.join([MENU_TEXT['Ledger'],
                              MENU_TEXT['Account']])
-        data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
-            datetime.now().year, 12, 31)}
+        data_dict = self.mariadb.selection_get(title)
+        if not data_dict:
+            data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1),
+                         FN_TO_DATE: date(datetime.now().year, 12, 31)}
         while True:
             select_ledger_account = SelectLedgerAccount(
                 title=title, data_dict=data_dict)
@@ -2530,6 +2420,7 @@ class BankenLedger(object):
             field_list = list(filter(lambda x: data_dict[x] == 1, list(
                 data_dict.keys())))  # filter selected check_buttons
             selected_row = 0
+            message = MESSAGE_TEXT['HELP_PANDASTABLE']
             while True:
                 title_period = '  '.join(
                     [title, account, account_name, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
@@ -2543,7 +2434,8 @@ class BankenLedger(object):
 
                 if data:
                     table = PandasBoxLedgerTable(
-                        title_period, data, None, mode=EDIT_ROW, selected_row=selected_row)
+                        title_period, data, message, mode=EDIT_ROW, selected_row=selected_row)
+                    message = table.message
                     selected_row = table.selected_row
                     if table.button_state == WM_DELETE_WINDOW:
                         break
@@ -2560,7 +2452,7 @@ class BankenLedger(object):
         field_list = TABLE_FIELDS[LEDGER_VIEW]
         data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
             datetime.now().year, 12, 31)}
-        message = MESSAGE_TEXT['HELP_PANDASTABLE']        
+        message = MESSAGE_TEXT['HELP_PANDASTABLE']
         while True:
             input_period = InputPeriod(title=title, data_dict=data_dict)
             if input_period.button_state == WM_DELETE_WINDOW:

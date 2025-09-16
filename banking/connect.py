@@ -5,21 +5,20 @@ Author: Wolfang Kramer
 """
 
 from PIL import ImageTk
-
 from mariadb import connect, Error
-from tkinter import Tk, TclError, Canvas, StringVar, GROOVE    
+from tkinter import Tk, TclError, Canvas, StringVar, GROOVE
 from tkinter.ttk import Style, Entry, Label, Combobox, Button
+
 from banking.declarations import (
-    MESSAGE_TITLE, MESSAGE_TEXT, WARNING,
+    MESSAGE_TITLE, MESSAGE_TEXT,
     MARIADB_NAME,
     MARIADB_USER,
     MARIADB_PASSWORD,
-    MARIADB_HOST   
+    MARIADB_HOST
 )
-from banking.declarations_mariadb import APPLICATION, DB_directory, DB_logging, CREATE_APPLICATION
+from banking.declarations_mariadb import APPLICATION, DB_directory, DB_logging
 from banking.mariadb import MariaDB
 from banking.formbuilts import WM_DELETE_WINDOW, BUTTON_OK, END
-from banking.messagebox import MessageBoxInfo, MessageBoxAsk
 
 
 class Connect(object):
@@ -29,9 +28,6 @@ class Connect(object):
     """
 
     def __init__(self, title=MESSAGE_TITLE):
-
-
-        
         self.directory = ''
         self.logging = False
         self.connected = False
@@ -40,7 +36,7 @@ class Connect(object):
         self.window.geometry('600x450+1+1')
         self.window.resizable(0, 0)
         self.canvas = Canvas(self.window, width=600, height=400)
-        self.canvas.pack(fill="both", expand=True)            
+        self.canvas.pack(fill="both", expand=True)
         try:
             self.bg_photo = ImageTk.PhotoImage(file="background.gif")
             self.canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
@@ -50,7 +46,7 @@ class Connect(object):
         self.user = 'root'
         self.password = 'FINTS'
         self.host = 'localhost'
-        self._create_connect_form()            
+        self._create_connect_form()
         self.footer = StringVar()
         self.message_widget = Label(self.window,
                                     textvariable=self.footer, foreground='RED', justify='center')
@@ -105,9 +101,8 @@ class Connect(object):
         self.canvas.create_window(150, 160, window=self.db_label, anchor="e")
         self.canvas.create_window(160, 160, window=self.db_combo, anchor="w")
 
-       
         self.connect_button = Button(self.window, text=BUTTON_OK, command=self._connect_to_db)
-        self.canvas.create_window(300, 240, window=self.connect_button)        
+        self.canvas.create_window(300, 240, window=self.connect_button)
 
     def _add_labeled_entry(self, label_text, field_value, length, show=None):
         label = Label(self.window, text=label_text)
@@ -138,7 +133,7 @@ class Connect(object):
             cursor.execute("SHOW DATABASES")
             self.databases = [db[0] for db in cursor.fetchall()]
             mariadb_databases = ['information_schema', 'mysql', 'performance_schema', 'sys']
-            self.databases[:] = [x for x in self.databases if x not in set(mariadb_databases)]            
+            self.databases[:] = [x for x in self.databases if x not in set(mariadb_databases)]
             self.db_combo['values'] = self.databases
             if self.databases:
                 self.db_combo.set(self.databases[0])
@@ -161,13 +156,5 @@ class Connect(object):
             self.logging = result[0][DB_logging]
             self.directory = result[0][DB_directory]
         else:
-            self.logging = False    
+            self.logging = False
         self.window.destroy()
-  
-       
-  
-                     
-
-
-
-

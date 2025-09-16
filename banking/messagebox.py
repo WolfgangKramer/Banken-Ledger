@@ -7,27 +7,18 @@ __updated__ = "2025-07-17"
 import inspect
 import sys
 
-
 from tkinter import (
-    Tk, TclError,  messagebox )
-
+    Tk, TclError, messagebox
+    )
 
 from banking.declarations import (
-
- Informations,
-    ERROR, 
-
-    INFORMATION,
-
-    MESSAGE_TEXT, MESSAGE_TITLE,
-
-)
-
+    Informations, ERROR, INFORMATION,
+    MESSAGE_TEXT, MESSAGE_TITLE
+    )
 from banking.utils import (
     check_main_thread, exception_error,
     bankdata_informations_append, prices_informations_append
-)
-
+    )
 
 
 def extend_message_len(title, message):
@@ -43,8 +34,6 @@ def extend_message_len(title, message):
             return message
     except Exception:
         return message
-
-
 
 
 def destroy_widget(widget):
@@ -150,5 +139,3 @@ class MessageBoxAsk():
             self.result = messagebox.askyesno(
                 title=title, message=message, default='no')
             destroy_widget(window)
-
-

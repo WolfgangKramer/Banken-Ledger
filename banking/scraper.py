@@ -189,8 +189,7 @@ class AlphaVantage(object):
                 self.function_list.sort()
                 self.driver.quit()
                 self.mariadb.alpha_vantage_put(DB_alpha_vantage_function, self.function_list)
-                self.mariadb.alpha_vantage_put(DB_alpha_vantage_parameter, self.parameter_dict) 
-                
+                self.mariadb.alpha_vantage_put(DB_alpha_vantage_parameter, self.parameter_dict)
                 return error
             except Exception as error:
                 print(error)
@@ -257,7 +256,7 @@ class BmwBank(object):
                 """
                 The driver.quit() method is used to close all open browser windows or tabs and terminate the WebDriver session.
                 This method is typically used at the end of a test script
-                to ensure that all browser instances are closed properly and any associated resources are released.                
+                to ensure that all browser instances are closed properly and any associated resources are released.
                 """
                 self.opened_bank_code = None
                 self.driver.quit()

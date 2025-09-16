@@ -5,6 +5,7 @@ Only German banks with FINTS access and PIN/TAN authentication
  * Transfers and appointment transfers
  * Depot and historical price data evaluations
  * Transfer bank statements to Ledger application tables
+ * Charts of 43 technical indicators (see PyPi ta) with implicit download of share prices
 # Free registrations
  * Request a free HBCI-ZKA registration key https://www.hbci-zka.de/
  * Request a free API key https://www.alphavantage.co/support/#support

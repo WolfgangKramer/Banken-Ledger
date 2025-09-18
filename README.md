@@ -10,8 +10,8 @@ Only German banks with FINTS access and PIN/TAN authentication
  * Request a free HBCI-ZKA registration key https://www.hbci-zka.de/
  * Request a free API key https://www.alphavantage.co/support/#support
 # Installing on Windows
-* Install MariaDB 10.5 and create an empty database >banken<
-* Install Python 3.13.3
+* Install MariaDB 11.8 and create an empty database >banken<
+* Install Python 3.13.5
 * Download GitHub project from https://github.com/WolfgangKramer/Banken-Ledger
 The directory structure, should look like this:  
 <pre>

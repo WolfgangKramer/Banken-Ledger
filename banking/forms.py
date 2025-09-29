@@ -61,7 +61,7 @@ from banking.declarations import (
     FN_COMPARATIVE,
     FN_DATE, FN_PROFIT_LOSS, FN_TOTAL_PERCENT, FN_PERIOD_PERCENT, FN_DAILY_PERCENT,
     FN_FROM_DATE, FN_TO_DATE,
-    FN_SHARE, FN_TOTAL,
+    FN_SHARE,  FN_INDEX, FN_TOTAL,
     FN_PROFIT_CUM, FN_PIECES_CUM, FN_PROFIT,
     HTTP_CODE_OK,
     Informations,
@@ -91,21 +91,25 @@ from banking.declarations import (
     ToolbarSwitch, TIME_SERIES_DAILY,
     TRANSACTION_TYPES, TRANSACTION_RECEIPT, TRANSACTION_DELIVERY,
     VALIDITY_DEFAULT, WARNING, KEY_ACC_ACCOUNT_NUMBER, NOT_ASSIGNED, YAHOO,
-    WWW_YAHOO)
-from banking.formbuilts import (
-    Caller, COMBO, CHECK,
-    BuiltTableRowBox, BuiltPandasBox, BuiltCheckButton, BuiltEnterBox, BuiltText, BuiltSelectBox,
+    WWW_YAHOO,
+
+    COMBO, CHECK,
     BUTTON_OK, BUTTON_ALPHA_VANTAGE, BUTTON_DATA, BUTTON_CREDIT, BUTTON_COPY, BUTTON_DEBIT,
     BUTTON_SAVE, BUTTON_NEW, BUTTON_APPEND, BUTTON_REPLACE, BUTTON_NEXT, BUTTON_UPDATE,
     BUTTON_DELETE, BUTTON_DELETE_ALL, BUTTON_STANDARD, BUTTON_SAVE_STANDARD, BUTTON_SELECT_ALL,
     BUTTON_PRICES_IMPORT,
     COLOR_HOLDING, COLOR_NOT_ASSIGNED, COLOR_ERROR,
     ENTRY,
-    FieldDefinition, FORMAT_FIXED,
+    FORMAT_FIXED,
     NUMERIC,
     STANDARD,
     TYP_DECIMAL, TYP_DATE, TYP_ALPHANUMERIC,
-    WM_DELETE_WINDOW, FORMAT_VARIABLE, destroy_widget, )
+    WM_DELETE_WINDOW, FORMAT_VARIABLE, TRUE,
+    )
+from banking.formbuilts import (
+    Caller,
+    BuiltTableRowBox, BuiltPandasBox, BuiltCheckButton, BuiltEnterBox, BuiltText, BuiltSelectBox,
+    FieldDefinition, destroy_widget, )
 from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.utils import (
     application_store,
@@ -968,7 +972,7 @@ class BankDelete(BuiltEnterBox):
         self.field_dict[KEY_BANK_NAME] = getattr(
             self._field_defs, KEY_BANK_NAME).widget.get()
         self.quit_widget()
-
+        
     def comboboxselected_action(self, event):
 
         getattr(self._field_defs, KEY_BANK_NAME).textvar.set(self.mariadb.shelve_get_key(
@@ -990,11 +994,15 @@ class IsinTableRowBox(BuiltTableRowBox):
     def focus_out_action(self, event):
 
         if event.widget.myId == DB_ISIN:
-            isin_code = getattr(self._field_defs, DB_ISIN).widget.get()
-            isin_name = self.mariadb.select_table(
-                ISIN, [DB_name], isin_code=isin_code)
-            if isin_name:
-                getattr(self._field_defs, DB_name).textvar.set(isin_name[0])
+            if getattr(self._field_defs, DB_type).widget.get()==FN_INDEX:
+                isin_name = getattr(self._field_defs, DB_name).widget.get()
+                getattr(self._field_defs, DB_ISIN).textvar.set(isin_name.ljust(12, "0"))
+            else:    
+                isin_code = getattr(self._field_defs, DB_ISIN).widget.get()
+                isin_name = self.mariadb.select_table(
+                    ISIN, [DB_name], isin_code=isin_code)
+                if isin_name:
+                    getattr(self._field_defs, DB_name).textvar.set(isin_name[0])
         if event.widget.myId == DB_name:
             isin_name = getattr(self._field_defs, DB_name).widget.get()
             isin_code = self.mariadb.select_table(
@@ -1016,6 +1024,9 @@ class IsinTableRowBox(BuiltTableRowBox):
                     origin_symbol)
                 getattr(self._field_defs, DB_currency).textvar.set(currency)
                 getattr(self._field_defs, DB_industry).textvar.set(industry)
+        if event.widget.myId==DB_type and getattr(self._field_defs, DB_type).widget.get()==FN_INDEX:
+            isin_name = getattr(self._field_defs, DB_name).widget.get()
+            getattr(self._field_defs, DB_ISIN).textvar.set(isin_name[:12].ljust(12, "_"))
         if event.widget.myId == DB_origin_symbol:
             if ALPHA_VANTAGE == getattr(self._field_defs, DB_origin_symbol).widget.get():
                 key_alpha_vantage = application_store.get(DB_alpha_vantage)
@@ -1069,6 +1080,7 @@ class IsinTableRowBox(BuiltTableRowBox):
         elif field_def.name == DB_ISIN:
             isin_code = getattr(self._field_defs, DB_ISIN).widget.get()
             if not isin_code[0].isalpha():
+                # necessary because of use as field name in named tuples (otherwise runtime error)
                 self.footer.set(MESSAGE_TEXT['ISIN_ALPHABETIC'])
 
 
@@ -1747,9 +1759,12 @@ class PandasBoxIsinTable(BuiltPandasBox):
 
         row_dict = self.get_selected_row()
         if row_dict:
-            protected = [DB_ISIN]
+            if row_dict[DB_type]==FN_INDEX:
+                protected=[DB_ISIN, DB_type, DB_wkn, DB_industry]
+            else:    
+                protected = [DB_ISIN, DB_type]
             mandatory = [DB_name, DB_type, DB_validity, DB_currency]
-            focus_out = [DB_ISIN, DB_name, DB_origin_symbol]
+            focus_out = [DB_ISIN, DB_name, DB_type, DB_origin_symbol]
             upper = [DB_symbol]
             if row_dict[DB_symbol] == NOT_ASSIGNED:
                 button3_text = None
@@ -1776,7 +1791,7 @@ class PandasBoxIsinTable(BuiltPandasBox):
     def new_row(self):
 
         mandatory = [DB_ISIN, DB_name, DB_type, DB_validity, DB_currency]
-        focus_out = [DB_ISIN, DB_name, DB_origin_symbol]
+        focus_out = [DB_ISIN, DB_name, DB_type, DB_origin_symbol]
         upper = [DB_symbol]
         row_dict = {}
         row_dict[DB_type] = FN_SHARE
@@ -2114,8 +2129,13 @@ class PandasBoxLedgerTable(BuiltPandasBox):
         self.data = data
         self.period = period
         self.mariadb = MariaDB()
-        self.message = message
         self.selected_row = selected_row
+        result = MariaDB().select_ledger_statement_missed(self.period)
+        if result:
+            self.credit_statement_missed, self.debit_statement_missed = result
+        else:
+            self.credit_statement_missed = self.debit_statement_missed = []
+        self.message = message     
         if data:
             super().__init__(title=title, dataframe=data, message=message,
                              mode=mode, selected_row=self.selected_row)
@@ -2151,44 +2171,27 @@ class PandasBoxLedgerTable(BuiltPandasBox):
             self.pandas_table.setColorByMask(
                 DB_debit_account, self.dataframe[DB_debit_account] == NOT_ASSIGNED, COLOR_ERROR)
         if column == DB_credit_account:
-            mask = self.dataframe[[DB_credit_account, DB_id_no]].apply(
-                lambda x: self._ledger_statement_connection(*x, status=CREDIT), axis=1)
+            mask = self.dataframe[DB_id_no].apply(
+                lambda x: True if x in self.credit_statement_missed else False )
             self.pandas_table.setColorByMask(
                 DB_credit_account, mask, COLOR_ERROR)
         if column == DB_debit_account:
-            mask = self.dataframe[[DB_debit_account, DB_id_no]].apply(
-                lambda x: self._ledger_statement_connection(*x, status=DEBIT), axis=1)
+            mask = self.dataframe[DB_id_no].apply(
+                lambda x: True if x in self.debit_statement_missed else False )
             self.pandas_table.setColorByMask(
                 DB_debit_account, mask, COLOR_ERROR)
 
-    def _ledger_statement_connection(self, account, id_no, status=CREDIT):
-
-        if account != float('nan'):
-            return False
-        ledger_coa = self.mariadb.select_table(
-            LEDGER_COA, '*', result_dict=True, account=account)
-        if ledger_coa:
-            ledger_coa = ledger_coa[0]
-            if ledger_coa[DB_iban] == NOT_ASSIGNED:
-                # its not a bank account
-                return False
-            else:
-                # its a bank account
-                if ledger_coa[DB_portfolio]:
-                    # its a holding bank account
-                    return False
-                else:
-                    # its a statement bank account
-                    if self.mariadb.row_exists(LEDGER_STATEMENT, id_no=id_no, status=status):
-                        # ledger_statement connection exists
-                        return False
-                    else:
-                        return True
+    def _ledger_statement_missed(self, id_no, status=DEBIT):
+        """
+        Determines the bank accounts in the ledger table
+        that have no assignment to a bank transaction
+        """
+        highlight_list = MariaDB().select_ledger_statement_missed(status, self.period)         
+        if id_no in highlight_list:
             return True
         else:
-            # invalid account or not assigned
-            return True
-
+            return False
+         
     def show_row(self):
 
         row_dict = self.get_selected_row()
@@ -2564,7 +2567,7 @@ class PandasBoxLedgerStatement(BuiltPandasBox):
             else:
                 MessageBoxInfo(MESSAGE_TEXT['LEDGER_STATEMENT_ASSIGMENT_EMPTY'].format(
                     self.ledger_dict[DB_id_no], self.ledger_dict[DB_debit_account]))
-            self.abort = True    
+            self.abort = True
             destroy_widget(self.dataframe_window)
 
     def processing(self):
@@ -2826,7 +2829,7 @@ class PandasBoxTotals(BuiltPandasBox):
         self.dataframe = self.dataframe.iloc[1:]
         dict1 = self.mariadb.select_dict(LEDGER_COA, DB_iban, DB_name)
         dict2 = self.mariadb.select_dict(LEDGER_COA, DB_account, DB_name)
-        self.dataframe.columns = [col[1] for col in self.dataframe.columns] # column header with 2 levels
+        self.dataframe.columns = [col[1] for col in self.dataframe.columns]  # column header with 2 levels
         self.dataframe = self.dataframe.rename(columns=lambda c: dict1.get(c, dict2.get(c, c)))
 
     def ffill_dataframe(self):
@@ -3110,8 +3113,8 @@ class TechnicalIndicators(InputISIN):
         }
     # indicator columns of dataframe created by ta.add_all_ta_features
     TA_VOLUME = {
-        'AccDistIndexIndicator': ['volume_adi', 'volume'],
-        'OnBalanceVolumeIndicator': ['volume_obv', 'volume'],
+        'AccDistIndexIndicator': ['volume_adi'],
+        'OnBalanceVolumeIndicator': ['volume_obv'],
         'ChaikinMoneyFlowIndicator': ['volume_cmf'],
         'ForceIndexIndicator': ['volume_fi'],
         'EaseOfMovementIndicator': ['volume_em', 'volume_sma_em'],
@@ -3122,13 +3125,11 @@ class TechnicalIndicators(InputISIN):
         }
     TA_VOLATILITY = {
         'BollingerBands': ['volatility_bbm', 'volatility_bbh', 'volatility_bbl', 'volatility_bbw',
-                           'volatility_bbp', 'volatility_bbhi', 'volatility_bbli',
-                           'close', 'low', 'high'],
+                           'volatility_bbp', 'volatility_bbhi', 'volatility_bbli'],
         'KeltnerChannel': ['volatility_kch', 'volatility_kcl', 'volatility_kcw', 'volatility_kcp',
                            'volatility_kchi', 'volatility_kcli'],
         'DonchianChannel': ['volatility_dcl', 'volatility_dch', 'volatility_dcm', 'volatility_dcw',
-                            'volatility_dcp',
-                            'close', 'low', 'high'],
+                            'volatility_dcp'],
         'AverageTrueRange': ['volatility_atr'],
         'UlcerIndex': ['volatility_ui']
         }
@@ -3246,7 +3247,7 @@ class TechnicalIndicators(InputISIN):
         except Exception as e:
             import traceback
             print("Error in menu command:", e)
-            traceback.print_exc()         
+            traceback.print_exc()
 
     def _indicator_columns(self, dataframe, columns):
 

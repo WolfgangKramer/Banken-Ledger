@@ -30,9 +30,8 @@ from fints.segments.statement import HKKAZ6, HKKAZ7
 from fints.segments.transfer import HKCCS1
 from fints.types import SegmentSequence
 
-from banking.declarations import MESSAGE_TEXT, PNS, SYSTEM_ID_UNASSIGNED
+from banking.declarations import MESSAGE_TEXT, PNS, SYSTEM_ID_UNASSIGNED, WM_DELETE_WINDOW
 from banking.fints_extension import HKCSE1
-from banking.formbuilts import WM_DELETE_WINDOW
 from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.forms import InputTAN
 

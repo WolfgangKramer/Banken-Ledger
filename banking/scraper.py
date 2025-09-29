@@ -34,6 +34,8 @@ from banking.declarations import (
     MESSAGE_TEXT, MENU_TEXT, PNS,
     SCRAPER_BANKDATA, SHELVE_KEYS,
     ERROR, WARNING,
+    # form declaratives
+    WM_DELETE_WINDOW,
 )
 from banking.declarations_mariadb import (
     STATEMENT,
@@ -42,7 +44,6 @@ from banking.declarations_mariadb import (
     DB_closing_balance, DB_closing_entry_date, DB_closing_status,
     DB_opening_balance, DB_opening_entry_date, DB_opening_status
 )
-from banking.formbuilts import WM_DELETE_WINDOW
 from banking.messagebox import (MessageBoxError, MessageBoxInfo)
 from banking.forms import InputPIN
 from banking.utils import (

@@ -29,7 +29,6 @@ from banking.forms import InputPIN
 from banking.utils import application_store, http_error_code
 
 
-
 class InitBank(object):
     """
     Data Bank Dialogue

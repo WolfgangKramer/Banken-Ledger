@@ -47,9 +47,10 @@ from banking.declarations import (
     KEY_ACC_BANK_CODE, KEY_ACC_CURRENCY, KEY_ACC_CUSTOMER_ID, KEY_ACC_OWNER_NAME,
     KEY_ACC_PRODUCT_NAME, KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_TYPE,
     PNS,
-    WARNING)
+    WARNING,
+    # form declaratives
+    WM_DELETE_WINDOW)
 from banking.fints_extension import HIKAZS6, HIKAZS7,  HIWPDS5, HIWPDS6
-from banking.formbuilts import WM_DELETE_WINDOW
 from banking.messagebox import (MessageBoxTermination, MessageBoxInfo, MessageBoxAsk)
 from banking.forms import PrintMessageCode, InputPIN
 from banking.message import Messages

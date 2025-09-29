@@ -37,7 +37,7 @@ from banking.declarations_mariadb import (
     DB_acquisition_price, DB_total_amount,
     DB_total_amount_portfolio, DB_amount, DB_amount_currency, DB_closing_balance,
     DB_closing_currency, DB_price,
-    DB_iban, DB_entry_date, DB_symbol, DB_counter, DB_ISIN, DB_id_no
+    DB_iban, DB_entry_date, DB_symbol, DB_counter, DB_ISIN, DB_id_no,
 )
 from banking.declarations import (
 
@@ -47,6 +47,22 @@ from banking.declarations import (
     HEIGHT_TEXT,
     MESSAGE_TEXT, MESSAGE_TITLE,
     NO_CURRENCY_SIGN, NUMERIC, NOT_ASSIGNED,
+    # form declaratives
+    ENTRY,
+    COMBO,
+    CHECK,
+    BUTTON_NEXT,
+    BUTTON_OK,
+    BUTTON_DELETE_ALL,
+    BUTTON_RESTORE,
+    BUTTON_SAVE,
+    BUTTON_SELECT_ALL,
+    COLOR_NEGATIVE,
+    FORMAT_FIXED,
+    FORMAT_VARIABLE,
+    TYP_ALPHANUMERIC,
+    TYP_DECIMAL,
+    TYP_DATE,
 )
 from banking.pandastable_extension import Table, TableRowEdit
 from banking.utils import (
@@ -55,55 +71,6 @@ from banking.utils import (
     )
 from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.mariadb import MariaDB
-
-ENTRY = 'Entry'
-COMBO = 'ComboBox'
-CHECK = 'CheckButton'
-TEXT = 'Text'
-
-BUTTON_ALPHA_VANTAGE = 'ALPHA_VANTAGE'
-BUTTON_APPEND = 'APPEND'
-BUTTON_CREDIT = 'SHOW CREDIT'
-BUTTON_CREATE = 'CREATE'
-BUTTON_COPY = 'COPY'
-BUTTON_DEBIT = 'SHOW DEBIT'
-BUTTON_DELETE = 'DELETE'
-BUTTON_DELETE_ALL = 'DELETE ALL'
-BUTTON_DATA = 'DATA'
-BUTTON_INIT = 'INIT'
-BUTTON_PRICES_IMPORT = 'IMPORT PRICES'
-BUTTON_NEXT = 'NEXT'
-BUTTON_NEW = 'NEW'
-BUTTON_OK = 'OK'
-BUTTON_PRINT = 'PRINT'
-BUTTON_PREVIOUS = 'PREVIOUS'
-BUTTON_QUIT = 'QUIT'
-BUTTON_QUIT_ALL = 'QUIT ALL'
-BUTTON_REPLACE = 'REPLACE'
-BUTTON_RESTORE = 'RESTORE'
-BUTTON_SAVE = 'SAVE'
-BUTTON_SAVE_STANDARD = 'SAVE as Standard'
-BUTTON_SELECT_ALL = 'SELECT All'
-BUTTON_SELECT = 'SELECT'
-BUTTON_STANDARD = 'STANDARD'
-BUTTON_STORE = 'STORE'
-BUTTON_UPDATE = 'UPDATE'
-
-COLOR_ERROR = 'red'
-COLOR_NOT_ASSIGNED = 'cyan'
-COLOR_NEGATIVE = 'darkorange'
-COLOR_HOLDING = 'yellow'
-COLUMN_FORMATS_LEFT = 'LEFT'
-COLUMN_FORMATS_RIGHT = 'RIGHT'
-COLUMN_FORMATS_CURRENCY = 'CURRENCY'
-COLUMN_FORMATS_COLOR_NEGATIVE = 'COLOR_NEGATIVE'
-STANDARD = 'STANDARD'
-FORMAT_FIXED = 'F'
-FORMAT_VARIABLE = 'V'
-TYP_ALPHANUMERIC = 'X'
-TYP_DECIMAL = 'D'
-
-TYP_DATE = 'DAT'
 
 # package pandastable: standard values  (see class table self.font and self.fontsize
 ROOT_WINDOW_POSITION = '+100+100'
@@ -560,7 +527,7 @@ class BuiltBox(object):
                     (0, 0), window=self._box_window, anchor="nw")
                 canvas.grid(row=self._row, column=0, sticky="nsew")
                 self.frame.grid_rowconfigure(0, weight=1)
-                self.frame.grid_columnconfigure(0, weight=1)                
+                self.frame.grid_columnconfigure(0, weight=1)
                 scrollbar = Scrollbar(
                     self.frame, orient="vertical", command=canvas.yview)
                 canvas.configure(yscrollcommand=scrollbar.set,
@@ -597,10 +564,8 @@ class BuiltBox(object):
                 title=title, message=MESSAGE_TEXT['THREAD'].format(Caller.caller))
 
     def calculate_width_canvas(self):
-        # Get the number of rows and columns
+        # Get the number of (rows not used and) columns
         _, columns = self._box_window_top.grid_size()
-        # Get the bounding box of the column
-        rows, columns = self._box_window_top.grid_size()
         width_canvas = 0
         for column_index in range(columns):
             bbox = self._box_window_top.grid_bbox(column=column_index, row=0)
@@ -1674,7 +1639,7 @@ class BuiltPandasBox(Frame):
                              size=self.pandas_table.fontsize)
             if instant_plotting:
                 self.set_geometry()
-                self.pandas_table. plotSelected()
+                self.pandas_table.plotSelected()
                 self.dataframe_window.withdraw()
             else:
                 self.column_width = self._get_col_width()
@@ -1826,7 +1791,7 @@ class BuiltPandasBox(Frame):
 
     def _get_pandastable_height(self):
 
-        height = int((self.pandas_table.rows + 5) *
+        height = int((self.pandas_table.rows + 8) *
                      (self.pandas_table.rowheight + 3))
         screenheight = self.dataframe_window.winfo_screenheight()
         if height > screenheight:

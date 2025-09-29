@@ -231,6 +231,7 @@ MESSAGE_TEXT = {
     'LEDGER_ACTIVATE': 'Ledger activated',
     'LEDGER_ROW': 'No additional statement data available for table row ',
     'LEDGER_STATEMENT_ASSIGMENT_EMPTY': 'There are no assignment statements for ledger IdNo {} and Ledger Account {}',
+    'LEDGER_STATEMENT_ASSIGMENT_MISSED': 'Update and select new assignment (statement) of credit/debit accounts marked in red !',
     'LENGTH': '{} Exceeds Length OF {} Characters',
     'LOAD_DATA': 'Data imported if no message was displayed previously \nfrom File {}',
     'LOGGING_ACTIVE': 'Logging activated',
@@ -548,6 +549,7 @@ FN_PERCENTAGE = 'Percentage'
 FN_Y_AXE = 'Y_AXE'
 FN_DATA_MODE = 'DATA_MODE'
 FN_SHARE = 'SHARE'
+FN_INDEX = 'INDEX'
 FN_PROPORTIONAL = 'PROPORTIONAL'
 FN_ABSOLUTE = 'ABSOLUTE'
 FN_TOTAL = 'TOTAL'

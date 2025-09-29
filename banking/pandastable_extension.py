@@ -115,7 +115,7 @@ class MyPlotViewer(PlotViewer):
         indicator = self.table.title.split(" ", 1)[0]
         url = ''.join(["https://www.google.com/search?q=", indicator])
         webbrowser.open(url)
-
+        
 
 class ToolBarBanking(Frame):
     """

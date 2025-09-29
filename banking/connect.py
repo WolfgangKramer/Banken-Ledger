@@ -6,7 +6,7 @@ Author: Wolfang Kramer
 
 from PIL import ImageTk
 from mariadb import connect, Error
-from tkinter import Tk, TclError, Canvas, StringVar, GROOVE
+from tkinter import Tk, TclError, Canvas, StringVar, GROOVE, END
 from tkinter.ttk import Style, Entry, Label, Combobox, Button
 
 from banking.declarations import (
@@ -14,11 +14,12 @@ from banking.declarations import (
     MARIADB_NAME,
     MARIADB_USER,
     MARIADB_PASSWORD,
-    MARIADB_HOST
+    MARIADB_HOST,
+    # form declaratives
+    WM_DELETE_WINDOW, BUTTON_OK
 )
 from banking.declarations_mariadb import APPLICATION, DB_directory, DB_logging
 from banking.mariadb import MariaDB
-from banking.formbuilts import WM_DELETE_WINDOW, BUTTON_OK, END
 
 
 class Connect(object):

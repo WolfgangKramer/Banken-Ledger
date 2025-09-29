@@ -460,11 +460,9 @@ class MariaDB(object):   # Singleton with controlled initialization
         else:
             return ' ', vars_
 
-    def all_accounts(self, bank, holdings):
+    def all_accounts(self, bank):
         """
         Insert downloaded  Bank Data in Database
-
-        holdings: ignores holdings if False
         """
         for account in bank.accounts:
             bank.account_number = account[KEY_ACC_ACCOUNT_NUMBER]
@@ -486,7 +484,7 @@ class MariaDB(object):   # Singleton with controlled initialization
                                 WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
                             return
                 else:
-                    if 'HKWPD' in account[KEY_ACC_ALLOWED_TRANSACTIONS] and holdings:
+                    if 'HKWPD' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
                         bankdata_informations_append(INFORMATION, information)
                         if self._holdings(bank) is None:
                             bankdata_informations_append(
@@ -931,6 +929,43 @@ class MariaDB(object):   # Singleton with controlled initialization
             return dict(result)
         else:
             return {}
+
+    def select_ledger_statement_missed(self, period):
+        
+        where, vars_ = self._where_clause(date_name=DB_entry_date, period=period)
+        # ledger debit account statement assignment missed        
+        sql_statement =   ("SELECT l.id_no " +
+                           " FROM ledger l " +
+                           " JOIN ledger_coa c " +
+                              "ON l.debit_account = c.account" +
+                              " AND c.download = 1 AND c.portfolio=0 " +
+                              where +
+                            " AND NOT EXISTS ( " +
+                                " SELECT 1 " +
+                                " FROM ledger_statement s " +
+                                " WHERE s.id_no = l.id_no " +
+                                  " AND s.status = '" +  DEBIT + "' );")
+        debit = self.execute(sql_statement, vars_=vars_)
+        if debit:
+            debit = [x[0] for x in debit]        
+        # ledger credit account statement assignment missed          
+        sql_statement =   ("SELECT l.id_no " +
+                           " FROM ledger l " +
+                           " JOIN ledger_coa c " +
+                              "ON l.credit_account = c.account" +
+                              " AND c.download = 1 AND c.portfolio=0 " +
+                              where +
+                            " AND NOT EXISTS ( " +
+                                " SELECT 1 " +
+                                " FROM ledger_statement s " +
+                                " WHERE s.id_no = l.id_no " +
+                                  " AND s.status = '" +  CREDIT + "' );")
+        credit = self.execute(sql_statement, vars_=vars_)
+        if credit:
+            credit = [x[0] for x in credit]
+        return credit, debit
+
+
 
     def select_sepa_fields_in_statement(self, iban, **kwargs):
         """

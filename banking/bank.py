@@ -19,7 +19,7 @@ from banking.declarations import (
     KEY_BPD, KEY_UPD, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS,
     PRODUCT_ID, PNS,
     SCRAPER_BANKDATA,
-    SHELVE_KEYS, SYSTEM_ID_UNASSIGNED,
+    SHELVE_KEYS, SYSTEM_ID_UNASSIGNED, TRUE,
 )
 from banking.declarations_mariadb import DB_product_id
 from banking.dialog import Dialogs
@@ -110,6 +110,9 @@ class InitBank(object):
             self.opened_bank_code = None
 
         self.sepa_credit_transfer_data = None
+        self.sca = True
+        self.challenge_hhduc = None
+        self.challenge = ''
         self.warning_message = False
         self.iban = None
         self.account_number = None

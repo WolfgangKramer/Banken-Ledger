@@ -12,7 +12,10 @@ __updated__ = "2025-05-25"
 import webbrowser
 
 from collections import OrderedDict
-from tkinter import PhotoImage, Menu, HORIZONTAL, VERTICAL, BOTH, TOP, BOTTOM, LEFT, BooleanVar, IntVar, X, RIGHT
+from tkinter import (
+    PhotoImage, Menu, HORIZONTAL, VERTICAL, BOTH, TOP, BOTTOM, LEFT, BooleanVar,
+    IntVar, X, RIGHT
+    )
 from tkinter.ttk import Frame, Checkbutton, Label, Entry
 from pandastable import (
     Table, addButton, images, util, PlotViewer, handlers,
@@ -23,8 +26,12 @@ from pandastable.headers import createSubMenu
 from pandastable.dialogs import applyStyle
 from banking.declarations import (
     ToolbarSwitch, POPUP_MENU_TEXT, MESSAGE_TITLE,
-    EDIT_ROW, CURRENCY_SIGN, NUMERIC, NO_CURRENCY_SIGN,
+    EDIT_ROW, CURRENCY_SIGN, NUMERIC, NO_CURRENCY_SIGN, TechnicalIndicatorData,
+    WM_DELETE_WINDOW,
 )
+from banking.declarations_mariadb import (
+    DB_close,
+    )
 
 BUTTON_NEW = 'NEW'
 BUTTON_DELETE = 'DELETE'
@@ -37,6 +44,21 @@ class MyPlotViewer(PlotViewer):
     Copy of pandastable, plotting.py
     Label Info added
     """
+    WINDOW = []
+
+    def __init__(self, table, parent=None, showoptions=True):
+
+        self.button_state = ''
+        super().__init__(table, parent, showoptions)
+        pass
+
+    def close(self):
+
+        for window in MyPlotViewer.WINDOW:
+            window.destroy()
+        MyPlotViewer.WINDOW = []
+        self.button_state = WM_DELETE_WINDOW
+        PlotViewer.close(self)
 
     def setupGUI(self):
         """Add GUI elements"""
@@ -100,6 +122,8 @@ class MyPlotViewer(PlotViewer):
                   'show/hide plot options', side=RIGHT)
         addButton(bf, 'Info', self.info_website, None,
                   'Info WebSite', side=RIGHT)
+        addButton(bf, 'Add Close', self.add_close, None,
+                  'Add Close', side=RIGHT)
         self.addWidgets()
 
         # def onpick(event):
@@ -115,7 +139,16 @@ class MyPlotViewer(PlotViewer):
         indicator = self.table.title.split(" ", 1)[0]
         url = ''.join(["https://www.google.com/search?q=", indicator])
         webbrowser.open(url)
-        
+
+    def add_close(self):
+
+        TechnicalIndicatorData.TA_CLOSE.append(DB_close)
+
+        for window in MyPlotViewer.WINDOW:
+            window.quit()
+
+        MyPlotViewer.WINDOW = []
+
 
 class ToolBarBanking(Frame):
     """

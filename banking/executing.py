@@ -55,7 +55,7 @@ from banking.declarations import (
     TRANSACTION_DELIVERY, TRANSFER_DATA_SEPA_EXECUTION_DATE,
     WEBSITES, WARNING,
     # form declaratives
-    BUTTON_SAVE,
+    BUTTON_APPEND, BUTTON_SAVE,
     BUTTON_PRICES_IMPORT, BUTTON_REPLACE, BUTTON_RESTORE,
     BUTTON_ALPHA_VANTAGE,
     TYP_DECIMAL,
@@ -84,7 +84,6 @@ from banking.declarations_mariadb import (
     DB_total_amount, DB_price_date,
     DB_total_amount_portfolio, DB_transaction_type,
     DB_symbol, DB_status,
-    DB_splits,
     APPLICATION, GEOMETRY,
     HOLDING, HOLDING_VIEW,
     BANKIDENTIFIER, LEDGER_STATEMENT,
@@ -118,7 +117,7 @@ from banking.forms import (
     PrintList, PrintMessageCode,
     SelectFields, SelectLedgerAccount, SelectLedgerAccountCategory,
     SepaCreditBox,
-    TechnicalIndicators,
+    TechnicalIndicator,
     VersionTransaction, SelectDownloadPrices,
 )
 from banking.mariadb import MariaDB
@@ -624,7 +623,7 @@ class BankenLedger(object):
         if self.bank_names != {} and application_store.get(None):  # application customizing is done
             self._create_menu_show(menu, self.bank_owner_account, menu_font)
             self._create_menu_download(menu, menu_font)
-            self._create_menu_transfer(menu, menu_font)
+            self._create_menu_transfer(menu, self.bank_owner_account, menu_font)
         if application_store.get(None):  # application customizing is done
             self._create_menu_database(
                 menu, menu_font, self.bank_owner_account)
@@ -714,39 +713,15 @@ class BankenLedger(object):
                             command=lambda x=bank_code: self._all_holdings(x))
             download_menu.add_separator()
 
-    def _create_menu_transfer(self, menu, menu_font):
+    def _create_menu_transfer(self, menu, bank_owner_account, menu_font):
         """
         TRANSFER Menu
         """
         transfer_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
         menu.add_cascade(label=MENU_TEXT['Transfer'], menu=transfer_menu)
-        bank_names = {}
-        for bank_name in self.bank_names.values():
-            bank_code = dict_get_first_key(self.bank_names, bank_name)
-            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
-            if accounts:
-                for acc in accounts:
-                    if 'HKCCS' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                        bank_names[bank_code] = bank_name
-        for bank_name in bank_names.values():
-            bank_code = dict_get_first_key(bank_names, bank_name)
-            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
-            account_menu = Menu(transfer_menu, tearoff=0,
-                                font=menu_font, bg='Lightblue')
-            if accounts:
-                for acc in accounts:
-                    if 'HKCCS' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                        label = acc[KEY_ACC_PRODUCT_NAME]
-                        if not label:
-                            label = acc[KEY_ACC_ACCOUNT_NUMBER]
-                        label = ' '.join([MENU_TEXT['Statement'], label])
-                        account_menu.add_command(
-                            label=label,
-                            command=(lambda x=bank_code,
-                                     y=acc: self._sepa_credit_transfer(x, y)))
-            transfer_menu.add_cascade(
-                label=bank_name, menu=account_menu, underline=0)
-            transfer_menu.add_separator()
+        self._create_menu_banks(
+            MENU_TEXT['Transfer'], bank_owner_account, transfer_menu, menu_font)
+
 
     def _create_menu_database(self, menu, menu_font, bank_owner_account):
         """
@@ -862,8 +837,9 @@ class BankenLedger(object):
             if bank_code in bank_owner_account.keys():
                 owner_menu = Menu(typ_menu, tearoff=0,
                                   font=menu_font, bg='Lightblue')
-                owner_menu.add_command(label=MENU_TEXT['Balances'],
-                                       command=lambda x=bank_code, y=bank_name: self._show_balances(x, y))
+                if menu_text == MENU_TEXT['Show']:
+                    owner_menu.add_command(label=MENU_TEXT['Balances'],
+                                           command=lambda x=bank_code, y=bank_name: self._show_balances(x, y))
                 if bank_owner_account:
                     owners_exist = False
                     for owner_name in bank_owner_account[bank_code].keys():
@@ -873,6 +849,9 @@ class BankenLedger(object):
                         if menu_text == MENU_TEXT['Show']:
                             accounts_exist = self._create_menu_show_accounts(
                                 accounts, account_menu, bank_code, bank_name, owner_name=owner_name)
+                        if menu_text == MENU_TEXT['Transfer']:
+                            accounts_exist = self._create_menu_transfer_accounts(
+                                accounts, account_menu, bank_code, bank_name, owner_name=owner_name) 
                         elif menu_text == MENU_TEXT['Database']:
                             accounts_exist = self._create_menu_database_accounts(
                                 accounts, account_menu, bank_name, menu_font)
@@ -892,6 +871,9 @@ class BankenLedger(object):
                 if menu_text == MENU_TEXT['Show']:
                     accounts_exist = self._create_menu_show_accounts(
                         accounts, account_menu, bank_code, bank_name)
+                if menu_text == MENU_TEXT['Transfer']:
+                    accounts_exist = self._create_menu_transfer_accounts(
+                        accounts, account_menu, bank_code, bank_name)                    
                 elif menu_text == MENU_TEXT['Database']:
                     accounts_exist = self._create_menu_database_accounts(
                         accounts, account_menu, bank_name, menu_font)
@@ -929,6 +911,28 @@ class BankenLedger(object):
                         command=(lambda x=bank_code, y=acc: self._show_transactions(x, y)))
         return accounts_exist
 
+
+    def _create_menu_transfer_accounts(self, accounts, account_menu, bank_code, bank_name, owner_name=None):
+
+        accounts_exist = False
+        if accounts:
+            for acc in accounts:
+                if 'HKCCS' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                    accounts_exist = True                    
+                    label = acc[KEY_ACC_PRODUCT_NAME]
+                    if not label:
+                        label = acc[KEY_ACC_ACCOUNT_NUMBER]
+                    label = ' '.join([MENU_TEXT['Statement'], label])
+                    account_menu.add_command(
+                        label=label,
+                        command=(lambda x=bank_code,
+                                 y=acc: self._sepa_credit_transfer(x, y)))
+        return accounts_exist
+
+
+
+
+
     def _create_menu_database_accounts(self, accounts, account_menu, bank_name, menu_font):
 
         accounts_exist = False
@@ -945,7 +949,7 @@ class BankenLedger(object):
                         command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y)))
                     account_menu.add_command(
                         label=MENU_TEXT['Holding ISIN Comparision'] + '%',
-                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y)))
+                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision_percent(x, y)))
                     account_menu.add_command(
                         label=MENU_TEXT['Transaction Detail'],
                         command=(lambda x=bank_name,
@@ -1095,29 +1099,33 @@ class BankenLedger(object):
                 data_dict_isins = input_isins.field_dict
                 selected_isins = list(
                     filter(lambda x: data_dict_isins[x] == 1, list(data_dict_isins.keys())))
-                if data_dict_isins[FN_COMPARATIVE] == FN_PROFIT_LOSS:
-                    db_fields = [DB_name, DB_price_date,
-                                 ''.join([DB_total_amount, '-', DB_acquisition_amount, ' AS ', FN_PROFIT_LOSS])]
-                else:
-                    db_fields = [DB_name, DB_price_date,
-                                 data_dict_isins[FN_COMPARATIVE]]
-                if iban:
-                    selected_holding_data = self.mariadb.select_holding_data(
-                        field_list=db_fields, iban=iban, isin_code=selected_isins,
-                        period=period)
-                else:
-                    selected_holding_data = self.mariadb.select_holding_data(
-                        field_list=db_fields, isin_code=selected_isins, period=period)
-                if selected_holding_data:
-                    self.footer.set('')
-                    title_period = ' '.join([data_dict_isins[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
-                        period[0], period[1])])
-                    while True:
-                        table = PandasBoxIsinComparision(title=title_period, dataframe=(
-                            data_dict_isins[FN_COMPARATIVE], selected_holding_data),
-                            dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
-                        if table.button_state == WM_DELETE_WINDOW:
-                            break
+                # more than one isin selected
+                if len(selected_isins) > 1:                
+                    if data_dict_isins[FN_COMPARATIVE] == FN_PROFIT_LOSS:
+                        db_fields = [DB_name, DB_price_date,
+                                     ''.join([DB_total_amount, '-', DB_acquisition_amount, ' AS ', FN_PROFIT_LOSS])]
+                    else:
+                        db_fields = [DB_name, DB_price_date,
+                                     data_dict_isins[FN_COMPARATIVE]]
+                    if iban:
+                        selected_holding_data = self.mariadb.select_holding_data(
+                            field_list=db_fields, iban=iban, isin_code=selected_isins,
+                            period=period)
+                    else:
+                        selected_holding_data = self.mariadb.select_holding_data(
+                            field_list=db_fields, isin_code=selected_isins, period=period)
+                    if selected_holding_data:
+                        self.footer.set('')
+                        title_period = ' '.join([title, data_dict_isins[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
+                            period[0], period[1])])
+                        while True:
+                            table = PandasBoxIsinComparision(title=title_period, dataframe=(
+                                data_dict_isins[FN_COMPARATIVE], selected_holding_data),
+                                dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
+                            if table.button_state == WM_DELETE_WINDOW:
+                                break
+                    else:
+                        self.footer.set(MESSAGE_TEXT['FIELDLIST_INTERSECTION_EMPTY'])  
                 else:
                     self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
             else:
@@ -1166,7 +1174,7 @@ class BankenLedger(object):
                         iban, data_dict_isins[FN_COMPARATIVE], selected_isins, period=period)
                     if data:
                         self.footer.set('')
-                        title_period = ' '.join([data_dict_isins[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
+                        title_period = ' '.join([title, data_dict_isins[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
                             from_date, to_date)])
                         while True:
                             table = PandasBoxIsinComparisionPercent(title=title_period, dataframe=(
@@ -1174,6 +1182,8 @@ class BankenLedger(object):
                                 dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
                             if table.button_state == WM_DELETE_WINDOW:
                                 break
+                    else:
+                        self.footer.set(MESSAGE_TEXT['FIELDLIST_INTERSECTION_EMPTY'])                            
                 else:
                     self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
             else:
@@ -1336,10 +1346,10 @@ class BankenLedger(object):
         data_dict = {FN_FROM_DATE: date_days.subtract(date.today(), 360),
                      FN_TO_DATE: date.today()}
         while True:
-            ta_data = TechnicalIndicators(
+            ta_data = TechnicalIndicator(
                 title=title, data_dict=data_dict, container_dict=names_dict, selection_name=title)
             if ta_data.button_state == WM_DELETE_WINDOW:
-                return
+                break
             data_dict[DB_ISIN] = ta_data.field_dict[DB_ISIN]
             data_dict[DB_name] = ta_data.field_dict[DB_name]
             data_dict[FN_FROM_DATE] = ta_data.field_dict[FN_FROM_DATE]
@@ -1413,7 +1423,7 @@ class BankenLedger(object):
                      FN_FROM_DATE: START_DATE_TRANSACTIONS,
                      FN_TO_DATE: date(datetime.now().year, 12, 31)}
         names_dict = self.mariadb.select_dict(
-                    ISIN, DB_ISIN, DB_name, iban=iban, order=DB_name)
+                    ISIN, DB_name, DB_ISIN, order=DB_name)
         while True:
             input_isin = InputISIN(title=title, data_dict=data_dict, container_dict=names_dict)
             if input_isin.button_state == WM_DELETE_WINDOW:
@@ -1464,35 +1474,41 @@ class BankenLedger(object):
         data_dict = {FN_FROM_DATE: START_DATE_PRICES,
                      FN_TO_DATE: date_days.convert(date.today())}
         while True:
-            date_prices = InputDatePrices(
-                title=title, data_dict=data_dict, separator=[FN_TO_DATE, DB_splits])
-            if date_prices.button_state == WM_DELETE_WINDOW:
-                return
-            data_dict = date_prices.field_dict
-            selected_check_button = list(
-                filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
-            db_fields = list(TABLE_FIELDS_PROPERTIES[PRICES].keys())
-            # intersection: price fields of table PRICES
-            selected_fields = list(set(db_fields) & set(selected_check_button))
-            selected_isins = list(set(db_fields) ^ set(
-                selected_check_button))  # symetric_difference: selected isin_codes
-            if selected_fields and selected_isins:
-                select_data = self.mariadb.select_table(PRICES_ISIN_VIEW, [DB_name, DB_price_date] + selected_fields,
-                                                        order=DB_name, result_dict=True,
-                                                        isin_code=selected_isins,
-                                                        period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
-                select_origin_dict = dict(self.mariadb.select_table(
-                    ISIN, [DB_name, DB_origin_symbol], isin_code=selected_isins))
-                if select_data:
-                    self.footer.set('')
-                    while True:
-                        price_table = PandasBoxPrices(title=title, dataframe=(
-                            selected_fields, select_data, select_origin_dict, sign), dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
-                        if price_table.button_state == WM_DELETE_WINDOW:
-                            break
+            while True:
+                date_prices = InputDatePrices(
+                    title=title, data_dict=data_dict)
+                if date_prices.button_state == WM_DELETE_WINDOW:
+                    return
+                data_dict = date_prices.field_dict
+                selected_check_button = list(
+                    filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
+                db_fields = list(TABLE_FIELDS_PROPERTIES[PRICES].keys())
+                # intersection: price fields of table PRICES
+                selected_fields = list(set(db_fields) & set(selected_check_button))
+                selected_isins = list(set(db_fields) ^ set(
+                    selected_check_button))  # symetric_difference: selected isin_codes
+                if selected_fields and selected_isins:
+                    result = self.mariadb.select_table(ISIN, DB_name, isin_code=selected_isins)
+                    field_names = [x[0] for x in result]
+                    import_prices_run(title, self.mariadb, field_names, BUTTON_APPEND)
+                    break
                 else:
-                    self.footer.set(
-                        MESSAGE_TEXT['DATA_NO'].format(', '.join(selected_isins), ''))
+                    MessageBoxInfo(title=title, message=MESSAGE_TEXT['SELECT_INCOMPLETE'])
+            select_data = self.mariadb.select_table(PRICES_ISIN_VIEW, [DB_name, DB_price_date] + selected_fields,
+                                                    order=DB_name, result_dict=True,
+                                                    isin_code=selected_isins,
+                                                    period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
+            select_origin_dict = dict(self.mariadb.select_table(
+                ISIN, [DB_name, DB_origin_symbol], isin_code=selected_isins))
+            if select_data:
+                self.footer.set('')
+                while True:
+                    price_table = PandasBoxPrices(title=title, dataframe=(
+                        selected_fields, select_data, select_origin_dict, sign), dataframe_typ=TYP_DECIMAL, mode=NUMERIC)
+                    if price_table.button_state == WM_DELETE_WINDOW:
+                        break
+            else:
+                MessageBoxInfo(title=title, message=MESSAGE_TEXT['DATA_NO'].format(', '.join(selected_isins), ''))
 
     def _data_balances(self):
 
@@ -1525,7 +1541,7 @@ class BankenLedger(object):
 
         title = MENU_TEXT['Import Bankidentifier CSV-File']
         MessageBoxInfo(title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(
-            BANKIDENTIFIER.upper()))
+            BANKIDENTIFIER.upper(), 'Deutsche Bundesbank \nBankleitzahlendateien ungepackt \nCSV-Format'))
         webbrowser.open(BUNDESBANK_BLZ_MERKBLATT)
         webbrowser.open(BUNDEBANK_BLZ_DOWNLOAD)
         file_dialogue = FileDialogue(title=title)
@@ -1569,7 +1585,7 @@ class BankenLedger(object):
 
         title = MENU_TEXT['Import Server CSV-File']
         MessageBoxInfo(title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(
-            SERVER.upper()) + FINTS_SERVER)
+            SERVER.upper(), 'FinTS Download') + FINTS_SERVER)
         self._websites(FINTS_SERVER_ADDRESS)
         file_dialogue = FileDialogue(title=title)
         if file_dialogue.filename not in ['', None]:
@@ -1598,7 +1614,7 @@ class BankenLedger(object):
                  "\nHeader_line will be ignored"
                  )
         MessageBoxInfo(title=title, message=' '.join(
-            [bank_name, MESSAGE_TEXT['IMPORT_CSV'].format(TRANSACTION.upper()), _text]))
+            [bank_name, MESSAGE_TEXT['IMPORT_CSV'].format(TRANSACTION.upper(), NOT_ASSIGNED), _text]))
         file_dialogue = FileDialogue(title=title)
         if file_dialogue.filename not in ['', None]:
             self.mariadb.import_transaction(iban, file_dialogue.filename)
@@ -1622,6 +1638,7 @@ class BankenLedger(object):
         bank.account_number = account[KEY_ACC_ACCOUNT_NUMBER]
         bank.iban = account[KEY_ACC_IBAN]
         bank.subaccount_number = account[KEY_ACC_SUBACCOUNT_NUMBER]
+        bank.owner_name = account[KEY_ACC_OWNER_NAME]        
         sepa_credit_box = SepaCreditBox(
             bank, account, title=title)
         if sepa_credit_box.button_state == WM_DELETE_WINDOW:
@@ -2374,7 +2391,7 @@ class BankenLedger(object):
         title = ' '.join([MENU_TEXT['Ledger'],
                          MENU_TEXT['Account Category']])
         data_dict = self.mariadb.selection_get(title)
-        if not data_dict:        
+        if not data_dict:
             data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
                 datetime.now().year, 12, 31)}
         while True:
@@ -2457,7 +2474,7 @@ class BankenLedger(object):
                          MENU_TEXT['Journal']])
         field_list = TABLE_FIELDS[LEDGER_VIEW]
         data_dict = self.mariadb.selection_get(title)
-        if not data_dict:        
+        if not data_dict:
             data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
                 datetime.now().year, 12, 31)}
         message = MESSAGE_TEXT['HELP_PANDASTABLE']
@@ -2470,7 +2487,7 @@ class BankenLedger(object):
                 [title, data_dict[FN_FROM_DATE], '-', data_dict[FN_TO_DATE]])
             selected_row = 0
             while True:
-                period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]) 
+                period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
                 data = self.mariadb.select_table(
                     LEDGER_VIEW, field_list, result_dict=True,
                     date_name=DB_entry_date, period=period)

@@ -64,7 +64,7 @@ from banking.declarations import (
     TYP_DECIMAL,
     TYP_DATE,
 )
-from banking.pandastable_extension import Table, TableRowEdit
+from banking.pandastable_extension import Table, TableRowEdit, MyPlotViewer
 from banking.utils import (
     application_store,
     Amount, check_main_thread, dec2, list_positioning,
@@ -1259,6 +1259,8 @@ class BuiltSelectBox(BuiltEnterBox):
         field_name_list = []
         for field_def in field_defs_list:
             field_name_list.append(field_def.name)
+            if field_def.name in self.separator:
+                field_def.separator = True
             if field_def.name in self.data_dict.keys():
                 field_def.default_value = self.data_dict[field_def.name]
             else:
@@ -1527,9 +1529,7 @@ class BuiltPandasBox(Frame):
     https://readthedocs.org/projects/pandastable/downloads/pdf/latest/
 
 
-    TOP-LEVEL
-
-    L-WINDOW        Shows Dataframe
+    TOP-LEVEL-WINDOW        Shows Dataframe
 
     PARAMETER:
         dataframe           DataFrame object or Dataframe data with dataframe method
@@ -1638,9 +1638,12 @@ class BuiltPandasBox(Frame):
             self.font = Font(family=self.pandas_table.font,
                              size=self.pandas_table.fontsize)
             if instant_plotting:
+                if self.dataframe_window not in MyPlotViewer.WINDOW:
+                    MyPlotViewer.WINDOW.append(self.dataframe_window)  # used to close table
                 self.set_geometry()
                 self.pandas_table.plotSelected()
                 self.dataframe_window.withdraw()
+                self.button_state = self.pandas_table.pf.button_state
             else:
                 self.column_width = self._get_col_width()
                 self.pandas_table.set_defaults()

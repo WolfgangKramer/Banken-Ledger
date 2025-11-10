@@ -84,6 +84,7 @@ MENU_TEXT = {
 
     'Account': 'Account',
     'Account Category': 'Account Category',
+    'Close Volume': 'Close Volume',
     'All_Banks': 'All_Banks',
     'Alpha Vantage': 'Alpha Vantage Query',
     'Alpha Vantage Symbol Search': 'Alpha Vantage Symbol Search',
@@ -164,6 +165,8 @@ MESSAGE_TEXT = {
     'APP': 'APPLICATION and MARIDB Customizing Installation',
     'ASSINGNABLE_STATEMENTS': 'Assignable Statements for ledger in period {} to {}',
     'BALANCE_DIFFERENCE':   'Bank Account {} {}:  {}  \n Ledger Account {} {}:  {}  \n Balance Difference: {}',
+    'BANK_CHALLENGE': '{} ({}) \n Bank Account: {} {}      \n Challenge_Text:\n  {}',
+    'BANK_CONSORS_TRANSFER': '\n\n Open Consors Secure Plus \nGenerate QR-TAN with Secure Plus',    
     'BANK_CODE_EXIST': 'Bank Code exists',
     'BANK_DATA_ACCOUNTS_MISSED': 'BankCode {}: Accounts missed, Run Customizing',
     'BANK_DATA_NEW': 'Created {} ({}. Next Step: SYNCHRONIZE Bank \n\n Then restart application',
@@ -210,6 +213,7 @@ MESSAGE_TEXT = {
     'ENTRY': 'Enter Data',
     'ENTRY_DATE': 'Entry_date missed',
     'FIELDLIST_MIN': 'Select at least {} positions in fieldlist',
+    'FIELDLIST_INTERSECTION_EMPTY': 'Intersection of the data in the selected period of all selected isin_codes is empty',
     'FIXED': '{} MUST HAVE {} Characters ',
     'HELP_PANDASTABLE': 'Show Row Menu: \n          Select row\n          Click on row number with the right mouse button',
     'HELP_CHECK_UPLOAD': 'Start with FIRST row to be checked\n\n Show Row Menu: \n          Select row\n          Click on row number with the right mouse button\n          Then select Update Selected Row and UPDATE if the row and all previous rows are OK',
@@ -223,7 +227,7 @@ MESSAGE_TEXT = {
     'HTTP_INPUT': 'Server not valid or not available! HTTP Status Code: {}',
     'IBAN': 'IBAN invalid',
     'IBAN_USED': 'IBAN is already assigned to account {}',
-    'IMPORT_CSV': 'Import CSV_File into Table {}',
+    'IMPORT_CSV': 'Import CSV_File into Table {}\n\n Source: \n{}',
     'ISIN_ALPHABETIC': 'Isin_code must start with an alphabetic character',
     'ISIN_DATA': 'Enter ISIN Data',
     'ISIN_IN_HOLDING': 'No deletion allowed \n {} ({}) \n Used in holding or transaction table',
@@ -266,7 +270,8 @@ MESSAGE_TEXT = {
     'SCRAPER_TIMEOUT': 'Connection TimeOut',
     'SCROLL': 'Scroll forward: CTRL+RIGHT   Scroll backwards: CTRL+LEFT',
     'SEGMENT_VERSION': 'Segment {}{} Version {} not implemented',
-    'SELECT': 'Enter your Selection',
+    'SELECT_DATA': 'Selection incomplete',
+    'SELECT_INCOMPLETE': 'Enter your Selection',
     'SELECT_ROW': 'Select row, then right clicking on row number',
     'SEPA_CRDT_TRANSFER': 'SEPA Credit Transfer \nBank:    {}  \nAccount:    {} ({})',
     'SQLALCHEMY_ERROR': "Error Calling SQLAlchemy {}:    {}",
@@ -282,6 +287,7 @@ MESSAGE_TEXT = {
     'TA_METHOD_ERROR': 'Indicator {}: Name creation of the calling method not successful',
     'TA_CLASS_NO_METHOD': 'Category: {} \nMethods in class {} not found',
     'TA_NO_OHLC': 'Category: {} \n No OHCL Series parameter of Class {}',
+    'TA_ADD_CHART': 'Add Charts',
     'TASK_DONE': 'Task finished.',
     'TASK_WARNING': 'Finished with Warnings',
     'TASK_STARTED': '{}: Task started.',
@@ -300,6 +306,8 @@ MESSAGE_TEXT = {
     'TWOSTEP': 'Select one of the Security Functions \n Only Two-Step TAN Procedure \n SCA Strong Customer Authentication',
     'UNEXCEPTED_ERROR': 'E X C E P T I O N    E R R O R  !\n\nMODULE: {}\n\nLINE  of EXCEPTION ERROR Call: {}\n\nMETHOD: {}\n\nTYPE:\n {} \n\nVALUE:  {} \n\nTRACEBACK:\n {}',
     'VERSION_TRANSACTION': 'TRANSACTION HK{}{} not available',
+    'VOP_HHDUC': 'Verfication of Payee: No PNG header found in challenge_hhduc',
+    'VOP_FAILED': 'Verfication of Payee failed',
     'WEBDRIVER': 'Installing {} WEB Driver failed\n\n{}',
     'WEBDRIVER_INSTALL': '{} WEB Driver installed to project.root/.wdm'
 }
@@ -467,6 +475,7 @@ TEXT = 'Text'
 
 BUTTON_ALPHA_VANTAGE = 'ALPHA_VANTAGE'
 BUTTON_APPEND = 'APPEND'
+BUTTON_ADD_CHART = 'ADD CHART'
 BUTTON_CREDIT = 'SHOW CREDIT'
 BUTTON_CREATE = 'CREATE'
 BUTTON_COPY = 'COPY'
@@ -475,6 +484,7 @@ BUTTON_DELETE = 'DELETE'
 BUTTON_DELETE_ALL = 'DELETE ALL'
 BUTTON_DATA = 'DATA'
 BUTTON_INIT = 'INIT'
+BUTTON_INDICATOR = 'SELECT INDICATOR'
 BUTTON_PRICES_IMPORT = 'IMPORT PRICES'
 BUTTON_NEXT = 'NEXT'
 BUTTON_NEW = 'NEW'
@@ -712,3 +722,123 @@ class Informations(object):
     """
     holding_informations = ' '
     HOLDING_INFORMATIONS = 'HOLDING_INFORMATIONS'
+
+
+class TechnicalIndicatorData(object):
+    """
+    Controlling the display of indicator charts
+    """
+    TA_CLOSE = []  # charts close added to plot of technical indicator
+    # TA_LINES inserts y-line into chart (line_name, y_value)
+    TA_LINES = {'RSIIndicator': [('OVERSOLD', 30), ('OVERBOUGHT', 70)]}
+    """
+    1. Volume Indicators
+        Accumulation/Distribution Index (ADI) > AccDistIndexIndicator
+        On-Balance Volume (OBV) > OnBalanceVolumeIndicator
+        Money Flow Index (MFI) > MFIIndicator
+        Chaikin Money Flow (CMF) > ChaikinMoneyFlowIndicator
+        Force Index (FI) > ForceIndexIndicator
+        Ease of Movement (EoM, EMV) > EaseOfMovementIndicator (also sma_ease_of_movement)
+        Volume-price Trend (VPT) > VolumePriceTrendIndicator
+        Negative Volume Index (NVI) > NegativeVolumeIndexIndicator
+        Volume Weighted Average Price (VWAP) > VolumeWeightedAveragePriceIndicator
+
+    2. Volatility Indicators
+        Average True Range (ATR) > AverageTrueRange
+        Bollinger Bands (BB) > BollingerBands with methods like bollinger_hband, bollinger_lband, bollinger_mavg, etc.
+        Keltner Channel (KC) > KeltnerChannel with methods like keltner_channel_hband, mband, etc.
+        Donchian Channel (DC) > DonchianChannel with similar band methods.
+        Ulcer Index (UI) > UlcerIndex
+
+    3. Trend Indicators
+        Simple Moving Average (SMA) > SMAIndicator
+        Exponential Moving Average (EMA) > EMAIndicator
+        Weighted Moving Average (WMA) > WMAIndicator
+        Moving Average Convergence Divergence (MACD) > MACD (includes macd_diff, macd_signal)
+        Average Directional Movement Index (ADX) > ADXIndicator with adx_neg, adx_pos
+        Vortex Indicator (VI) > VortexIndicator with vortex_indicator_neg, vortex_indicator_pos
+        Trix (TRIX) > TRIXIndicator
+        Mass Index (MI) > MassIndex
+        Commodity Channel Index (CCI) > CCIIndicator
+        Detrended Price Oscillator (DPO) > DPOIndicator
+        KST Oscillator (KST) > KSTIndicator with kst_sig
+        Ichimoku Kinko Hyo (Ichimoku) > IchimokuIndicator (includes lines like conversion line, base line, ichimoku_a, ichimoku_b)
+        Parabolic Stop and Reverse (Parabolic SAR) > PSARIndicator with down/up indicators
+        Schaff Trend Cycle (STC) > STCIndicator
+        Aroon Indicator > AroonIndicator with aroon_down, aroon_up
+
+    4. Momentum Indicators
+        Relative Strength Index (RSI) > RSIIndicator
+        Stochastic RSI (SRSI) > StochRSIIndicator, with stochrsi_d, stochrsi_k
+        True Strength Index (TSI) > TSIIndicator
+        Ultimate Oscillator (UO) > UltimateOscillator
+        Stochastic Oscillator > StochasticOscillator with stoch, stoch_signal
+        Williams %R (WR) > WilliamsRIndicator
+        Awesome Oscillator (AO) > AwesomeOscillatorIndicator
+        Kaufmans Adaptive Moving Average (KAMA) > KAMAIndicator
+        Rate of Change (ROC) > ROCIndicator
+        Percentage Price Oscillator (PPO) > PercentagePriceOscillator, with ppo_hist, ppo_signal
+        Percentage Volume Oscillator (PVO) > PercentageVolumeOscillator, with pvo_hist, pvo_signal
+
+    5. Other Indicators
+        Daily Return (DR) > DailyReturnIndicator
+        Daily Log Return (DLR) > DailyLogReturnIndicator
+        Cumulative Return (CR) > CumulativeReturnIndicator
+    """
+    # indicator columns of dataframe created by ta.add_all_ta_features
+    TA_VOLUME = {
+        'AccDistIndexIndicator': ['volume_adi'],
+        'OnBalanceVolumeIndicator': ['volume_obv'],
+        'ChaikinMoneyFlowIndicator': ['volume_cmf'],
+        'ForceIndexIndicator': ['volume_fi'],
+        'EaseOfMovementIndicator': ['volume_em', 'volume_sma_em'],
+        'VolumePriceTrendIndicator': ['volume_vpt'],
+        'VolumeWeightedAveragePrice': ['volume_vwap'],
+        'MFIIndicator': ['volume_mfi'],
+        'NegativeVolumeIndexIndicator': ['volume_nvi']
+        }
+    TA_VOLATILITY = {
+        'BollingerBands': ['volatility_bbm', 'volatility_bbh', 'volatility_bbl', 'volatility_bbw',
+                           'volatility_bbp', 'volatility_bbhi', 'volatility_bbli'],
+        'KeltnerChannel': ['volatility_kch', 'volatility_kcl', 'volatility_kcw', 'volatility_kcp',
+                           'volatility_kchi', 'volatility_kcli'],
+        'DonchianChannel': ['volatility_dcl', 'volatility_dch', 'volatility_dcm', 'volatility_dcw',
+                            'volatility_dcp'],
+        'AverageTrueRange': ['volatility_atr'],
+        'UlcerIndex': ['volatility_ui']
+        }
+    TA_TREND = {
+        'MACD': ['trend_macd', 'trend_macd_signal', 'trend_macd_diff'],
+        'SMAIndicator': ['trend_sma_fast', 'trend_sma_slow'],
+        'EMAIndicator': ['trend_ema_fast', 'trend_ema_slow'],
+        'VortexIndicator': ['trend_vortex_ind_pos', 'trend_vortex_ind_neg', 'trend_vortex_ind_diff'],
+        'TRIXIndicator': ['trend_trix'],
+        'MassIndex': ['trend_mass_index'],
+        'DPOIndicator': ['trend_dpo'],
+        'KSTIndicator': ['trend_kst', 'trend_kst_sig' 'trend_kst_diff'],
+        'IchimokuIndicator': ['trend_ichimoku_conv', 'trend_ichimoku_base', 'trend_ichimoku_a', 'trend_ichimoku_b'],
+        'STCIndicator': ['trend_stc'],
+        'ADXIndicator': ['trend_adx', 'trend_adx_pos', 'trend_adx_neg'],
+        'CCIIndicator': ['trend_cci'],
+        'IchimokuIndicator_visual': ['trend_visual_ichimoku_a', 'trend_visual_ichimoku_b'],
+        'AroonIndicator': ['trend_aroon_up', 'trend_aroon_down', 'trend_aroon_ind'],
+        'PSARIndicator': ['trend_psar_up', 'trend_psar_down', 'trend_psar_up_indicator', 'trend_psar_down_indicator'],
+        }
+    TA_MOMENTUM = {
+        'RSIIndicator': ['momentum_rsi'],
+        'StochRSIIndicator': ['momentum_stoch_rsi', 'momentum_stoch_rsi_k', 'momentum_stoch_rsi_d'],
+        'TSIIndicator': ['momentum_tsi'],
+        'UltimateOscillator': ['momentum_uo'],
+        'StochasticOscillator': ['momentum_stoch', 'momentum_stoch_signal'],
+        'WilliamsRIndicator': ['momentum_wr'],
+        'AwesomeOscillatorIndicator': ['momentum_ao'],
+        'ROCIndicator': ['momentum_roc'],
+        'PercentagePriceOscillator': ['momentum_ppo', 'momentum_ppo_signal', 'momentum_ppo_hist'],
+        'PercentageVolumeOscillator': ['momentum_pvo', 'momentum_pvo_signal', 'momentum_pvo_hist'],
+        'KAMAIndicator': ['momentum_kama']
+        }
+    TA_OTHERS = {
+        'DailyReturnIndicator': ['others_dr'],
+        'DailyLogReturnIndicator': ['others_dlr'],
+        'CumulativeReturnIndicator': ['others_cr']
+        }

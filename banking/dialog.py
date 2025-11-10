@@ -11,6 +11,9 @@ import logging
 import re
 import requests
 
+
+
+
 from datetime import date
 from operator import itemgetter
 from fints.message import FinTSInstituteMessage
@@ -367,6 +370,7 @@ class Dialogs(object):
                     return [], hirms_codes
             if check_main_thread():
                 bank.task_reference = seg.task_reference
+                bank.challenge_hhduc = seg.challenge_hhduc  # e.g. Consors: QR_Code contains TAN
                 response, hirms_codes = self._get_tan(bank, response)
             else:
                 MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
@@ -375,6 +379,14 @@ class Dialogs(object):
 
     def _decoupled_process(self, bank, response, hirms_codes):
 
+        if CODE_0030 in hirms_codes and bank.bank_code == '76030080':  # Consors  Show QR_Code
+            # store QR_code with tan in bank
+            bank.challenge_hhduc = None
+            bank.challenge = ''
+            for seg in response.find_segments(HITAN6):
+                bank.challenge_hhduc = seg.challenge_hhduc
+                bank.challenge = seg.challenge
+                break
         if CODE_3955 in hirms_codes:
             # Security clearance is provided via another channel
             for seg in response.find_segments(HITAN7):
@@ -417,25 +429,19 @@ class Dialogs(object):
                 response.print_nested(stream=log_out, prefix="\t")
                 logger.debug(('Received ' + 30 * '>' + '\n{}\n' + 40 * '>' + '\n').format
                              (log_out.getvalue()))
-        seg = response.find_segment_first(HIRMG2)
         # bank feedback message
-        error, fints_codes = self._fints_code(bank, seg)
-        if error:
+        seg = response.find_segment_first(HIRMG2)
+        hirmg_error, fints_codes = self._fints_code(bank, seg)
+        hirms_error = None
+        for seg in response.find_segments(HIRMS2):
+            hirms_error, hirms_codes = self._fints_code(bank, seg)
+            fints_codes = fints_codes + hirms_codes
+        if hirmg_error or hirms_error:
             PrintMessageCode(text=Informations.bankdata_informations)
             if dialog_init:
                 return None,  fints_codes
             else:
                 MessageBoxTermination(bank=bank)
-        # bank feedback segments of message
-        for seg in response.find_segments(HIRMS2):
-            error, hirms_codes = self._fints_code(bank, seg)
-            fints_codes = fints_codes + hirms_codes
-            if error:
-                PrintMessageCode(text=Informations.bankdata_informations)
-                if dialog_init:
-                    return None,  fints_codes
-                else:
-                    MessageBoxTermination(bank=bank)
         return response, fints_codes
 
     def _fints_code(self, bank, segment):
@@ -466,7 +472,6 @@ class Dialogs(object):
                 if response.parameters:
                     bankdata_informations_append(ERROR, ' ' .join(
                         ['- Parameters', str(response.parameters)]))
-
         return error, codes
 
     def _mt535_listdict(self, data):

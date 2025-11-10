@@ -4,7 +4,11 @@ __updated__ = "2025-05-31"
 @author: Wolfgang Kramer
 """
 
+from PIL import Image
+from io import BytesIO
+
 from datetime import datetime, date, timedelta
+
 from fints.formals import (
     AlgorithmParameterIVName, AlgorithmParameterName,
     BankIdentifier,
@@ -31,7 +35,7 @@ from fints.segments.transfer import HKCCS1
 from fints.types import SegmentSequence
 
 from banking.declarations import MESSAGE_TEXT, PNS, SYSTEM_ID_UNASSIGNED, WM_DELETE_WINDOW
-from banking.fints_extension import HKCSE1
+from banking.fints_extension import HKCSE1, HKVPP
 from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.forms import InputTAN
 
@@ -141,9 +145,13 @@ class Segments():
     def segHNHBK(self, bank):
         """
         Segment Nachrichtenkopf
-            FINTS Dokument: Schnittstellenspezifikation Formals
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Formals_2017-10-06_final_version.pdf
+        
             Nachstehender Kopfteil fuehrt alle Kunden- und Kreditinstitutsnachrichten an.
+
+        Financial Transaction Services (FinTS) 3.0
+        Dokument: Formals
+        Kapitel: Nachrichtenaufbau
+        Abschnitt: Steuerstrukturen
         """
         message = FinTSCustomerMessage()
         message += HNHBK3(0, 300, bank.dialog_id, bank.message_number)
@@ -151,12 +159,15 @@ class Segments():
 
     def segHNSHK(self, bank, message):
         """
-         Segment Signaturkopf
-            FINTS Dokument: Sicherheitsverfahren HBCI
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Security_Sicherheitsverfahren_HBCI_Rel_20181129_final_version.pdf
+        Segment Signaturkopf
+        
+            Der Signaturkopf enthaelt Informationen ueber den damit verbundenen
+            Sicherheitsservice, sowie ueber den Absender.
 
-            Der Signaturkopf enthaelt Informationen ueber den damit verbundenen Sicherheitsservice,
-            sowie ueber den Absender
+        Financial Transaction Services (FinTS) 3.0
+        Dokument: Security - Sicherheitsverfahren HBCI
+        Kapitel: Verfahrensbeschreibung
+        Abschnitt: Formate fuer Signatur und Verschluesselung
         """
         now = datetime.now()
         message += HNSHK4(
@@ -199,20 +210,21 @@ class Segments():
     def segHKIND(self, bank, message, user_id=None):
         """
         Segment Identifikation
-            FINTS Dokument: Schnittstellenspezifikation Formals
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Formals_2017-10-06_final_version.pdf
 
             Das Identifikations-Segment enthaelt Kontextinformationen, die fuer den gesamten Dialog
-            Gueltigkeit haben.
-            Anhand dieser Daten wird die Sendeberechtigung des Benutzers geprueft.
-            Eine Pruefung der transportmedienspezifischen Kennung des Benutzers erfolgt nicht.
+            Gueltigkeit haben. Anhand dieser Daten wird die Sendeberechtigung des Benutzers
+            geprueft. Eine Pruefung der transportmedienspezifischen Kennung des Benutzers
+            erfolgt nicht.
             Falls dem Benutzer die Berechtigung zum Senden weiterer Nachrichten nicht erteilt
-            werden kann, ist ein entsprechender Rueckmeldungscode in die Kreditinstitutsantwort
-            einzustellen.
-            Es steht Kreditinstituten frei, in bestimmten Faellen auf eine Identifizierung des
-            Kunden zu verzichten.
-            Dies ist zum Beispiel fuer den anonymen Zugang (s.u.) erforderlich, wo mit einem
-            Nichtkunden kommuniziert wird.
+            werden kann, ist ein entsprechender Rueckmeldungscode in die Kreditinstituts-
+            antwort einzustellen. Es steht Kreditinstituten frei, in bestimmten Faellen auf eine
+            Identifizierung des Kunden zu verzichten. Dies ist zum Beispiel fuer den anonymen
+            Zugang (s.u.) erforderlich, wo mit einem Nichtkunden kommuniziert wird.
+
+        Financial Transaction Services (FinTS) 3.0
+        Dokument: Formals
+        Kapitel: Dialogspezifikation
+        Abschnitt: Dialoginitialisierung
         """
         if user_id is None:
             # its not a anonymous dialogue: user_id# CUSTOMER_ID_ANONYMOUS
@@ -233,12 +245,16 @@ class Segments():
     def segHKVVB(self, bank, message):
         """
         Segment Verarbeitungsvorbereitung
-            FINTS Dokument: Schnittstellenspezifikation Formals
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Formals_2017-10-06_final_version.pdf
 
-            Dieses Segment dient der Uebermittlung von Informationen ueber das Kundensystem,
+            Dieses Segment dient der uebermittlung von Informationen ueber das Kundensystem,
             mit Hilfe derer das Kreditinstitut individuell auf Anforderungen des Kunden reagieren
-        """
+            kann.
+
+        Financial Transaction Services (FinTS) 3.0
+        Dokument: Formals
+        Kapitel: Dialogspezifikation
+        Abschnitt: Dialoginitialisierung
+         """
         message += HKVVB3(
             bank.bpd_version,
             bank.upd_version,
@@ -251,11 +267,21 @@ class Segments():
     def segHKTAN_decoupled(self, bank, message, segment_name='HKKAZ'):
         """
         Segment Geschaeftsvorfall HITAN7 (starke Kundenauthentifizierung)
-            FINTS Dokument: Schnittstellenspezifikation Sicherheitsverfahren PIN/TAN
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Security_Sicherheitsverfahren_PINTAN_2018-02-23_final_version.pdf
 
-            Dieser Geschaeftsvorfall dient im Zwei-Schritt-Verfahren dazu, eine Challenge zur
-            TAN-Bildung anzufordern und eine TAN zu einem Auftrag zu uebermitteln.
+            Ab der Segmentversion #7 dieses Geschaeftsvorfalls wird das Decoupled-Verfahren
+            mit Freigabe des Auftrags auf einem separaten Geraet unterstuetzt. Das Decoupled
+            Verfahren kommt ohne TAN-Erzeugung und Eingabe aus und ist somit kein TAN
+            Verfahren mehr, es bedient sich aber der Mechanismen und Felder bisheriger TAN
+            Verfahren im HKTAN. Im Kontext des Decoupled-verfahrens ist bei der Verwendung
+            des Begriffs TAN im uebertragenen Sinne die Freigabe/Bestaetigung einer Transaktion
+            gemeint: z.B „Bezeichnung des TAN-Mediums“ -> „Bezeichnung des Freigabe
+            Mediums“. Die Begrifflichkeiten in Rahmen dieses Geschaeftsvorfalls orientieren sich
+            trotzdem weiterhin an den klassischen TAN-Verfahren. Eine Umbenennung der Felder erfolgt nicht.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Security - Sicherheitsverfahren PIN/TAN
+        Kapitel: Verfahrensbeschreibung
+        Abschnitt: Geschaeftsvorfall HKTAN fuer Zwei-Schritt-TAN-Einreichung
         """
         if bank.task_reference == 'noref':
             bank.task_reference = None
@@ -273,11 +299,14 @@ class Segments():
     def segHKTAN(self, bank, message, segment_name='HKIDN'):
         """
         Segment Geschaeftsvorfall HITAN6/7 (starke Kundenauthentifizierung)
-            FINTS Dokument: Schnittstellenspezifikation Sicherheitsverfahren PIN/TAN
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Security_Sicherheitsverfahren_PINTAN_2018-02-23_final_version.pdf
 
             Dieser Geschaeftsvorfall dient im Zwei-Schritt-Verfahren dazu, eine Challenge zur
             TAN-Bildung anzufordern und eine TAN zu einem Auftrag zu uebermitteln.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Security - Sicherheitsverfahren PIN/TAN
+        Kapitel: Verfahrensbeschreibung
+        Abschnitt: Geschaeftsvorfall HKTAN fuer Zwei-Schritt-TAN-Einreichung
         """
         if bank.task_reference == 'noref':
             bank.task_reference = None
@@ -297,8 +326,6 @@ class Segments():
     def segHKSYN(self, bank, message):
         """
         Segment Synchronisierung
-            FINTS Dokument: Schnittstellenspezifikation Formals
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Formals_2017-10-06_final_version.pdf
 
             Bevor ein Benutzer bei Verwendung des PIN/TAN-Verfahrens von einem neuen
             Kundensystem Auftraege erteilen kann, hat er im Wege einer Synchronisierung
@@ -309,6 +336,11 @@ class Segments():
             >Kundensystem-ID< mit dem Wert 0 zu belegen. Das DE >Identifizierung der Partei<
             im Signaturkopf in der DEG <Sicherheitsidentifikation,
             Details< ist mit dem Wert  0 zu belegen.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Formals
+        Kapitel: Dialogspezifikation
+        Abschnitt: Synchronisierung
         """
         message += HKSYN3(SynchronizationMode.NEW_SYSTEM_ID)
         return message
@@ -316,9 +348,6 @@ class Segments():
     def segHKKAZ(self, bank, message):
         """
         Segment Kontoumsaetze/Zeitraum
-            FINTS Dokument: Schnittstellenspezifikation Messages
-                            Multibankfaehige Geschaeftsvorfaelle
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Messages_Geschaeftsvorfaelle_2015-08-07_final_version.pdf
 
             Die Loesung bietet dem Kunden die Moeglichkeit, auf seinem System verlorengegangene
             Buchungen erneut zu erhalten.
@@ -330,6 +359,11 @@ class Segments():
             Es muss davon unabhaengig immer ein gueltiges MT 940-Format zurueckgemeldet werden,
             d.h. die Felder :20: bis :60: und :62: bis :86: sind obligatorischer Bestandteil
             der Rueckmeldung.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Messages - Multibankfaehige Geschaeftsvorfaelle
+        Kapitel: Geschaeftsvorfaelle
+        Abschnitt: Konto- und Umsatz-Informationen
         """
         from_to_date(bank)
         hkkaz = _get_segment(bank, 'KAZ')
@@ -348,15 +382,17 @@ class Segments():
     def segHKWPD(self, bank, message):
         """
         Segment Depotaufstellung anfordern
-            FINTS Dokument: Schnittstellenspezifikation Messages
-                            Multibankfaehige Geschaeftsvorfaelle
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Messages_Geschaeftsvorfaelle_2015-08-07_final_version.pdf
 
             Die Depotaufstellung kann beliebige Papiere, auch in Fremdwaehrungen, umfassen.
 
             Kreditinstitutsrueckmeldung:
             Es ist das S.W.I.F.T.-Format MT 535 in der Version SRG 1998 (s. [Datenformate])
             einzustellen.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Messages - Multibankfaehige Geschaeftsvorfaelle
+        Kapitel: Geschaeftsvorfaelle
+        Abschnitt: Wertpapiere
         """
         hkwpd = _get_segment(bank, 'WPD')
         message += hkwpd(
@@ -368,20 +404,24 @@ class Segments():
     def segHKCCS1(self, bank, message):
         """
         Segment Einzelueberweisung
-            FINTS Dokument: Schnittstellenspezifikation Messages
-                            Multibankfaehige Geschaeftsvorfaelle
-           https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Messages_Geschaeftsvorfaelle_2015-08-07_final_version.pdf
 
-        Fuer Einzelueberweisungsauftraege auf der Basis der pain.001.001.02 ist nur die
-         Grouping Option Grouped mit genau einer Einzeltransaktion
-         CreditTransferTransactionInformation >CdtTrfTxInf< zugelassen.
+            Fuer Einzelueberweisungsauftraege auf der Basis der pain.001.001.02 ist nur die
+             Grouping Option Grouped mit genau einer Einzeltransaktion
+             CreditTransferTransactionInformation >CdtTrfTxInf< zugelassen.
 
-        Belegungsrichtlinien
-        Kontoverbindung international IBAN und BIC muessen der IBAN in
-        DebtorAccount bzw. der BIC in DebtorAgent entsprechen.
-        SEPA pain message: Erlaubtes SEPA-Ueberweisungg-Kunde-Bank-Schema lt HISPAS.
-        In das Mussfeld RequestedExecutionDate ist 1999-01-01 einzustellen.
+            Belegungsrichtlinien
+            Kontoverbindung international IBAN und BIC muessen der IBAN in
+            DebtorAccount bzw. der BIC in DebtorAgent entsprechen.
+            SEPA pain message: Erlaubtes SEPA-Ueberweisungg-Kunde-Bank-Schema lt HISPAS.
+            In das Mussfeld RequestedExecutionDate ist 1999-01-01 einzustellen.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Messages - Multibankfaehige Geschaeftsvorfaelle
+        Kapitel: Geschaeftsvorfaelle
+        Abschnitt: Einzelueberweisung
         """
+        if bank.bank_code=='72090000':
+            message += HKVPP(segment_no=2)                
         hkcss = HKCCS1
         message += hkcss(
             account=hkcss._fields['account'].type.from_sepa_account(
@@ -394,21 +434,22 @@ class Segments():
     def segHKCSE1(self, bank, message):
         """
         Segment Terminierte Einzelueberweisung
-            FINTS Dokument: Schnittstellenspezifikation Messages
-                            Multibankfaehige Geschaeftsvorfaelle
-           https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Messages_Geschaeftsvorfaelle_2015-08-07_final_version.pdf
 
-        Fuer Einzelueberweisungsauftraege auf der Basis der pain.001.001.02 ist nur die
-         Grouping Option Grouped mit genau einer Einzeltransaktion
-         CreditTransferTransactionInformation >CdtTrfTxInf< zugelassen.
+            Fuer Einzelueberweisungsauftraege auf der Basis der pain.001.001.02 ist nur die
+             Grouping Option Grouped mit genau einer Einzeltransaktion
+             CreditTransferTransactionInformation >CdtTrfTxInf< zugelassen.
 
-        Belegungsrichtlinien
-        Kontoverbindung international IBAN und BIC muessen der IBAN in
-        DebtorAccount bzw. der BIC in DebtorAgent entsprechen.
-        SEPA pain message: Erlaubtes SEPA-Ueberweisungg-Kunde-Bank-Schema lt HISPAS.
-        In das Mussfeld RequestedExecutionDate ist der Termin einzustellen.
+            Belegungsrichtlinien
+            Kontoverbindung international IBAN und BIC muessen der IBAN in
+            DebtorAccount bzw. der BIC in DebtorAgent entsprechen.
+            SEPA pain message: Erlaubtes SEPA-Ueberweisungg-Kunde-Bank-Schema lt HISPAS.
+            In das Mussfeld RequestedExecutionDate ist der Termin einzustellen.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Messages - Multibankfaehige Geschaeftsvorfaelle
+        Kapitel: Geschaeftsvorfaelle
+        Abschnitt: Einzelueberweisung
         """
-
         hkcse = HKCSE1
         message += hkcse(
             account=hkcse._fields['account'].type.from_sepa_account(
@@ -418,14 +459,34 @@ class Segments():
         )
         return message
 
+    def segHKVPP(self, message):
+        """
+        Segment Namensabgleich Pruefauftrag
+
+            Dieser Geschaeftsvorfall wird parallel mit dem Zahlungsverkehrsauftrag, fuer den ein
+            Namensabgleich (VOP-Pruefung) durchgefuehrt werden muss, an das Kreditinstitut geschickt.
+            Das Kreditinstitut fuehrt den Namensabgleich durch und liefert das Ergebnis
+            zurueck.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Verification of Payee
+        Kapitel: SEPA-Zahlungsverkehr
+        Abschnitt: Namensabgleich (Verification of Payee)
+        """
+        message += HKVPP()
+        return message
+
     def segHNSHA(self, bank, message):
         """
         Segment Signaturabschluss (PIN)
-            FINTS Dokument: Sicherheitsverfahren HBCI
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Security_Sicherheitsverfahren_HBCI_Rel_20181129_final_version.pdf
 
             Der Signaturabschluss stellt die Verbindung mit dem dazugehoerigen Signaturkopf her und
             enthaelt als Validierungsresultat die elektronische Signatur.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Security - Sicherheitsverfahren HBCI
+        Kapitel: Verfahrensbeschreibung
+        Abschnitt: Formate fuer Signatur und Verschluesselung
         """
         if bank.system_id == SynchronizationMode.NEW_SYSTEM_ID:
             message += HKSYN3(SynchronizationMode.NEW_SYSTEM_ID)
@@ -438,15 +499,23 @@ class Segments():
     def segHNSHA_TAN(self, bank, message):
         """
         Segment Signaturabschluss (PIN/TAN)
-            FINTS Dokument: Sicherheitsverfahren HBCI
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Security_Sicherheitsverfahren_HBCI_Rel_20181129_final_version.pdf
 
             Der Signaturabschluss stellt die Verbindung mit dem dazugehoerigen Signaturkopf her und
             enthaelt als Validierungsresultat die elektronische Signatur.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Security - Sicherheitsverfahren HBCI
+        Kapitel: Verfahrensbeschreibung
+        Abschnitt: Formate fuer Signatur und Verschluesselung
         """
         if bank.system_id == SynchronizationMode.NEW_SYSTEM_ID:
             message += HKSYN3(SynchronizationMode.NEW_SYSTEM_ID)
         if bank.tan_process != 'S':
+            if bank.bank_code == '76030080' and bank.challenge_hhduc:  # Consors  Show QR_Code
+                challenge_text = bank.challenge + '/n/n' + MESSAGE_TEXT['BANK_CONSORS_TRANSFER']
+                MessageBoxInfo(MESSAGE_TEXT['BANK_CHALLENGE'].format(
+                    bank.bank_name, bank.bank_code, bank.account_number, bank.account_product_name, challenge_text), bank=bank)
+                self._show_tan_qr_code(bank.challenge_hhduc)
             # tan decoupled
             input_tan = InputTAN(bank.bank_code, bank.bank_name)
             if input_tan.button_state == WM_DELETE_WINDOW:
@@ -463,13 +532,30 @@ class Segments():
                 )
         return message
 
+    def _show_tan_qr_code(self, challenge_hhduc):
+        """
+        Show TAN QR_Code
+        """
+        # challenge_hhduc contains binary data, but with header ("\\x00\\timage/png\\x020")
+        data = challenge_hhduc
+        # Cut off header: everything up to the first PNG header (b"\x89PNG")
+        png_start = data.find(b"\x89PNG")
+        if png_start == -1:
+            raise ValueError(MESSAGE_TEXT('VOP_HHDUC'))
+        png_bytes = data[png_start:]  # pure PNG image
+        image = Image.open(BytesIO(png_bytes))
+        image.show()  # opens QR code with standard viewer
+
     def segHNHBS(self, bank, message):
         """
         Segment Nachrichtenabschluss
-            FINTS Dokument: Schnittstellenspezifikation Formals
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Formals_2017-10-06_final_version.pdf
+        
+            Dieses Segment beendet alle Kunden- und Kreditinstitutsnachrichten.
 
-            Dieses Segment beendet alle Kunden- und Kreditinstitutsnachrichten
+        Financial Transaction Services (FinTS) 3.0
+        Dokument: Formals
+        Kapitel: Nachrichtenaufbau
+        Abschnitt: Steuerstrukturen
         """
         message += HNHBS1(message.segments[0].message_number)
         encrypt(bank, message)
@@ -480,11 +566,14 @@ class Segments():
     def segHNHBSnoencrypt(self, bank, message):
         """
         Segment Nachrichtenabschluss
-            FINTS Dokument: Schnittstellenspezifikation Formals
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Formals_2017-10-06_final_version.pdf
 
             Dieses Segment beendet alle Kunden- und Kreditinstitutsnachrichten
             ohne Verschluesselung
+
+        Financial Transaction Services (FinTS) 3.0
+        Dokument: Formals
+        Kapitel: Nachrichtenaufbau
+        Abschnitt: Steuerstrukturen
         """
         message += HNHBS1(message.segments[0].message_number)
         message.segments[0].message_size = len(message.render_bytes())
@@ -494,13 +583,16 @@ class Segments():
     def segHKEND(self, bank, message):
         """
         Segment Dialogende
-            FINTS Dokument: Schnittstellenspezifikation Formals
-            https://www.hbci-zka.de/dokumente/spezifikation_deutsch/fintsv3/FinTS_3.0_Formals_2017-10-06_final_version.pdf
 
             Die Nachricht muss signiert und verschluesselt werden (Ausnahmen s. Kap. C.4.1)
             und wird mit einer Standard-Kreditinstitutsnachricht beantwortet.
             Die Nachricht ist von demjenigen Benutzer zu signieren, der auch die
             Dialoginitialisierung signiert hat.
+
+        Financial Transaction Services (FinTS) 3.0
+        Dokument: Formals
+        Kapitel: Dialogspezifikation
+        Abschnitt: Dialogbeendigung
         """
         message += HKEND1(bank.dialog_id)
         return message

@@ -931,41 +931,39 @@ class MariaDB(object):   # Singleton with controlled initialization
             return {}
 
     def select_ledger_statement_missed(self, period):
-        
+
         where, vars_ = self._where_clause(date_name=DB_entry_date, period=period)
-        # ledger debit account statement assignment missed        
-        sql_statement =   ("SELECT l.id_no " +
-                           " FROM ledger l " +
-                           " JOIN ledger_coa c " +
-                              "ON l.debit_account = c.account" +
-                              " AND c.download = 1 AND c.portfolio=0 " +
-                              where +
-                            " AND NOT EXISTS ( " +
-                                " SELECT 1 " +
-                                " FROM ledger_statement s " +
-                                " WHERE s.id_no = l.id_no " +
-                                  " AND s.status = '" +  DEBIT + "' );")
+        # ledger debit account statement assignment missed
+        sql_statement = ("SELECT l.id_no " +
+                         " FROM ledger l " +
+                         " JOIN ledger_coa c " +
+                         "ON l.debit_account = c.account" +
+                         " AND c.download = 1 AND c.portfolio=0 " +
+                         where +
+                         " AND NOT EXISTS ( " +
+                         " SELECT 1 " +
+                         " FROM ledger_statement s " +
+                         " WHERE s.id_no = l.id_no " +
+                         " AND s.status = '" + DEBIT + "' );")
         debit = self.execute(sql_statement, vars_=vars_)
         if debit:
-            debit = [x[0] for x in debit]        
-        # ledger credit account statement assignment missed          
-        sql_statement =   ("SELECT l.id_no " +
-                           " FROM ledger l " +
-                           " JOIN ledger_coa c " +
-                              "ON l.credit_account = c.account" +
-                              " AND c.download = 1 AND c.portfolio=0 " +
-                              where +
-                            " AND NOT EXISTS ( " +
-                                " SELECT 1 " +
-                                " FROM ledger_statement s " +
-                                " WHERE s.id_no = l.id_no " +
-                                  " AND s.status = '" +  CREDIT + "' );")
+            debit = [x[0] for x in debit]
+        # ledger credit account statement assignment missed
+        sql_statement = ("SELECT l.id_no " +
+                         " FROM ledger l " +
+                         " JOIN ledger_coa c " +
+                         " ON l.credit_account = c.account" +
+                         " AND c.download = 1 AND c.portfolio=0 "
+                         + where +
+                         " AND NOT EXISTS ( " +
+                         " SELECT 1 " +
+                         " FROM ledger_statement s " +
+                         " WHERE s.id_no = l.id_no " +
+                         " AND s.status = '" + CREDIT + "' );")
         credit = self.execute(sql_statement, vars_=vars_)
         if credit:
             credit = [x[0] for x in credit]
         return credit, debit
-
-
 
     def select_sepa_fields_in_statement(self, iban, **kwargs):
         """
@@ -1205,7 +1203,7 @@ class MariaDB(object):   # Singleton with controlled initialization
         """
         ledger_coa = self.select_table(
             LEDGER_COA, DB_account, order=DB_account, asset_accounting=True, download=False)
-        credit_clause, debit_clause = self._opening_aaccount_clause()          
+        credit_clause, debit_clause = self._opening_account_clause()
         for item in ledger_coa:
             account, = item
             sql_statement = ("WITH amounts AS ("
@@ -1221,28 +1219,28 @@ class MariaDB(object):   # Singleton with controlled initialization
             total_amounts = total_amounts + ledger
         return total_amounts
 
-    def _opening_aaccount_clause(self):
+    def _opening_account_clause(self):
         opening_balance_accounts = self.select_table(LEDGER_COA, DB_account, opening_balance_account=True)
-        debit_clause  = ''
+        debit_clause = ''
         credit_clause = ''
         if opening_balance_accounts:
             opening_balance_accounts = str(opening_balance_accounts[0])
             opening_balance_accounts = opening_balance_accounts.replace(',', '')
-            credit_clause =  " AND credit_account not in " + opening_balance_accounts + " "
-            debit_clause =  " AND debit_account not in " + opening_balance_accounts + " "
-        return credit_clause, debit_clause            
+            credit_clause = " AND credit_account not in " + opening_balance_accounts + " "
+            debit_clause = " AND debit_account not in " + opening_balance_accounts + " "
+        return credit_clause, debit_clause
 
-    def select_ledger_total_amount(self, iban, **kwargs): 
+    def select_ledger_total_amount(self, iban, **kwargs):
         """
-        Returns dict {last_date, status, amount} 
+        Returns dict {last_date, status, amount}
         ledger account may not be posted in the opening balance account !!
         """
 
         ledger_total_amount = None
-        credit_clause, debit_clause = self._opening_aaccount_clause() 
-        result = self.select_table(LEDGER_COA, DB_account, iban=iban) 
+        credit_clause, debit_clause = self._opening_account_clause()
+        result = self.select_table(LEDGER_COA, DB_account, iban=iban)
         if result:
-            account = result[0][0]       
+            account = result[0][0]
             sql_statement = ("WITH amounts AS ("
                              "SELECT credit_account as iban, entry_date AS date, '" + CREDIT +
                              "' AS status, amount AS saldo  FROM "
@@ -1250,7 +1248,7 @@ class MariaDB(object):   # Singleton with controlled initialization
                              " UNION "
                              "SELECT debit_account as iban, entry_date AS date, '" + DEBIT +
                              "' AS status, amount AS saldo  FROM "
-                             + LEDGER  + " WHERE debit_account='" + account + "'" + credit_clause + ") "
+                             + LEDGER + " WHERE debit_account='" + account + "'" + credit_clause + ") "
                              "SELECT iban, date, status, saldo FROM amounts  GROUP BY iban, date ")
             ledger_total_amount = self.execute(sql_statement)
             if ledger_total_amount:
@@ -1259,7 +1257,6 @@ class MariaDB(object):   # Singleton with controlled initialization
             else:
                 return {}
 
-    
     def _dict_all_ibans(self):
         """
         Returns a list of all ibans

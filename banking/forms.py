@@ -85,6 +85,7 @@ from banking.declarations import (
     SEPA_CREDITOR_IBAN, SEPA_CREDITOR_NAME, SEPA_EXECUTION_DATE, SEPA_PURPOSE_1, SEPA_PURPOSE_2,
     SEPA_REFERENCE, SEPA_TRANSFER_APPLCANT_NAMES,
     START_DATE_TRANSACTIONS,
+    TechnicalIndicatorData,
     TIME_SERIES_INTRADAY,  TIME_SERIES_DAILY_ADJUSTED,
     TIME_SERIES_WEEKLY,
     TIME_SERIES_MONTHLY, TIME_SERIES_WEEKLY_ADJUSTED,
@@ -94,6 +95,7 @@ from banking.declarations import (
     WWW_YAHOO,
 
     COMBO, CHECK,
+    BUTTON_ADD_CHART, BUTTON_INDICATOR,
     BUTTON_OK, BUTTON_ALPHA_VANTAGE, BUTTON_DATA, BUTTON_CREDIT, BUTTON_COPY, BUTTON_DEBIT,
     BUTTON_SAVE, BUTTON_NEW, BUTTON_APPEND, BUTTON_REPLACE, BUTTON_NEXT, BUTTON_UPDATE,
     BUTTON_DELETE, BUTTON_DELETE_ALL, BUTTON_STANDARD, BUTTON_SAVE_STANDARD, BUTTON_SELECT_ALL,
@@ -104,7 +106,7 @@ from banking.declarations import (
     NUMERIC,
     STANDARD,
     TYP_DECIMAL, TYP_DATE, TYP_ALPHANUMERIC,
-    WM_DELETE_WINDOW, FORMAT_VARIABLE, TRUE,
+    WM_DELETE_WINDOW, FORMAT_VARIABLE,
     )
 from banking.formbuilts import (
     Caller,
@@ -163,7 +165,8 @@ def import_prices_run(title, mariadb, field_list, state):
                             PRICES, DB_price_date, symbol=symbol)
                         if max_price_date:
                             from_date = max_price_date + timedelta(days=1)
-                    to_date = date_days.subtract(date.today(), 1)
+                    # to_date = date_days.subtract(date.today(), 1)
+                    to_date = date.today()
                     if from_date > to_date:
                         MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
                                        message=MESSAGE_TEXT['PRICES_ALREADY'].format(
@@ -598,7 +601,7 @@ class InputDatePrices(BuiltSelectBox):
                 if field_name not in self.data_dict.keys():
                     self.data_dict[field_name] = 0
         # separator line
-        self.separator = [FN_TO_DATE, DB_origin]
+        self.separator = [FN_TO_DATE, DB_splits]
         # selection ISIN name
         isin_names = self.mariadb.select_table_distinct(
             PRICES_ISIN_VIEW, [DB_ISIN, DB_name], result_dict=True, order=DB_name)
@@ -972,7 +975,7 @@ class BankDelete(BuiltEnterBox):
         self.field_dict[KEY_BANK_NAME] = getattr(
             self._field_defs, KEY_BANK_NAME).widget.get()
         self.quit_widget()
-        
+
     def comboboxselected_action(self, event):
 
         getattr(self._field_defs, KEY_BANK_NAME).textvar.set(self.mariadb.shelve_get_key(
@@ -994,10 +997,10 @@ class IsinTableRowBox(BuiltTableRowBox):
     def focus_out_action(self, event):
 
         if event.widget.myId == DB_ISIN:
-            if getattr(self._field_defs, DB_type).widget.get()==FN_INDEX:
+            if getattr(self._field_defs, DB_type).widget.get() == FN_INDEX:
                 isin_name = getattr(self._field_defs, DB_name).widget.get()
                 getattr(self._field_defs, DB_ISIN).textvar.set(isin_name.ljust(12, "0"))
-            else:    
+            else:
                 isin_code = getattr(self._field_defs, DB_ISIN).widget.get()
                 isin_name = self.mariadb.select_table(
                     ISIN, [DB_name], isin_code=isin_code)
@@ -1024,7 +1027,7 @@ class IsinTableRowBox(BuiltTableRowBox):
                     origin_symbol)
                 getattr(self._field_defs, DB_currency).textvar.set(currency)
                 getattr(self._field_defs, DB_industry).textvar.set(industry)
-        if event.widget.myId==DB_type and getattr(self._field_defs, DB_type).widget.get()==FN_INDEX:
+        if event.widget.myId == DB_type and getattr(self._field_defs, DB_type).widget.get() == FN_INDEX:
             isin_name = getattr(self._field_defs, DB_name).widget.get()
             getattr(self._field_defs, DB_ISIN).textvar.set(isin_name[:12].ljust(12, "_"))
         if event.widget.myId == DB_origin_symbol:
@@ -1079,6 +1082,9 @@ class IsinTableRowBox(BuiltTableRowBox):
                     VALIDITY_DEFAULT)
         elif field_def.name == DB_ISIN:
             isin_code = getattr(self._field_defs, DB_ISIN).widget.get()
+            isin_code = isin_code.replace(" ", "")
+            isin_code = isin_code.ljust(12, "_")
+            getattr(self._field_defs, DB_ISIN).textvar.set(isin_code)
             if not isin_code[0].isalpha():
                 # necessary because of use as field name in named tuples (otherwise runtime error)
                 self.footer.set(MESSAGE_TEXT['ISIN_ALPHABETIC'])
@@ -1663,23 +1669,27 @@ class PandasBoxPrices(BuiltPandasBox):
     """
 
     def create_dataframe(self):
-
+        
         (db_field, data, self.origin, sign) = self.dataframe
-        dataframe = DataFrame(data)
-        columns = [DB_name]
-        self.dataframe = dataframe.pivot(
-            index=DB_price_date, columns=columns, values=db_field)
-        columns = list(self.dataframe)
-        self.dataframe[columns[0]] = self.dataframe[columns[0]].apply(
-            to_numeric)
-        if sign == PERCENT:
-            for idx, dataframe_column in enumerate(self.dataframe.columns):
-                for idx in range(self.dataframe.shape[0]):
-                    base_value = self.dataframe.iat[0, idx]
-                    if base_value != 0:
-                        self.dataframe[dataframe_column] = (
-                            self.dataframe[dataframe_column] / base_value - 1) * 100
-                        break
+        if sign==PERCENT:
+            dataframe = DataFrame(data)
+            dataframe = dataframe.dropna(how='all', axis=1)
+            self.dataframe = dataframe.pivot(
+                index='price_date', columns='name', values=db_field)
+            columns = self.dataframe.columns
+            base_row = self.dataframe.head(1)
+            for idx, column, in enumerate(columns):
+                if base_row.iloc[0, idx] != 0:
+                    self.dataframe[column] = (
+                        self.dataframe[column] / dec2.convert(base_row.iloc[0, idx]) - 1) * 100    
+        else:                
+            dataframe = DataFrame(data)
+            columns = [DB_name]
+            self.dataframe = dataframe.pivot(
+                index=DB_price_date, columns=columns, values=db_field)
+            columns = list(self.dataframe)
+            self.dataframe[columns[0]] = self.dataframe[columns[0]].apply(
+                to_numeric)
 
     def set_column_format(self):
 
@@ -1759,10 +1769,10 @@ class PandasBoxIsinTable(BuiltPandasBox):
 
         row_dict = self.get_selected_row()
         if row_dict:
-            if row_dict[DB_type]==FN_INDEX:
-                protected=[DB_ISIN, DB_type, DB_wkn, DB_industry]
-            else:    
-                protected = [DB_ISIN, DB_type]
+            if row_dict[DB_type] == FN_INDEX:
+                protected = [DB_ISIN, DB_wkn, DB_industry]
+            else:
+                protected = [DB_ISIN]
             mandatory = [DB_name, DB_type, DB_validity, DB_currency]
             focus_out = [DB_ISIN, DB_name, DB_type, DB_origin_symbol]
             upper = [DB_symbol]
@@ -1869,6 +1879,7 @@ class PandasBoxIsinComparisionPercent(BuiltPandasBox):
         dataframe = dataframe.dropna(how='all', axis=1)
         self.dataframe = dataframe.pivot(
             index='price_date', columns='name', values=db_field)
+        self.dataframe = self.dataframe.dropna(how='all', axis=1)
         columns = self.dataframe.columns
         base_row = self.dataframe.head(1)
         for idx, column, in enumerate(columns):
@@ -2135,7 +2146,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
             self.credit_statement_missed, self.debit_statement_missed = result
         else:
             self.credit_statement_missed = self.debit_statement_missed = []
-        self.message = message     
+        self.message = message
         if data:
             super().__init__(title=title, dataframe=data, message=message,
                              mode=mode, selected_row=self.selected_row)
@@ -2172,12 +2183,12 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                 DB_debit_account, self.dataframe[DB_debit_account] == NOT_ASSIGNED, COLOR_ERROR)
         if column == DB_credit_account:
             mask = self.dataframe[DB_id_no].apply(
-                lambda x: True if x in self.credit_statement_missed else False )
+                lambda x: True if x in self.credit_statement_missed else False)
             self.pandas_table.setColorByMask(
                 DB_credit_account, mask, COLOR_ERROR)
         if column == DB_debit_account:
             mask = self.dataframe[DB_id_no].apply(
-                lambda x: True if x in self.debit_statement_missed else False )
+                lambda x: True if x in self.debit_statement_missed else False)
             self.pandas_table.setColorByMask(
                 DB_debit_account, mask, COLOR_ERROR)
 
@@ -2186,12 +2197,12 @@ class PandasBoxLedgerTable(BuiltPandasBox):
         Determines the bank accounts in the ledger table
         that have no assignment to a bank transaction
         """
-        highlight_list = MariaDB().select_ledger_statement_missed(status, self.period)         
+        highlight_list = MariaDB().select_ledger_statement_missed(status, self.period)
         if id_no in highlight_list:
             return True
         else:
             return False
-         
+
     def show_row(self):
 
         row_dict = self.get_selected_row()
@@ -2538,9 +2549,16 @@ class PandasBoxLedgerStatement(BuiltPandasBox):
         self.status = status
         self.iban = iban
         self.ledger_dict = ledger_dict
-        self.from_date = date_days.convert(self.ledger_dict[DB_entry_date])
-        self.to_date = date_days.convert(
-            date_days.add(self.ledger_dict[DB_entry_date], 2))
+        if status==CREDIT:
+            # Credit always 2nd account transaction (after debit) , therefore 5 days back
+            self.from_date = date_days.convert(self.ledger_dict[DB_entry_date])
+            self.to_date = date_days.convert(
+                date_days.add(self.ledger_dict[DB_entry_date], 5))
+        if status==DEBIT:
+            # Debit always 1st account transaction (before credit), therefore 5 days in advance
+            self.to_date = date_days.convert(self.ledger_dict[DB_entry_date])
+            self.from_date = date_days.convert(
+                date_days.subtract(self.ledger_dict[DB_entry_date], 5))            
         title = ' '.join([self.title, MESSAGE_TEXT['ASSINGNABLE_STATEMENTS'].format(
             self.from_date, self.to_date)])
         super().__init__(title=title,
@@ -3048,60 +3066,19 @@ class PandasBoxTransactionTable(PandasBoxTransactionTableShow):
         return combo_dict,  combo_positioning_dict, protected, mandatory
 
 
-class TechnicalIndicators(InputISIN):
+class TechnicalIndicator(InputISIN):
     """
+    Paraameter
+     selection_name --> Storage name for last used selection values
+     data_dict --> default values of select_data
+     data_container --> contains additional data from caller
+
     1. Volume Indicators
-        Accumulation/Distribution Index (ADI) > AccDistIndexIndicator
-        On-Balance Volume (OBV) > OnBalanceVolumeIndicator
-        Money Flow Index (MFI) > MFIIndicator
-        Chaikin Money Flow (CMF) > ChaikinMoneyFlowIndicator
-        Force Index (FI) > ForceIndexIndicator
-        Ease of Movement (EoM, EMV) > EaseOfMovementIndicator (also sma_ease_of_movement)
-        Volume-price Trend (VPT) > VolumePriceTrendIndicator
-        Negative Volume Index (NVI) > NegativeVolumeIndexIndicator
-        Volume Weighted Average Price (VWAP) > VolumeWeightedAveragePriceIndicator
-
     2. Volatility Indicators
-        Average True Range (ATR) > AverageTrueRange
-        Bollinger Bands (BB) > BollingerBands with methods like bollinger_hband, bollinger_lband, bollinger_mavg, etc.
-        Keltner Channel (KC) > KeltnerChannel with methods like keltner_channel_hband, mband, etc.
-        Donchian Channel (DC) > DonchianChannel with similar band methods.
-        Ulcer Index (UI) > UlcerIndex
-
     3. Trend Indicators
-        Simple Moving Average (SMA) > SMAIndicator
-        Exponential Moving Average (EMA) > EMAIndicator
-        Weighted Moving Average (WMA) > WMAIndicator
-        Moving Average Convergence Divergence (MACD) > MACD (includes macd_diff, macd_signal)
-        Average Directional Movement Index (ADX) > ADXIndicator with adx_neg, adx_pos
-        Vortex Indicator (VI) > VortexIndicator with vortex_indicator_neg, vortex_indicator_pos
-        Trix (TRIX) > TRIXIndicator
-        Mass Index (MI) > MassIndex
-        Commodity Channel Index (CCI) > CCIIndicator
-        Detrended Price Oscillator (DPO) > DPOIndicator
-        KST Oscillator (KST) > KSTIndicator with kst_sig
-        Ichimoku Kinko Hyo (Ichimoku) > IchimokuIndicator (includes lines like conversion line, base line, ichimoku_a, ichimoku_b)
-        Parabolic Stop and Reverse (Parabolic SAR) > PSARIndicator with down/up indicators
-        Schaff Trend Cycle (STC) > STCIndicator
-        Aroon Indicator > AroonIndicator with aroon_down, aroon_up
-
     4. Momentum Indicators
-        Relative Strength Index (RSI) > RSIIndicator
-        Stochastic RSI (SRSI) > StochRSIIndicator, with stochrsi_d, stochrsi_k
-        True Strength Index (TSI) > TSIIndicator
-        Ultimate Oscillator (UO) > UltimateOscillator
-        Stochastic Oscillator > StochasticOscillator with stoch, stoch_signal
-        Williams %R (WR) > WilliamsRIndicator
-        Awesome Oscillator (AO) > AwesomeOscillatorIndicator
-        Kaufmans Adaptive Moving Average (KAMA) > KAMAIndicator
-        Rate of Change (ROC) > ROCIndicator
-        Percentage Price Oscillator (PPO) > PercentagePriceOscillator, with ppo_hist, ppo_signal
-        Percentage Volume Oscillator (PVO) > PercentageVolumeOscillator, with pvo_hist, pvo_signal
-
     5. Other Indicators
-        Daily Return (DR) > DailyReturnIndicator
-        Daily Log Return (DLR) > DailyLogReturnIndicator
-        Cumulative Return (CR) > CumulativeReturnIndicator
+    Details (see in declarations.py TechnicalIndicatorData)
     """
 
     TA_MENU_TEXT = {
@@ -3111,63 +3088,17 @@ class TechnicalIndicators(InputISIN):
         'Momentum': 'Momentum',
         'Others': 'Others'
         }
-    # indicator columns of dataframe created by ta.add_all_ta_features
-    TA_VOLUME = {
-        'AccDistIndexIndicator': ['volume_adi'],
-        'OnBalanceVolumeIndicator': ['volume_obv'],
-        'ChaikinMoneyFlowIndicator': ['volume_cmf'],
-        'ForceIndexIndicator': ['volume_fi'],
-        'EaseOfMovementIndicator': ['volume_em', 'volume_sma_em'],
-        'VolumePriceTrendIndicator': ['volume_vpt'],
-        'VolumeWeightedAveragePrice': ['volume_vwap'],
-        'MFIIndicator': ['volume_mfi'],
-        'NegativeVolumeIndexIndicator': ['volume_nvi']
-        }
-    TA_VOLATILITY = {
-        'BollingerBands': ['volatility_bbm', 'volatility_bbh', 'volatility_bbl', 'volatility_bbw',
-                           'volatility_bbp', 'volatility_bbhi', 'volatility_bbli'],
-        'KeltnerChannel': ['volatility_kch', 'volatility_kcl', 'volatility_kcw', 'volatility_kcp',
-                           'volatility_kchi', 'volatility_kcli'],
-        'DonchianChannel': ['volatility_dcl', 'volatility_dch', 'volatility_dcm', 'volatility_dcw',
-                            'volatility_dcp'],
-        'AverageTrueRange': ['volatility_atr'],
-        'UlcerIndex': ['volatility_ui']
-        }
-    TA_TREND = {
-        'MACD': ['trend_macd', 'trend_macd_signal', 'trend_macd_diff'],
-        'SMAIndicator': ['trend_sma_fast', 'trend_sma_slow'],
-        'EMAIndicator': ['trend_ema_fast', 'trend_ema_slow'],
-        'VortexIndicator': ['trend_vortex_ind_pos', 'trend_vortex_ind_neg', 'trend_vortex_ind_diff'],
-        'TRIXIndicator': ['trend_trix'],
-        'MassIndex': ['trend_mass_index'],
-        'DPOIndicator': ['trend_dpo'],
-        'KSTIndicator': ['trend_kst', 'trend_kst_sig' 'trend_kst_diff'],
-        'IchimokuIndicator': ['trend_ichimoku_conv', 'trend_ichimoku_base', 'trend_ichimoku_a', 'trend_ichimoku_b'],
-        'STCIndicator': ['trend_stc'],
-        'ADXIndicator': ['trend_adx', 'trend_adx_pos', 'trend_adx_neg'],
-        'CCIIndicator': ['trend_cci'],
-        'IchimokuIndicator_visual': ['trend_visual_ichimoku_a', 'trend_visual_ichimoku_b'],
-        'AroonIndicator': ['trend_aroon_up', 'trend_aroon_down', 'trend_aroon_ind'],
-        'PSARIndicator': ['trend_psar_up', 'trend_psar_down', 'trend_psar_up_indicator', 'trend_psar_down_indicator'],
-        }
-    TA_MOMENTUM = {
-        'RSIIndicator': ['momentum_rsi'],
-        'StochRSIIndicator': ['momentum_stoch_rsi', 'momentum_stoch_rsi_k', 'momentum_stoch_rsi_d'],
-        'TSIIndicator': ['momentum_tsi'],
-        'UltimateOscillator': ['momentum_uo'],
-        'StochasticOscillator': ['momentum_stoch', 'momentum_stoch_signal'],
-        'WilliamsRIndicator': ['momentum_wr'],
-        'AwesomeOscillatorIndicator': ['momentum_ao'],
-        'ROCIndicator': ['momentum_roc'],
-        'PercentagePriceOscillator': ['momentum_ppo', 'momentum_ppo_signal', 'momentum_ppo_hist'],
-        'PercentageVolumeOscillator': ['momentum_pvo', 'momentum_pvo_signal', 'momentum_pvo_hist'],
-        'KAMAIndicator': ['momentum_kama']
-        }
-    TA_OTHERS = {
-        'DailyReturnIndicator': ['others_dr'],
-        'DailyLogReturnIndicator': ['others_dlr'],
-        'CumulativeReturnIndicator': ['others_cr']
-        }
+
+    def __init__(self, title=MESSAGE_TITLE, data_dict={}, container_dict={}, selection_name=None):
+
+        super().__init__(title=title, header=None, table=None,
+                         button1_text=BUTTON_INDICATOR, button2_text=None,
+                         button3_text=None, button4_text=None,
+                         selection_name=selection_name,
+                         data_dict=data_dict,
+                         upper=[], separator=[],
+                         container_dict=container_dict
+                         )
 
     def comboboxselected_action(self, event):
 
@@ -3207,41 +3138,41 @@ class TechnicalIndicators(InputISIN):
             else:
                 self.footer.set(MESSAGE_TEXT["DATA_NO"].format(PRICES.upper(), self.data_dict[DB_name]))
 
-    def _set_menu(self, dataframe, ):
+    def _set_menu(self, dataframe):
         """
         create menu with technical indicators
         """
         try:
             menubar = Menu(self._box_window_top)
             volume_menu = Menu(menubar, tearoff=0)
-            for label in TechnicalIndicators.TA_VOLUME.keys():
+            for indicator in TechnicalIndicatorData.TA_VOLUME.keys():
                 volume_menu.add_command(
-                    label=label,
-                    command=lambda x=dataframe, y=TechnicalIndicators.TA_VOLUME[label], title=label: self._show_indicator(x, y, title))
+                    label=indicator,
+                    command=lambda x=dataframe, y=TechnicalIndicatorData.TA_VOLUME[indicator], z=indicator: self._show_indicator(x, y, z))
             menubar.add_cascade(label=self.TA_MENU_TEXT['Volume'], menu=volume_menu)
             volatility_menu = Menu(menubar, tearoff=0)
-            for label in TechnicalIndicators.TA_VOLATILITY.keys():
+            for indicator in TechnicalIndicatorData.TA_VOLATILITY.keys():
                 volatility_menu.add_command(
-                    label=label,
-                    command=lambda x=dataframe, y=self.TA_VOLATILITY[label], title=label: self._show_indicator(x, y, title))
+                    label=indicator,
+                    command=lambda x=dataframe, y=TechnicalIndicatorData.TA_VOLATILITY[indicator], z=indicator: self._show_indicator(x, y, z))
             menubar.add_cascade(label=self.TA_MENU_TEXT['Volatility'], menu=volatility_menu)
             trend_menu = Menu(menubar, tearoff=0)
-            for label in self.TA_TREND.keys():
+            for indicator in TechnicalIndicatorData.TA_TREND.keys():
                 trend_menu.add_command(
-                    label=label,
-                    command=lambda x=dataframe, y=self.TA_TREND[label], title=label: self._show_indicator(x, y, title))
+                    label=indicator,
+                    command=lambda x=dataframe, y=TechnicalIndicatorData.TA_TREND[indicator], z=indicator: self._show_indicator(x, y, z))
             menubar.add_cascade(label=self.TA_MENU_TEXT['Trend'], menu=trend_menu)
             momentum_menu = Menu(menubar, tearoff=0)
-            for label in self.TA_MOMENTUM.keys():
+            for indicator in TechnicalIndicatorData.TA_MOMENTUM.keys():
                 momentum_menu.add_command(
-                    label=label,
-                    command=lambda x=dataframe, y=self.TA_MOMENTUM[label], title=label: self._show_indicator(x, y, title))
+                    label=indicator,
+                    command=lambda x=dataframe, y=TechnicalIndicatorData.TA_MOMENTUM[indicator], z=indicator: self._show_indicator(x, y, z))
             menubar.add_cascade(label=self.TA_MENU_TEXT['Momentum'], menu=momentum_menu)
             others_menu = Menu(menubar, tearoff=0)
-            for label in self.TA_OTHERS.keys():
+            for indicator in TechnicalIndicatorData.TA_OTHERS.keys():
                 others_menu.add_command(
-                    label=label,
-                    command=lambda x=dataframe, y=self.TA_OTHERS[label], title=label: self._show_indicator(x, y, title))
+                    label=indicator,
+                    command=lambda x=dataframe, y=TechnicalIndicatorData.TA_OTHERS[indicator], z=indicator: self._show_indicator(x, y, z))
             menubar.add_cascade(label=self.TA_MENU_TEXT['Others'], menu=others_menu)
             self._box_window_top.config(menu=menubar)
         except Exception as e:
@@ -3249,17 +3180,66 @@ class TechnicalIndicators(InputISIN):
             print("Error in menu command:", e)
             traceback.print_exc()
 
-    def _indicator_columns(self, dataframe, columns):
+    def _show_indicator(self, dataframe, indicator_columns, indicator):
 
-        dataframe_indicator = DataFrame(dataframe[DB_price_date])
-        for column in columns:
-            dataframe_indicator[column] = dataframe[column]
+        title = ' '.join([indicator, self.field_dict[DB_name]])
+        line_columns = []
+        if indicator in TechnicalIndicatorData.TA_LINES.keys():
+            for line_column in TechnicalIndicatorData.TA_LINES[indicator]:
+                line_column_name, line_column_value = line_column
+                dataframe[line_column_name] = line_column_value
+                line_columns.append(line_column_name)
+        TechnicalIndicatorData.TA_CLOSE = []
+        BuiltPandasBox(title=title, dataframe=dataframe[indicator_columns + line_columns],
+                       mode=NUMERIC, instant_plotting=True)
+        if self.button_state == WM_DELETE_WINDOW:
+            return
+        BuiltPandasBox(title=title, dataframe=dataframe[indicator_columns + TechnicalIndicatorData.TA_CLOSE + line_columns],
+                       mode=NUMERIC, instant_plotting=True)
 
-    def _show_indicator(self, dataframe, indicator_columns, title):
 
-        title = ' '.join([title, self.field_dict[DB_name]])
-        return BuiltPandasBox(title=title, dataframe=dataframe[indicator_columns],
-                              mode=NUMERIC, instant_plotting=True)
+class SelectCloseVolume(BuiltCheckButton):
+    """
+    TOP-LEVEL-WINDOW        Select additional charts
+
+    Select addtional charts to technical indicator chart
+
+    PARAMETER:
+        checkbutton_texts    List  of Fields
+
+        default_text         initialization of checkbox
+    INSTANCE ATTRIBUTES:
+        button_state        Text of selected Button
+        self.field_list        contains selected check_fields
+    """
+
+    def __init__(self):
+
+        Caller.caller = self.__class__.__name__
+        super().__init__(
+            title=MESSAGE_TEXT['TA_ADD_CHART'], header=MESSAGE_TEXT['CHECKBOX'],
+            button1_text=BUTTON_ADD_CHART, button2_text=None,
+            checkbutton_texts=[DB_close, DB_volume],
+            default_texts=TechnicalIndicatorData.TA_CLOSE
+        )
+
+    def button_1_button2(self, event):
+
+        self.button_state = self._button2_text
+        self.field_list = []
+        for idx, check_var in enumerate(self._check_vars):
+            if check_var.get() == 1:
+                self.field_list.append(self.checkbutton_texts[idx])
+        self.quit_widget()
+
+    def button_1_button3(self, event):
+
+        self.button_state = self._button3_text
+        self.field_list = []
+        for idx, check_var in enumerate(self._check_vars):
+            if check_var.get() == 1:
+                self.field_list.append(self.checkbutton_texts[idx])
+        self.quit_widget()
 
 
 class PrintMessageCode(BuiltText):

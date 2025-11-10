@@ -115,6 +115,10 @@ class SepaCreditTransfer():
         PmtTpInf_node = ET.Element("PmtTpInf")
         PmtTpInf_SvcLvl_node = ET.Element("SvcLvl")
         PmtTpInf_SvcLvl_Cd_node = ET.Element("Cd")
+        """
+        PmtTpInf_CtgyPurp_node = ET.Element("CtgyPurp")  # VOP
+        PmtTpInf_CtgyPurp_Cd_node = ET.Element("Cd")  # VOP
+        """
         ReqdExctnDt_node = ET.Element("ReqdExctnDt")
         Dbtr_node = ET.Element("Dbtr")
         Dbtr_Nm_node = ET.Element("Nm")
@@ -133,6 +137,9 @@ class SepaCreditTransfer():
         NbOfTxs_node.text = str(1)
         CtrlSum_node.text = transfer_data[SEPA_AMOUNT]
         PmtTpInf_SvcLvl_Cd_node.text = "SEPA"
+        """
+        PmtTpInf_CtgyPurp_Cd_node.text = "CTV"  # VOP
+        """
         ReqdExctnDt_node.text = transfer_data[SEPA_EXECUTION_DATE]
         Dbtr_Nm_node.text = account_data[KEY_ACC_OWNER_NAME]
         DbtrAcct_Id_Iban_node.text = account_data[KEY_ACC_IBAN]
@@ -146,6 +153,10 @@ class SepaCreditTransfer():
         PmtInf_node.append(PmtTpInf_node)
         PmtTpInf_node.append(PmtTpInf_SvcLvl_node)
         PmtTpInf_SvcLvl_node.append(PmtTpInf_SvcLvl_Cd_node)
+        """
+        PmtTpInf_node.append(PmtTpInf_CtgyPurp_node)  # VOP
+        PmtTpInf_CtgyPurp_node.append(PmtTpInf_CtgyPurp_Cd_node)  # VOP
+        """
         PmtInf_node.append(ReqdExctnDt_node)
         PmtInf_node.append(Dbtr_node)
         Dbtr_node.append(Dbtr_Nm_node)

@@ -51,7 +51,7 @@ from banking.declarations import (
     SEPA_CREDITOR_IBAN, SEPA_CREDITOR_NAME, SEPA_EXECUTION_DATE, SEPA_PURPOSE,
     SEPA_PURPOSE_1, SEPA_PURPOSE_2, SEPA_REFERENCE,
     SHELVE_KEYS,
-    START_DATE_HOLDING,
+    START_DATE_HOLDING, START_DATE_LEDGER,
     TRANSACTION_DELIVERY, TRANSFER_DATA_SEPA_EXECUTION_DATE,
     WEBSITES, WARNING,
     # form declaratives
@@ -722,7 +722,6 @@ class BankenLedger(object):
         self._create_menu_banks(
             MENU_TEXT['Transfer'], bank_owner_account, transfer_menu, menu_font)
 
-
     def _create_menu_database(self, menu, menu_font, bank_owner_account):
         """
         DATABASE Menu
@@ -821,12 +820,12 @@ class BankenLedger(object):
                         cust_bank_menu.add_command(label=MENU_TEXT['Change FinTS Transaction Version'],
                                                    command=lambda
                                                    x=bank_code: self._bank_version_transaction(x))
-                        customize_menu.add_separator()
                         cust_bank_menu.add_command(label=MENU_TEXT['Refresh BankParameterData'],
                                                    command=lambda
                                                    x=bank_code: self._bank_refresh_bpd(x))
                     cust_bank_menu.add_command(label=MENU_TEXT['Show Data'],
                                                command=lambda x=bank_code: self._bank_show_shelve(x))
+                    customize_menu.add_separator()
                     customize_menu.add_cascade(
                         label=bank_name, menu=cust_bank_menu, underline=0)
 
@@ -851,7 +850,7 @@ class BankenLedger(object):
                                 accounts, account_menu, bank_code, bank_name, owner_name=owner_name)
                         if menu_text == MENU_TEXT['Transfer']:
                             accounts_exist = self._create_menu_transfer_accounts(
-                                accounts, account_menu, bank_code, bank_name, owner_name=owner_name) 
+                                accounts, account_menu, bank_code, bank_name, owner_name=owner_name)
                         elif menu_text == MENU_TEXT['Database']:
                             accounts_exist = self._create_menu_database_accounts(
                                 accounts, account_menu, bank_name, menu_font)
@@ -873,7 +872,7 @@ class BankenLedger(object):
                         accounts, account_menu, bank_code, bank_name)
                 if menu_text == MENU_TEXT['Transfer']:
                     accounts_exist = self._create_menu_transfer_accounts(
-                        accounts, account_menu, bank_code, bank_name)                    
+                        accounts, account_menu, bank_code, bank_name)
                 elif menu_text == MENU_TEXT['Database']:
                     accounts_exist = self._create_menu_database_accounts(
                         accounts, account_menu, bank_name, menu_font)
@@ -911,14 +910,13 @@ class BankenLedger(object):
                         command=(lambda x=bank_code, y=acc: self._show_transactions(x, y)))
         return accounts_exist
 
-
     def _create_menu_transfer_accounts(self, accounts, account_menu, bank_code, bank_name, owner_name=None):
 
         accounts_exist = False
         if accounts:
             for acc in accounts:
                 if 'HKCCS' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                    accounts_exist = True                    
+                    accounts_exist = True
                     label = acc[KEY_ACC_PRODUCT_NAME]
                     if not label:
                         label = acc[KEY_ACC_ACCOUNT_NUMBER]
@@ -928,10 +926,6 @@ class BankenLedger(object):
                         command=(lambda x=bank_code,
                                  y=acc: self._sepa_credit_transfer(x, y)))
         return accounts_exist
-
-
-
-
 
     def _create_menu_database_accounts(self, accounts, account_menu, bank_name, menu_font):
 
@@ -1100,7 +1094,7 @@ class BankenLedger(object):
                 selected_isins = list(
                     filter(lambda x: data_dict_isins[x] == 1, list(data_dict_isins.keys())))
                 # more than one isin selected
-                if len(selected_isins) > 1:                
+                if len(selected_isins) > 1:
                     if data_dict_isins[FN_COMPARATIVE] == FN_PROFIT_LOSS:
                         db_fields = [DB_name, DB_price_date,
                                      ''.join([DB_total_amount, '-', DB_acquisition_amount, ' AS ', FN_PROFIT_LOSS])]
@@ -1125,7 +1119,7 @@ class BankenLedger(object):
                             if table.button_state == WM_DELETE_WINDOW:
                                 break
                     else:
-                        self.footer.set(MESSAGE_TEXT['FIELDLIST_INTERSECTION_EMPTY'])  
+                        self.footer.set(MESSAGE_TEXT['FIELDLIST_INTERSECTION_EMPTY'])
                 else:
                     self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
             else:
@@ -1183,7 +1177,7 @@ class BankenLedger(object):
                             if table.button_state == WM_DELETE_WINDOW:
                                 break
                     else:
-                        self.footer.set(MESSAGE_TEXT['FIELDLIST_INTERSECTION_EMPTY'])                            
+                        self.footer.set(MESSAGE_TEXT['FIELDLIST_INTERSECTION_EMPTY'])
                 else:
                     self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
             else:
@@ -1515,15 +1509,15 @@ class BankenLedger(object):
         self._delete_footer()
         title = ' '.join(
             [MENU_TEXT['All_Banks'], MENU_TEXT['Balances']])
-        data_dict = {FN_FROM_DATE: date(2021, 10, 3), FN_TO_DATE: date.today()}
+        data_dict = {}
         while True:
             input_period = InputPeriod(title=title, data_dict=data_dict)
             if input_period.button_state == WM_DELETE_WINDOW:
                 return input_period.button_state, None, None
             self.footer.set(MESSAGE_TEXT['TASK_STARTED'].format(title))
             data_dict = input_period.field_dict
-            data_total_amounts = self.mariadb.select_total_amounts(
-                period=(date_days.subtract(data_dict[FN_FROM_DATE], 1), data_dict[FN_TO_DATE]))
+            period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
+            data_total_amounts = self.mariadb.select_total_amounts(period)
             title_period = ' '.join([title, MESSAGE_TEXT['PERIOD'].format(
                 data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
             self.footer.set(MESSAGE_TEXT['TASK_DONE'])

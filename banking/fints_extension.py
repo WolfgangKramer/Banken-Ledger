@@ -45,11 +45,12 @@ class PaymentStatusReport(DataElementGroup):
     Source: FinTS Financial Transaction Services, Verification of Payee,
             SEPA-Zahlungsverkehr  -- Namensabgleich (Verification of Payee)
     """
-    polling_id = DataElementField(
-        type='bin', required=False, _d='Aufsetzpunkt belegt  und vom Institut wurde eine Polling-ID geliefert')
-    number_entries_allowed = DataElementField(type='jn', required=False, _d='Eingabe Anzahl Eintraege erlaubt')
-    touchdown_point = DataElementField(type='an', max_length=35, required=False, _d="Aufsetzpunkt")
-
+    format = DataElementField(
+        type='an', max_length=35, required=True, _d='Payment Status Report Format')
+    version = DataElementField(
+        type='an', max_length=10, required=False, _d='Payment Status Report Version')
+    character_set = DataElementField(
+        type='an', max_length=35, required=False, _d='Payment Status Report Character Set')    
 
 class ResultPaymentStatusReport(DataElementGroup):
     """
@@ -201,7 +202,7 @@ class HKCSE1(FinTS3Segment):
     sepa_pain_message = DataElementField(type='bin', _d='SEPA pain message')
 
 
-class _HKVPP(FinTS3Segment):
+class HKVPP1(FinTS3Segment):
     """
         Segment not implemented in Project FinTS
 
@@ -220,28 +221,12 @@ class _HKVPP(FinTS3Segment):
     """
     reports = DataElementGroupField(
         type=PaymentStatusReport, _d='Unterstützte Payment Status Reports')
-    polling_id = DataElementField(type='bin', _d='Ergebnis der VOP Prüfung Einzeltransaktion')
+    polling_id = DataElementField(type='bin', required=False, _d='Ergebnis der VOP Prüfung Einzeltransaktion')
     max_number_responses = DataElementField(type='num', max_length=4, required=False, _d="Maximale Anzahl Einträge")
     touchdown_point = DataElementField(type='an', max_length=35, required=False, _d="Aufsetzpunkt")
 
 
-class HKVPP(FinTS3Segment):
-    """Dummy HKVPP Segment für Atruvia-Server."""
-
-    type = "HKVPP"
-    version = 3
-
-    fields = [
-        ("aktiv_flag", DataElementField),
-    ]
-
-    def __init__(self, aktiv_flag="0", segment_no=None):
-        # NICHT super().__init__(...) aufrufen!
-        self.segment_no = segment_no
-        self.aktiv_flag = aktiv_flag
-        
-        
-class HIVPP(FinTS3Segment):
+class HIVPP1(FinTS3Segment):
     """
         Segment not implemented in Project FinTS
 

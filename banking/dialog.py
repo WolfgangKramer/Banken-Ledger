@@ -11,9 +11,6 @@ import logging
 import re
 import requests
 
-
-
-
 from datetime import date
 from operator import itemgetter
 from fints.message import FinTSInstituteMessage

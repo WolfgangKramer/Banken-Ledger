@@ -35,9 +35,11 @@ from fints.segments.transfer import HKCCS1
 from fints.types import SegmentSequence
 
 from banking.declarations import MESSAGE_TEXT, PNS, SYSTEM_ID_UNASSIGNED, WM_DELETE_WINDOW
-from banking.fints_extension import HKCSE1, HKVPP
+from banking.fints_extension import HKCSE1, HKVPP1, PaymentStatusReport
 from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.forms import InputTAN
+from banking.mariadb import MariaDB
+from banking.declarations_mariadb import SERVER, DB_server
 
 
 def encrypt(bank, message):
@@ -145,7 +147,7 @@ class Segments():
     def segHNHBK(self, bank):
         """
         Segment Nachrichtenkopf
-        
+
             Nachstehender Kopfteil fuehrt alle Kunden- und Kreditinstitutsnachrichten an.
 
         Financial Transaction Services (FinTS) 3.0
@@ -160,7 +162,7 @@ class Segments():
     def segHNSHK(self, bank, message):
         """
         Segment Signaturkopf
-        
+
             Der Signaturkopf enthaelt Informationen ueber den damit verbundenen
             Sicherheitsservice, sowie ueber den Absender.
 
@@ -169,6 +171,19 @@ class Segments():
         Kapitel: Verfahrensbeschreibung
         Abschnitt: Formate fuer Signatur und Verschluesselung
         """
+        server = MariaDB().select_table(SERVER, DB_server, code=bank.bank_code)
+        if server and b"atruvia" in server[0]:
+            """
+            Atruvia provided new public HBCI keys in May 2025
+            These keys are said to be 2048 bits, which indicates a security adjustment.            
+            """
+            usage_hash = 'OHA'  # Owner Hashing (OHA)
+            hash_algorithm = '2'  # SHA_256
+            algorithm_parameter_name = 'IVC'  # IVC (Initialization value, clear text)
+        else:
+            usage_hash = '1'
+            hash_algorithm = '999'
+            algorithm_parameter_name = '1'
         now = datetime.now()
         message += HNSHK4(
             security_profile=SecurityProfile(SecurityMethod.PIN, 2),
@@ -187,9 +202,9 @@ class Segments():
                 now.time(),
             ),
             hash_algorithm=HashAlgorithm(
-                usage_hash='1',
-                hash_algorithm='999',
-                algorithm_parameter_name='1',
+                usage_hash=usage_hash,
+                hash_algorithm=hash_algorithm,
+                algorithm_parameter_name=algorithm_parameter_name
             ),
             signature_algorithm=SignatureAlgorithm(
                 usage_signature='6',
@@ -420,8 +435,6 @@ class Segments():
         Kapitel: Geschaeftsvorfaelle
         Abschnitt: Einzelueberweisung
         """
-        if bank.bank_code=='72090000':
-            message += HKVPP(segment_no=2)                
         hkcss = HKCCS1
         message += hkcss(
             account=hkcss._fields['account'].type.from_sepa_account(
@@ -459,7 +472,7 @@ class Segments():
         )
         return message
 
-    def segHKVPP(self, message):
+    def segHKVPP(self, bank, message):
         """
         Segment Namensabgleich Pruefauftrag
 
@@ -473,7 +486,8 @@ class Segments():
         Kapitel: SEPA-Zahlungsverkehr
         Abschnitt: Namensabgleich (Verification of Payee)
         """
-        message += HKVPP()
+        message += HKVPP1(
+            reports=PaymentStatusReport(format="pain.002.001.03"))
         return message
 
     def segHNSHA(self, bank, message):
@@ -549,7 +563,7 @@ class Segments():
     def segHNHBS(self, bank, message):
         """
         Segment Nachrichtenabschluss
-        
+
             Dieses Segment beendet alle Kunden- und Kreditinstitutsnachrichten.
 
         Financial Transaction Services (FinTS) 3.0

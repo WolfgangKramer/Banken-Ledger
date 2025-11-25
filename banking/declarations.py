@@ -252,6 +252,8 @@ MESSAGE_TEXT = {
     'NO_TURNOVER': 'Bank: {} \n Bank Account: {}  {}       \n     No new turnover',
     'NOTALLOWED': '{} Value not allowed, select from list \n {}',
     'SHELVE_NAME_MISSED': 'Shelve name  {} not found',
+    'OPENING_ACCOUNT_MISSED': 'Opening balance account is missing in Chart of Accounts',
+    'OPENING_LEDGER_MISSED': 'Opening balances missed in {}. Account: {}',
     'PAIN': 'SEPA Format pain.001.001.03 not found/allowed\nBank: {}',
     'PERIOD':               'Period ({}, {})',
     'PIN': 'PIN missing! \nBank: {} ({})',

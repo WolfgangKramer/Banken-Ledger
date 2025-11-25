@@ -177,13 +177,13 @@ class Messages():
         """
         message = self.segments.segHNHBK(bank)
         message = self.segments.segHNSHK(bank, message)
+        message = self.segments.segHKVPP(bank, message)
         message = self.segments.segHKCCS1(bank, message)
         if _get_tan_required(bank, 'HKCCS', self.mariadb):
             message = self.segments.segHKTAN(
                 bank, message, segment_name='HKCCS')
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
-        self.insert_dummy_hkvpp_if_atruvia(message, bank.bank_code)      
         _serialize(message)
         return message
 

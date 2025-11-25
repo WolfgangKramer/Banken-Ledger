@@ -1669,9 +1669,9 @@ class PandasBoxPrices(BuiltPandasBox):
     """
 
     def create_dataframe(self):
-        
+
         (db_field, data, self.origin, sign) = self.dataframe
-        if sign==PERCENT:
+        if sign == PERCENT:
             dataframe = DataFrame(data)
             dataframe = dataframe.dropna(how='all', axis=1)
             self.dataframe = dataframe.pivot(
@@ -1681,8 +1681,8 @@ class PandasBoxPrices(BuiltPandasBox):
             for idx, column, in enumerate(columns):
                 if base_row.iloc[0, idx] != 0:
                     self.dataframe[column] = (
-                        self.dataframe[column] / dec2.convert(base_row.iloc[0, idx]) - 1) * 100    
-        else:                
+                        self.dataframe[column] / dec2.convert(base_row.iloc[0, idx]) - 1) * 100
+        else:
             dataframe = DataFrame(data)
             columns = [DB_name]
             self.dataframe = dataframe.pivot(
@@ -2549,16 +2549,16 @@ class PandasBoxLedgerStatement(BuiltPandasBox):
         self.status = status
         self.iban = iban
         self.ledger_dict = ledger_dict
-        if status==CREDIT:
+        if status == CREDIT:
             # Credit always 2nd account transaction (after debit) , therefore 5 days back
             self.from_date = date_days.convert(self.ledger_dict[DB_entry_date])
             self.to_date = date_days.convert(
                 date_days.add(self.ledger_dict[DB_entry_date], 5))
-        if status==DEBIT:
+        if status == DEBIT:
             # Debit always 1st account transaction (before credit), therefore 5 days in advance
             self.to_date = date_days.convert(self.ledger_dict[DB_entry_date])
             self.from_date = date_days.convert(
-                date_days.subtract(self.ledger_dict[DB_entry_date], 5))            
+                date_days.subtract(self.ledger_dict[DB_entry_date], 5))
         title = ' '.join([self.title, MESSAGE_TEXT['ASSINGNABLE_STATEMENTS'].format(
             self.from_date, self.to_date)])
         super().__init__(title=title,

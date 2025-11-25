@@ -6,6 +6,7 @@ __updated__ = "2025-07-17"
 
 import sqlalchemy
 import json
+import re
 
 from mariadb import connect, Error
 from re import compile
@@ -76,9 +77,9 @@ from banking.utils import (
 from banking.declarations_mariadb import HOLDING_VIEW
 
 
-# statement begins with SELECT or is a Selection via CTE and begins with WITH
-select_statement = compile(r'^SELECT|^WITH')
-rowcount_statement = compile(r'^UPDATE|^DELETE|^INSERT|^REPLACE')
+# statement begins with SELECT or is a Selection via CTE or begins with WITH, leading SPACES ignored
+select_statement = compile(r"^\s*(SELECT|WITH)\b")
+rowcount_statement = compile(r"^\s*(UPDATE|DELETE|INSERT|REPLACE)\b")
 
 """
 Cursor attributes
@@ -557,13 +558,16 @@ class MariaDB(object):   # Singleton with controlled initialization
         Method executes SQL statement; no result set will be returned!
         rowcount = True   returns row_count of UPDATE, INSERT; DELETE
         """
+        # Replace \n with a space, and
+        # compress multiple spaces into a single space.
+        sql_statement = re.sub(r"\s+", " ", sql_statement.replace("\n", " ")).strip()
         try:
             if vars_:
                 self.cursor.execute(sql_statement, vars_)
             else:
                 self.cursor.execute(sql_statement)
             if select_statement.match(sql_statement.upper()):
-                # returns result if sql_statement begins with SELECT
+                # returns result if sql_statement begins with SELECT or WITH
                 result = []
                 for item in self.cursor.fetchall():
                     result.append(item)
@@ -1158,7 +1162,7 @@ class MariaDB(object):   # Singleton with controlled initialization
             sql_statement, result_dict=True, vars_=vars_ + vars_)
         return result
 
-    def select_total_amounts(self, **kwargs):
+    def select_total_amounts(self, period):
         """
         returns total_amounts
             List of tuples from the STATEMENT and HOLDING tables:
@@ -1167,68 +1171,253 @@ class MariaDB(object):   # Singleton with controlled initialization
         List of tuples from the LEDGER table:
                                 (account number, date, amount)
         """
-        where, vars_ = self._where_clause(**kwargs, date_name=DB_entry_date)
-        from_date, _ = vars_
-        vars_ = vars_ + vars_
-        sql_statement = ("WITH total_amounts AS ("
-                         + " SELECT iban, price_date AS DATE, 'C'  AS status, total_amount_portfolio AS saldo  FROM holding where price_date>? AND price_date<=?"
-                         + " GROUP BY iban, price_date"
-                         + " UNION "
-                         + " SELECT iban, entry_date AS date, closing_status AS status, closing_balance from statement "
-                         + " JOIN "
-                         + " (SELECT iban, entry_date, max(counter) AS counter FROM statement where entry_date>? AND entry_date<=? GROUP BY iban, entry_date) AS t1"
-                         + " USING (iban, entry_date, counter)"
-                         + " )"
-                         + " SELECT iban, date, status, saldo FROM total_amounts"
-                         )
+        from_date, to_date = period
+        sql_statement = """
+            WITH total_amounts AS (
+                SELECT
+                    iban,
+                    price_date AS date,
+                    'C' AS status,
+                    total_amount_portfolio AS saldo
+                FROM holding
+                WHERE price_date > ? AND price_date <= ?
+                GROUP BY iban, price_date
+
+                UNION
+
+                SELECT
+                    iban,
+                    entry_date AS date,
+                    closing_status AS status,
+                    closing_balance AS saldo
+                FROM statement
+                JOIN (
+                    SELECT
+                        iban,
+                        entry_date,
+                        MAX(counter) AS counter
+                    FROM statement
+                    WHERE entry_date > ? AND entry_date <= ?
+                    GROUP BY iban, entry_date
+                ) AS t1 USING (iban, entry_date, counter)
+            )
+
+            SELECT
+                iban,
+                date,
+                status,
+                saldo
+            FROM total_amounts;
+            """
+        vars_ = (from_date, to_date, from_date, to_date)
         total_amounts = self.execute(sql_statement, vars_=vars_)
         # remove IBANs of old ledger applications or deleted banks.
         total_amounts = self._remove_obsolete_iban_rows(total_amounts)
 
         # search statements/holding before period
-        sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(entry_date) AS max_date FROM " + STATEMENT + " WHERE entry_date < '" + from_date + "' GROUP BY iban) "
-                         "SELECT iban, date('" + from_date + "'), closing_status AS status, closing_balance AS saldo FROM " + STATEMENT + ", max_date_rows WHERE iban = max_iban AND entry_date = max_date GROUP BY iban;")
-        first_row_statement = self.execute(sql_statement)
+        sql_statement = """
+            WITH max_date_rows AS (
+                SELECT
+                    iban AS max_iban,
+                    MAX(entry_date) AS max_date
+                FROM statement
+                WHERE entry_date < ?
+                GROUP BY iban
+            )
+            SELECT
+                iban,
+                DATE(?),
+                closing_status AS status,
+                closing_balance AS saldo
+            FROM statement, max_date_rows
+            WHERE iban = max_iban
+              AND entry_date = max_date
+            GROUP BY iban;
+            """
+        vars_ = (from_date, from_date)
+        first_row_statement = self.execute(sql_statement, vars_)
         total_amounts = total_amounts + first_row_statement
         # remove IBANs of old ledger applications or deleted banks.
         first_row_statement = self._remove_obsolete_iban_rows(
             first_row_statement)
-        sql_statement = ("WITH max_date_rows AS (SELECT iban AS max_iban, MAX(price_date) AS max_date FROM " + HOLDING + " WHERE price_date <= '" + from_date + "' GROUP BY iban) "
-                         "SELECT iban, date('" + from_date + "'), '" + CREDIT + "' AS status, total_amount_portfolio AS saldo FROM " + HOLDING + ", max_date_rows WHERE iban = max_iban AND price_date = max_date GROUP BY iban;")
-        first_row_holding = self.execute(sql_statement)
+        sql_statement = """
+            WITH max_date_rows AS (
+                SELECT
+                    iban AS max_iban,
+                    MAX(price_date) AS max_date
+                FROM holding
+                WHERE price_date <= ?
+                GROUP BY iban
+            )
+            SELECT
+                iban,
+                DATE(?),
+                ? AS status,
+                total_amount_portfolio AS saldo
+            FROM holding, max_date_rows
+            WHERE iban = max_iban
+              AND price_date = max_date
+            GROUP BY iban;
+        """
+        vars_ = (from_date, from_date, CREDIT)
+        first_row_holding = self.execute(sql_statement, vars_)
         total_amounts = total_amounts + first_row_holding
         """
         Returns Ledger Accounts of Asset Balances that have no entry in STATEMENT and HOLDING ergo no balances
         e.g., fixed-term deposit accounts, cash registers, receivables, ..
         """
         ledger_coa = self.select_table(
-            LEDGER_COA, DB_account, order=DB_account, asset_accounting=True, download=False)
-        credit_clause, debit_clause = self._opening_account_clause()
-        for item in ledger_coa:
-            account, = item
-            sql_statement = ("WITH amounts AS ("
-                             "SELECT credit_account as iban, debit_account, entry_date AS date, '" + CREDIT +
-                             "' AS status, amount AS saldo  FROM "
-                             + LEDGER + where + " AND credit_account='" + account + "'" + debit_clause +
-                             " UNION "
-                             "SELECT debit_account as iban, debit_account, entry_date AS date, '" + DEBIT +
-                             "' AS status, amount AS saldo  FROM "
-                             + LEDGER + where + " AND debit_account='" + account + "'" + credit_clause + ") "
-                             "SELECT iban, date, status, saldo FROM amounts  GROUP BY iban, date ")
-            ledger = self.execute(sql_statement, vars_=vars_)
-            total_amounts = total_amounts + ledger
+            LEDGER_COA, DB_account, opening_balance_account=True)
+        if ledger_coa:
+            opening_balance_account = ledger_coa[0][0]
+        else:
+            MessageBoxInfo(message=MESSAGE_TEXT['OPENING_ACCOUNT_MISSED'])
+            opening_balance_account = None
+        ledger_coa = self.select_table(
+            LEDGER_COA, [DB_account, DB_name], result_dict=True, order=DB_account, asset_accounting=True, download=False)
+        for account_dict in ledger_coa:
+            ledger = self.select_ledger_daily_balance(
+                    account_dict, opening_balance_account, period)
+            if ledger:
+                total_amounts = total_amounts + ledger
+            else:
+                ledger = self.select_ledger_opening_balances(account_dict, opening_balance_account, period)
+                if ledger:
+                    total_amounts = total_amounts + ledger
+                else:
+                    MessageBoxInfo(message=MESSAGE_TEXT['OPENING_LEDGER_MISSED'].format(period, account_dict[DB_name]))
         return total_amounts
 
-    def _opening_account_clause(self):
-        opening_balance_accounts = self.select_table(LEDGER_COA, DB_account, opening_balance_account=True)
-        debit_clause = ''
-        credit_clause = ''
-        if opening_balance_accounts:
-            opening_balance_accounts = str(opening_balance_accounts[0])
-            opening_balance_accounts = opening_balance_accounts.replace(',', '')
-            credit_clause = " AND credit_account not in " + opening_balance_accounts + " "
-            debit_clause = " AND debit_account not in " + opening_balance_accounts + " "
-        return credit_clause, debit_clause
+    def select_ledger_opening_balances(
+        self,
+        account_dict: dict,
+        opening_balance_account: str,
+        period: tuple
+    ) -> list:
+        """
+            Select opening balance for a specific account within a period
+            Args:
+            `account` (str): The account number whose balance is to be tracked.
+            `opening_balance_account` (str): The account number for the initial starting balance (e.g., '9400').
+            `period` (tuple): A tuple containing the start and end dates (e.g., '2025-01-01', '2025-12-31')).
+            `Returns:`
+            `list`: A list of tuples with [account as iban, entry_date, status(CREDIT +, DEBIT -), +-amount].
+        """
+        from_date, to_date = period
+        account = account_dict[DB_account]
+        sql_statement = """
+            SELECT
+                ? AS iban,
+                entry_date,
+                CASE
+                    WHEN credit_account = ? THEN ?
+                    ELSE ?
+                END AS status,
+                CASE
+                    WHEN credit_account = ? THEN amount
+                    ELSE -amount
+                END AS saldo
+            FROM ledger
+            WHERE entry_date BETWEEN ? AND ?
+              AND (credit_account = ? OR debit_account = ?)
+              AND (credit_account = ? OR debit_account = ?);
+        """
+        vars_ = (account, account, CREDIT, DEBIT, account, from_date, to_date,
+                 opening_balance_account, opening_balance_account, account, account)
+        result = self.execute(sql_statement, vars_)
+        return result
+
+    def select_ledger_daily_balance(
+        self,
+        account_dict: dict,
+        start_balance_account: str,
+        period: tuple
+    ) -> list:
+        """
+            Calculates the daily rolling balance for a specific account
+            within a period
+            Args:
+            `account` (str): The account number whose balance is to be tracked.
+            `start_balance_account` (str): The account number for the initial starting balance (e.g., '9400').
+            'start_balance' (float): start_balance
+            `period` (tuple): A tuple containing the start and end dates (e.g., '2025-01-01', '2025-12-31')).
+            `Returns:`
+            `list`: A list of tuples with [date, daily turnover, cumulative balance].
+        """
+        from_date, to_date = period
+        account = account_dict[DB_account]
+        if isinstance(from_date, str):
+            year_ = date_days.convert(from_date).year
+        else:
+            year_ = from_date.year
+        year_01_01 = "-".join([str(year_), "01", "01"])
+
+        # Check if an opening entry exists. get opening_balance
+        start_balance = 0
+        if self.row_exists(LEDGER, period=(year_01_01, from_date), date_name=DB_entry_date):
+            sql_statement = """
+                SELECT
+                    SUM(
+                        CASE
+                            WHEN credit_account = ? THEN amount
+                            WHEN debit_account = ? THEN -amount
+                            ELSE 0
+                        END
+                    ) AS start_balance
+                FROM ledger
+                WHERE entry_date BETWEEN ? AND ?;
+            """
+            vars_ = (account, account, year_01_01, from_date)
+            result = self.execute(sql_statement, vars_)
+            if result:
+                start_balance = result[0][0]
+            else:
+                start_balance = 0
+        # calculate daily balances
+        sql_statement = """
+            WITH buchungen AS (
+                SELECT
+                    entry_date,
+                    CASE
+                        WHEN debit_account  = ? THEN -amount
+                        WHEN credit_account = ? THEN amount
+                    END AS delta
+                FROM ledger
+                WHERE entry_date BETWEEN ? AND ?
+                  AND debit_account  <> ?
+                  AND credit_account <> ?
+                  AND (debit_account = ? OR credit_account = ?)
+            ),
+            tagessalden AS (
+                SELECT
+                    entry_date,
+                    SUM(delta) AS daily_delta
+                FROM buchungen
+                GROUP BY entry_date
+            ),
+            kumuliert AS (
+                SELECT
+                    entry_date,
+                    daily_delta,
+                    @running := @running + daily_delta AS cum_delta
+                FROM tagessalden, (SELECT @running := 0) AS vars
+                ORDER BY entry_date
+            )
+            SELECT
+                ? as iban,
+                entry_date as date,
+                CASE
+                    WHEN cum_delta + ? < 0 THEN ?
+                    ELSE ?
+                END AS status,
+                cum_delta + ? AS saldo
+            FROM kumuliert
+            ORDER BY entry_date;
+            """
+        vars_ = (account, account, from_date, to_date, start_balance_account,
+                 start_balance_account, account, account, account, start_balance, DEBIT, CREDIT, start_balance)
+        result = self.execute(sql_statement, vars_)
+        return result
 
     def select_ledger_total_amount(self, iban, **kwargs):
         """
@@ -1237,20 +1426,48 @@ class MariaDB(object):   # Singleton with controlled initialization
         """
 
         ledger_total_amount = None
-        credit_clause, debit_clause = self._opening_account_clause()
-        result = self.select_table(LEDGER_COA, DB_account, iban=iban)
+        ledger_coa = self.select_table(
+            LEDGER_COA, DB_account, opening_balance_account=True)
+        if ledger_coa:
+            opening_balance_account = ledger_coa[0][0]
+        else:
+            MessageBoxInfo(message=MESSAGE_TEXT['OPENING_ACCOUNT_MISSED'])
+            opening_balance_account = None
+        result = self.select_table(LEDGER_COA, DB_account, iban=iban)            
         if result:
             account = result[0][0]
-            sql_statement = ("WITH amounts AS ("
-                             "SELECT credit_account as iban, entry_date AS date, '" + CREDIT +
-                             "' AS status, amount AS saldo  FROM "
-                             + LEDGER + " WHERE credit_account='" + account + "'" + debit_clause +
-                             " UNION "
-                             "SELECT debit_account as iban, entry_date AS date, '" + DEBIT +
-                             "' AS status, amount AS saldo  FROM "
-                             + LEDGER + " WHERE debit_account='" + account + "'" + credit_clause + ") "
-                             "SELECT iban, date, status, saldo FROM amounts  GROUP BY iban, date ")
-            ledger_total_amount = self.execute(sql_statement)
+            sql_statement = """
+                WITH amounts AS (
+                    SELECT
+                        credit_account AS iban,
+                        entry_date AS date,
+                        ? AS status,
+                        amount AS saldo
+                    FROM ledger
+                    WHERE credit_account = ?
+                      AND debit_account <> ?
+                
+                    UNION
+                
+                    SELECT
+                        debit_account AS iban,
+                        entry_date AS date,
+                        ? AS status,
+                        amount AS saldo
+                    FROM ledger
+                    WHERE debit_account = ?
+                      AND credit_account <> ?
+                )
+                SELECT 
+                    iban,
+                    date,
+                    status,
+                    saldo
+                FROM amounts
+                GROUP BY iban, date;
+            """
+            vars_ = (CREDIT, account, opening_balance_account, DEBIT, account, opening_balance_account)
+            ledger_total_amount = self.execute(sql_statement, vars_)
             if ledger_total_amount:
                 ledger_total_amount = ledger_total_amount[0]
                 return {DB_entry_date: ledger_total_amount[1], DB_status: ledger_total_amount[2], DB_amount: ledger_total_amount[3]}

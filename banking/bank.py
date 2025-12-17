@@ -16,10 +16,10 @@ from banking.declarations import (
     HTTP_CODE_OK, MESSAGE_TEXT,
     KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_BANK_NAME, KEY_VERSION_TRANSACTION,
     KEY_SERVER, KEY_SECURITY_FUNCTION, KEY_SEPA_FORMATS, KEY_SYSTEM_ID,
-    KEY_BPD, KEY_UPD, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS,
+    KEY_BPD, KEY_UPD, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS, KEY_SUPPORTED_CAMT_MESSAGE,
     PRODUCT_ID, PNS,
     SCRAPER_BANKDATA,
-    SHELVE_KEYS, SYSTEM_ID_UNASSIGNED, TRUE,
+    SHELVE_KEYS, SYSTEM_ID_UNASSIGNED,
 )
 from banking.declarations_mariadb import DB_product_id
 from banking.dialog import Dialogs
@@ -82,6 +82,10 @@ class InitBank(object):
             try:
                 #    Bank Parameter Data BPD
                 self.system_id = shelve_file[KEY_SYSTEM_ID]
+                try:
+                    self.supported_camt_messages = shelve_file[KEY_SUPPORTED_CAMT_MESSAGE]
+                except KeyError:
+                    self.supported_camt_messages = None
                 for sepa_format in shelve_file[KEY_SEPA_FORMATS]:
                     if re.search('pain.001.001.03', sepa_format):
                         self.sepa_descriptor = sepa_format
@@ -118,9 +122,10 @@ class InitBank(object):
         self.account_number = None
         self.account_product_name = ''
         self.subaccount_number = None
+        self.statement_mt940 = False  # Download Format of Statements  MT940 (Segment HKKAZ allowed)
+        self.statement_camt = False  # Download Format of Statements   CAMT (Segment HKCAZ allowed)
         self.owner_name = ''
-        # true if period message was displayed (segment.py)
-        self.period_message = False
+        self.period_message = False  # true if period message was displayed (segment.py)
         self.from_date = date.today()
         self.to_date = date.today()
 

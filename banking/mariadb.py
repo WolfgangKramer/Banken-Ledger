@@ -30,7 +30,7 @@ from banking.declarations_mariadb import (
     DB_entry_date,
     DB_ledger,
     DB_name, DB_counter, DB_price_date, DB_ISIN,
-    DB_purpose_wo_identifier,
+    DB_purpose_wo_identifier, DB_purpose,
     DB_row_id,
     DB_total_amount, DB_acquisition_amount,
     DB_status, DB_symbol,
@@ -42,7 +42,7 @@ from banking.declarations_mariadb import (
     ISIN, PRICES, LEDGER, LEDGER_VIEW, LEDGER_COA, LEDGER_STATEMENT,
     SELECTION, SERVER, STATEMENT, SHELVES,
     TRANSACTION, TRANSACTION_VIEW,
-    DB_credit_account, DB_debit_account,
+    DB_credit_account, DB_debit_account, DB_bank_reference,
 )
 from banking.declarations import (
     CREDIT, DEBIT,
@@ -387,7 +387,12 @@ class MariaDB(object):   # Singleton with controlled initialization
                 statement[DB_counter] = counter
                 if self.row_exists(STATEMENT, iban=statement[DB_iban], entry_date=statement[DB_entry_date], counter=statement[DB_counter]):
                     pass
+                elif DB_bank_reference in statement and self.row_exists(STATEMENT, iban=statement[DB_iban], bank_reference=statement[DB_bank_reference]):
+                    # can be used with FinTS Transaction HKCAZ (e.g., Atruvia banks)
+                    pass
                 else:
+                    if not statement.get(DB_purpose_wo_identifier):
+                        statement[DB_purpose_wo_identifier] = statement[DB_purpose]
                     self.execute_insert(STATEMENT, statement)
                 counter += 1
             self.execute('COMMIT;')
@@ -470,6 +475,16 @@ class MariaDB(object):   # Singleton with controlled initialization
             bank.account_product_name = account[KEY_ACC_PRODUCT_NAME]
             bank.iban = account[KEY_ACC_IBAN]
             bank.owner_name = account[KEY_ACC_OWNER_NAME]
+            bank.statement_mt940 = False
+            bank.statement_camt = False
+            if 'HKKAZ' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                bank.statement_mt940 = True
+            elif 'HKCAZ' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                if bank.supported_camt_messages:
+                    bank.statement_camt = True
+                else:
+                    bankdata_informations_append(
+                        WARNING, MESSAGE_TEXT['SUPPORTED_CAMT_MESSAGES'].format(bank.bank_name))
             if self.row_exists(LEDGER_COA, iban=bank.iban, download=False):
                 information = MESSAGE_TEXT['DOWNLOAD_ACCOUNT_NOT_ACTIVATED'].format(
                     bank.bank_name, bank.owner_name, bank.account_number, bank.account_product_name, bank.iban)
@@ -491,7 +506,7 @@ class MariaDB(object):   # Singleton with controlled initialization
                             bankdata_informations_append(
                                 WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
                             return
-                    if 'HKKAZ' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                    if bank.statement_mt940 or bank.statement_camt:
                         bankdata_informations_append(INFORMATION, information)
                         if self._statements(bank) is None:
                             bankdata_informations_append(
@@ -517,26 +532,6 @@ class MariaDB(object):   # Singleton with controlled initialization
                         WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
                     return
 
-    def all_statements(self, bank):
-        """
-        Insert downloaded  Staement Bank Data in Database
-        """
-        bankdata_informations_append(
-            INFORMATION, MESSAGE_TEXT['DOWNLOAD_BANK'].format(bank.bank_name))
-        for account in bank.accounts:
-            bank.account_number = account[KEY_ACC_ACCOUNT_NUMBER]
-            bank.account_product_name = account[KEY_ACC_PRODUCT_NAME]
-            bank.iban = account[KEY_ACC_IBAN]
-            if 'HKKAZ' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                bankdata_informations_append(INFORMATION, MESSAGE_TEXT['DOWNLOAD_ACCOUNT'].format(
-                    bank.bank_name, '', bank.account_number, bank.account_product_name, bank.iban))
-                if self._statements(bank) is None:
-                    bankdata_informations_append(
-                        WARNING, MESSAGE_TEXT['DOWNLOAD_NOT_DONE'].format(bank.bank_name))
-                    return
-        bankdata_informations_append(
-            INFORMATION, MESSAGE_TEXT['DOWNLOAD_DONE'].format(bank.bank_name))
-
     def destroy_connection(self):
         """
         close connection >database<
@@ -545,7 +540,7 @@ class MariaDB(object):   # Singleton with controlled initialization
             self.conn.close()
             self.cursor.close()
 
-    def execute(self, sql_statement, vars_=None, duplicate=False, result_dict=False):
+    def execute(self, sql_statement, vars_=None, duplicate=False, result_dict=False, compress=False):
         """
         Parameter:  duplicate=True --> Ignore Error 1062 (Duplicate Entry)
                     result_dict -----> True: returns a list of dicts
@@ -558,9 +553,10 @@ class MariaDB(object):   # Singleton with controlled initialization
         Method executes SQL statement; no result set will be returned!
         rowcount = True   returns row_count of UPDATE, INSERT; DELETE
         """
-        # Replace \n with a space, and
-        # compress multiple spaces into a single space.
-        sql_statement = re.sub(r"\s+", " ", sql_statement.replace("\n", " ")).strip()
+        if compress:
+            # Replace \n with a space, and
+            # compress multiple spaces into a single space.
+            sql_statement = re.sub(r"\s+", " ", sql_statement.replace("\n", " ")).strip()
         try:
             if vars_:
                 self.cursor.execute(sql_statement, vars_)
@@ -1210,7 +1206,7 @@ class MariaDB(object):   # Singleton with controlled initialization
             FROM total_amounts;
             """
         vars_ = (from_date, to_date, from_date, to_date)
-        total_amounts = self.execute(sql_statement, vars_=vars_)
+        total_amounts = self.execute(sql_statement, vars_=vars_, compress=True)
         # remove IBANs of old ledger applications or deleted banks.
         total_amounts = self._remove_obsolete_iban_rows(total_amounts)
 
@@ -1235,7 +1231,7 @@ class MariaDB(object):   # Singleton with controlled initialization
             GROUP BY iban;
             """
         vars_ = (from_date, from_date)
-        first_row_statement = self.execute(sql_statement, vars_)
+        first_row_statement = self.execute(sql_statement, vars_, compress=True)
         total_amounts = total_amounts + first_row_statement
         # remove IBANs of old ledger applications or deleted banks.
         first_row_statement = self._remove_obsolete_iban_rows(
@@ -1260,7 +1256,7 @@ class MariaDB(object):   # Singleton with controlled initialization
             GROUP BY iban;
         """
         vars_ = (from_date, from_date, CREDIT)
-        first_row_holding = self.execute(sql_statement, vars_)
+        first_row_holding = self.execute(sql_statement, vars_, compress=True)
         total_amounts = total_amounts + first_row_holding
         """
         Returns Ledger Accounts of Asset Balances that have no entry in STATEMENT and HOLDING ergo no balances
@@ -1324,7 +1320,7 @@ class MariaDB(object):   # Singleton with controlled initialization
         """
         vars_ = (account, account, CREDIT, DEBIT, account, from_date, to_date,
                  opening_balance_account, opening_balance_account, account, account)
-        result = self.execute(sql_statement, vars_)
+        result = self.execute(sql_statement, vars_, compress=True)
         return result
 
     def select_ledger_daily_balance(
@@ -1368,7 +1364,7 @@ class MariaDB(object):   # Singleton with controlled initialization
                 WHERE entry_date BETWEEN ? AND ?;
             """
             vars_ = (account, account, year_01_01, from_date)
-            result = self.execute(sql_statement, vars_)
+            result = self.execute(sql_statement, vars_, compress=True)
             if result:
                 start_balance = result[0][0]
             else:
@@ -1416,7 +1412,7 @@ class MariaDB(object):   # Singleton with controlled initialization
             """
         vars_ = (account, account, from_date, to_date, start_balance_account,
                  start_balance_account, account, account, account, start_balance, DEBIT, CREDIT, start_balance)
-        result = self.execute(sql_statement, vars_)
+        result = self.execute(sql_statement, vars_, compress=True)
         return result
 
     def select_ledger_total_amount(self, iban, **kwargs):
@@ -1433,7 +1429,7 @@ class MariaDB(object):   # Singleton with controlled initialization
         else:
             MessageBoxInfo(message=MESSAGE_TEXT['OPENING_ACCOUNT_MISSED'])
             opening_balance_account = None
-        result = self.select_table(LEDGER_COA, DB_account, iban=iban)            
+        result = self.select_table(LEDGER_COA, DB_account, iban=iban)
         if result:
             account = result[0][0]
             sql_statement = """
@@ -1446,9 +1442,9 @@ class MariaDB(object):   # Singleton with controlled initialization
                     FROM ledger
                     WHERE credit_account = ?
                       AND debit_account <> ?
-                
+
                     UNION
-                
+
                     SELECT
                         debit_account AS iban,
                         entry_date AS date,
@@ -1458,7 +1454,7 @@ class MariaDB(object):   # Singleton with controlled initialization
                     WHERE debit_account = ?
                       AND credit_account <> ?
                 )
-                SELECT 
+                SELECT
                     iban,
                     date,
                     status,
@@ -1467,7 +1463,7 @@ class MariaDB(object):   # Singleton with controlled initialization
                 GROUP BY iban, date;
             """
             vars_ = (CREDIT, account, opening_balance_account, DEBIT, account, opening_balance_account)
-            ledger_total_amount = self.execute(sql_statement, vars_)
+            ledger_total_amount = self.execute(sql_statement, vars_, compress=True)
             if ledger_total_amount:
                 ledger_total_amount = ledger_total_amount[0]
                 return {DB_entry_date: ledger_total_amount[1], DB_status: ledger_total_amount[2], DB_amount: ledger_total_amount[3]}

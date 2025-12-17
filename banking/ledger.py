@@ -138,7 +138,7 @@ def transfer_statement_to_ledger(mariadb, bank):
             counter = statement_dict[DB_counter]
             status = statement_dict[DB_status]
             if mariadb.row_exists(LEDGER_STATEMENT, iban=iban, entry_date=entry_date,  counter=counter, status=status):
-                pass  # statement already aasigned in ledger
+                pass  # statement already assigned in ledger
             else:
                 # create ledger
                 from_id_no = entry_date.year * 1000000

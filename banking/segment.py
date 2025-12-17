@@ -34,12 +34,13 @@ from fints.segments.statement import HKKAZ6, HKKAZ7
 from fints.segments.transfer import HKCCS1
 from fints.types import SegmentSequence
 
-from banking.declarations import MESSAGE_TEXT, PNS, SYSTEM_ID_UNASSIGNED, WM_DELETE_WINDOW
-from banking.fints_extension import HKCSE1, HKVPP1, PaymentStatusReport
+from banking.declarations import MESSAGE_TEXT, PNS, SYSTEM_ID_UNASSIGNED, WM_DELETE_WINDOW, KEY_TWOSTEP
+from banking.fints_extension import HKCSE1, HKVPP1, PaymentStatusReport, HKCAZ1
 from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
 from banking.forms import InputTAN
 from banking.mariadb import MariaDB
 from banking.declarations_mariadb import SERVER, DB_server
+from banking.utils import date_days
 
 
 def encrypt(bank, message):
@@ -91,12 +92,11 @@ def encrypt(bank, message):
 
 
 def from_to_date(bank):
+
     if isinstance(bank.to_date, str):
-        bank.to_date = date(
-            int(bank.to_date[0:4]), int(bank.to_date[5:7]), int(bank.to_date[8:10]))
+        bank.to_date = date_days.convert(bank.to_date)
     if isinstance(bank.from_date, str):
-        bank.from_date = date(
-            int(bank.from_date[0:4]), int(bank.from_date[5:7]), int(bank.from_date[8:10]))
+        bank.from_date = date_days.convert(bank.from_date)
     if bank.to_date > date.today():
         bank.to_date = date.today()
     if bank.from_date > date.today():
@@ -175,7 +175,7 @@ class Segments():
         if server and b"atruvia" in server[0]:
             """
             Atruvia provided new public HBCI keys in May 2025
-            These keys are said to be 2048 bits, which indicates a security adjustment.            
+            These keys are said to be 2048 bits, which indicates a security adjustment.
             """
             usage_hash = 'OHA'  # Owner Hashing (OHA)
             hash_algorithm = '2'  # SHA_256
@@ -329,12 +329,17 @@ class Segments():
             hktan = _get_segment(bank, 'TAN')
         except Exception:
             hktan = HKTAN6
+        result = MariaDB().shelve_get_key(bank.bank_code, KEY_TWOSTEP)
+        if result and len(result) == 1:
+            tan_medium_name = result[0][1]
+        else:
+            tan_medium_name = bank.security_function
         message += hktan(
             bank.tan_process,
             segment_name,
             task_reference=bank.task_reference,
             further_tan_follows=False,
-            tan_medium_name=bank.security_function
+            tan_medium_name=tan_medium_name
         )
         return message
 
@@ -358,6 +363,45 @@ class Segments():
         Abschnitt: Synchronisierung
         """
         message += HKSYN3(SynchronizationMode.NEW_SYSTEM_ID)
+        return message
+
+    def segHKCAZ(self, bank, message):
+        """
+        Segment Kontoumsaetze/Zeitraum
+
+            Die Lösung bietet dem Kunden die Möglichkeit, alle Buchungen über einen definierten
+            Zeitraum zu erhalten. Mit dieser Methode können z. B. fehlende Buchungssätze in
+            einer Finanzmanagementsoftware ergänzt werden.
+            Die maximale Anzahl der rückzumeldenden Buchungspositionen kann begrenzt wer-
+            den. Eine Buchungsposition besteht aus einem Entry <Ntry> innerhalb einer camt.052
+            message (s. [DFÜ-Abkommen]). Es muss davon unabhängig immer eine gültige
+            camt.052 message zurückgeliefert werden.
+
+            Kreditinstitutsrueckmeldung:
+            Die Online-Antwort des Kreditinstituts enthält unmittelbar die gemäß Anfragezeitraum
+            zusammengestellten Kontoumsätze.
+            Es werden stets sämtliche Umsätze des Starttages "Von Datum" in die Kontoumsätze
+            eingestellt, auch wenn diese ganz oder teilweise mit einem vorangegangenen Auszug
+            abgeholt wurden. Dies ermöglicht ggf. eine fehlerfreie Eliminierung von mehrfach ab
+            geholten Buchungen durch das Kundensystem.
+            Falls der Kunde „Alle Konten“ gewählt hat, wird das Segment für jedes Konto, für das
+            Umsätze angegeben werden können, eingestellt.
+
+        Financial Transaction Services (FinTS)
+        Dokument: Messages - Multibankfaehige Geschaeftsvorfaelle
+        Kapitel: Geschaeftsvorfaelle
+        Abschnitt: Konto- und Umsatz-Informationen
+        """
+        from_to_date(bank)
+        hkcaz = HKCAZ1
+        message += hkcaz(
+                account=hkcaz._fields['account'].type.from_sepa_account(
+                    _sepaaccount(bank)),
+                supported_camt_messages=bank.supported_camt_messages,
+                all_accounts=False,
+                date_start=bank.from_date,
+                date_end=bank.to_date
+        )
         return message
 
     def segHKKAZ(self, bank, message):
@@ -392,7 +436,9 @@ class Segments():
             )
             return message
         MessageBoxTermination(info=MESSAGE_TEXT['HIKAZ'].format(
-            bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
+            'HKKAZ', bank.bank_name, bank.account_number, bank.account_product_name),
+            bank=bank
+            )
 
     def segHKWPD(self, bank, message):
         """

@@ -8,8 +8,6 @@ import inspect
 import logging
 
 from fints.client import FinTS3Serializer
-from fints.segments.base import FinTS3Segment
-from fints.message import FinTSCustomerMessage
 
 from banking.mariadb import MariaDB
 from banking.declarations import (
@@ -128,14 +126,20 @@ class Messages():
 
     def msg_statements(self, bank):
         """
-        FinTS Message Request of account turnovers
+        FinTS Message Request of account turnovers (MT940)
         """
         message = self.segments.segHNHBK(bank)
         message = self.segments.segHNSHK(bank, message)
-        message = self.segments.segHKKAZ(bank, message)
-        if _get_tan_required(bank, 'HKKAZ', self.mariadb):
-            message = self.segments.segHKTAN(
-                bank, message, segment_name='HKKAZ')
+        if bank.statement_mt940:
+            message = self.segments.segHKKAZ(bank, message)
+            if _get_tan_required(bank, 'HKKAZ', self.mariadb):
+                message = self.segments.segHKTAN(
+                    bank, message, segment_name='HKKAZ')
+        else:
+            message = self.segments.segHKCAZ(bank, message)
+            if _get_tan_required(bank, 'HKCAZ', self.mariadb):
+                message = self.segments.segHKTAN(
+                    bank, message, segment_name='HKCAZ')
         message = self.segments.segHNSHA(bank, message)
         message = self.segments.segHNHBS(bank, message)
         _serialize(message)

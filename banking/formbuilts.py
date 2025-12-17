@@ -63,7 +63,7 @@ from banking.declarations import (
     TYP_ALPHANUMERIC,
     TYP_DECIMAL,
     TYP_DATE,
-)
+    )
 from banking.pandastable_extension import Table, TableRowEdit, MyPlotViewer
 from banking.utils import (
     application_store,

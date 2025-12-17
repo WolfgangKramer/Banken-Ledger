@@ -44,11 +44,12 @@ class MyPlotViewer(PlotViewer):
     Copy of pandastable, plotting.py
     Label Info added
     """
-    WINDOW = []
+    WINDOW = []  # opened instant plotting Windows
 
     def __init__(self, table, parent=None, showoptions=True):
 
         self.button_state = ''
+        self.parent = parent
         super().__init__(table, parent, showoptions)
         pass
 

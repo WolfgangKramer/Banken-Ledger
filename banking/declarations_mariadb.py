@@ -325,7 +325,7 @@ CREATE_STATEMENT = "CREATE TABLE IF NOT EXISTS `statement` (\
     `amount` DECIMAL(14,2) UNSIGNED NOT NULL DEFAULT '0.00',\
     `id` CHAR(4) NOT NULL DEFAULT 'NMSC' COMMENT ':61:Buchungsschluessel' COLLATE 'latin1_swedish_ci',\
     `customer_reference` VARCHAR(65) NOT NULL DEFAULT 'NONREF' COMMENT ':61:Kundenreferenz (oder Feld :86:20-29 KREF oder CREF (Bezeichner Subfeld) Kundenreferenz Customer Reference' COLLATE 'latin1_swedish_ci',\
-    `bank_reference` VARCHAR(16) NULL DEFAULT NULL COMMENT ':61:Bankreferenz (oder Feld :86:20-29 BREF (Bezeichner Subfeld) Bankreferenz, Instruction ID' COLLATE 'latin1_swedish_ci',\
+    `bank_reference` VARCHAR(35) NULL DEFAULT NULL COMMENT ':61:Bankreferenz (oder Feld :86:20-29 BREF (Bezeichner Subfeld) Bankreferenz, Instruction ID' COLLATE 'latin1_swedish_ci',\
     `extra_details` VARCHAR(34) NULL DEFAULT NULL COMMENT ':61:Waehrungsart und Umsatzbetrag in Ursprungswaehrung' COLLATE 'latin1_swedish_ci',\
     `transaction_code` INT(3) UNSIGNED NOT NULL DEFAULT '0' COMMENT ':86:Geschaeftsvorfall-Code',\
     `posting_text` VARCHAR(65) NULL DEFAULT NULL COMMENT ':86: 00 Buchungstext' COLLATE 'latin1_swedish_ci',\
@@ -334,7 +334,7 @@ CREATE_STATEMENT = "CREATE TABLE IF NOT EXISTS `statement` (\
     `purpose_wo_identifier` VARCHAR(390) NULL DEFAULT NULL COMMENT ':86: 20-29 Verwendungszweck ohne Identifier' COLLATE 'latin1_swedish_ci',\
     `applicant_bic` VARCHAR(65) NULL DEFAULT NULL COMMENT ':86: 30 BLZ Auftraggeber oder BIC (oder Feld :86:20-29 BIC(Bezeichner Subfeld)' COLLATE 'latin1_swedish_ci',\
     `applicant_iban` VARCHAR(65) NULL DEFAULT NULL COMMENT ':86: 31 KontoNr des Ueberweisenden/Zahlungsempfaengers (oder Feld :86:20-29 IBAN(Bezeichner Subfeld)' COLLATE 'latin1_swedish_ci',\
-    `applicant_name` VARCHAR(65) NOT NULL COMMENT ':86: 32-33 Name des Ueberweisenden / Zahlungsempfaengers (oder Feld :86:20-29 ANAM(Bezeichner Subfeld)' COLLATE 'latin1_swedish_ci',\
+    `applicant_name` VARCHAR(65) NULL DEFAULT NULL COMMENT ':86: 32-33 Name des Ueberweisenden / Zahlungsempfaengers (oder Feld :86:20-29 ANAM(Bezeichner Subfeld)' COLLATE 'latin1_swedish_ci',\
     `return_debit_notes` INT(3) NULL DEFAULT '0' COMMENT ':86: 34 SEPA-Rueckgabe Codes',\
     `end_to_end_reference` VARCHAR(65) NULL DEFAULT NULL COMMENT ':86: 20-29 Verwendungszweck EREF (Bezeichner Subfeld) SEPA End to End-Referenz' COLLATE 'latin1_swedish_ci',\
     `mandate_id` VARCHAR(65) NULL DEFAULT NULL COMMENT ':86: 20-29 Verwendungszweck MREF(Bezeichner Subfeld) SEPA Mandatsreferenz' COLLATE 'latin1_swedish_ci',\
@@ -362,16 +362,17 @@ CREATE_STATEMENT = "CREATE TABLE IF NOT EXISTS `statement` (\
     `opening_status` CHAR(1) NOT NULL COMMENT ':60F:Anfangssaldo Soll/Haben-Kennung C,D ' COLLATE 'latin1_swedish_ci',\
     `opening_entry_date` DATE NOT NULL COMMENT ':60F:Buchungsdatum ',\
     `opening_currency` CHAR(3) NOT NULL DEFAULT 'EUR' COMMENT ':60F:Waehrung' COLLATE 'latin1_swedish_ci',\
-    `opening_balance` DECIMAL(14,2) UNSIGNED NOT NULL DEFAULT '0.00',\
+    `opening_balance` DECIMAL(14,2) UNSIGNED NOT NULL DEFAULT '0.00' COMMENT '60F: Betrag (in first statement of entry_date!)',\
     `closing_status` CHAR(1) NOT NULL COMMENT ':62F:Schlusssaldo Soll/Haben-Kennung C,D ' COLLATE 'latin1_swedish_ci',\
     `closing_entry_date` DATE NOT NULL COMMENT ':62F:Buchungsdatum ',\
     `closing_currency` CHAR(3) NOT NULL DEFAULT 'EUR' COMMENT ':62F:Waehrung' COLLATE 'latin1_swedish_ci',\
-    `closing_balance` DECIMAL(14,2) UNSIGNED NOT NULL DEFAULT '0.00' COMMENT ':62F:Betrag',\
+    `closing_balance` DECIMAL(14,2) UNSIGNED NOT NULL DEFAULT '0.00' COMMENT ':62F:Betrag (in last statement of entry_date!)',\
     `reference` VARCHAR(16) NULL DEFAULT NULL COMMENT ':21: BEZUGSREFERENZNUMMER oder NONREF' COLLATE 'latin1_swedish_ci',\
     `order_reference` VARCHAR(16) NULL DEFAULT NULL COMMENT ':20: AUFTRAGSREFERENZNUMMER' COLLATE 'latin1_swedish_ci',\
     `statement_no_page` INT(5) NOT NULL DEFAULT '0' COMMENT ':28C: Blattnummer ',\
     `statement_no` INT(5) UNSIGNED NOT NULL DEFAULT '0' COMMENT ':28C: Auszugsnummer ',\
-    `origin` VARCHAR(50) NULL DEFAULT '_BANKDATA_' COMMENT 'data source is download bank data  or  _LEDGER_ , then data source is a ledger database' COLLATE 'latin1_swedish_ci',\
+    `camt` CHAR(3) NULL DEFAULT NULL COMMENT 'data source format: 052: Bank to Customer Account Report (camt.052)' COLLATE 'latin1_swedish_ci',\
+    `origin` VARCHAR(50) NULL DEFAULT '_BANKDATA_' COMMENT 'data source: _BANKDATA_: download from bank /  _LEDGER_ : generated from ledger database' COLLATE 'latin1_swedish_ci',\
     PRIMARY KEY (`iban`, `entry_date`, `counter`) USING BTREE\
 )\
     COMMENT='Financial Transaction Services (FinTS) ? Messages (Multibankfaehige Geschaeftsvorfaelle), Version 4.1 final version, 25.07.2016, Die Deutsche Kreditwirtschaft\r\n\r\nC.8 MT 940 \r\n\r\nC.8.3 Version: SRG 2001/ Anpassung an das SEPA-Datenformat \r\n?Transaction Report?; basiert auf S.W.I.F.T. Standards Release Guide 2001 (keine \r\nÄnderungen im SRG 2002)\r\n\r\nFinancial Transaction Services (FinTS) \r\nDokument: Messages - Finanzdatenformate \r\nVersion: \r\n4.1 FV \r\nKapitel: \r\nB \r\nKapitel: S.W.I.F.T.-Formate \r\nAbschnitt: MT 940  \r\nStand: \r\n20.01.2014 \r\nSeite: \r\n213'\
@@ -463,6 +464,7 @@ DB_bank_reference = 'bank_reference'
 DB_beneficiary = 'beneficiary'
 DB_bic = 'bic'
 DB_caller = 'caller'
+DB_camt = 'camt'
 DB_category_name = 'category_name'
 DB_change_indicator = 'change_indicator'
 DB_charges = 'charges'

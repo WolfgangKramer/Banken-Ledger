@@ -15,6 +15,10 @@ from banking.declarations_mariadb import (
     DB_opening_status, DB_opening_balance, DB_opening_currency,
 )
 
+"""
+------------------------- Globals ---------------------------------------------------
+"""
+technical_indicator_counter =  0
 
 PNS = {}
 """
@@ -148,7 +152,7 @@ POPUP_MENU_TEXT = {
 CODE_3010 = '3010'  # Download bank data,    no entries exist'
 CODE_3040 = '3040'  # Download partially executed
 CODE_0030 = '0030'  # Download not executed
-CODE_3955 = '3955'  # Security clearance is provided via another channel 
+CODE_3955 = '3955'  # Security clearance is provided via another channel
 
 MESSAGE_TEXT = {
     CODE_0030: 'Bank: {} \n Bank Account: {}  {}       \n     Download not executed,    use single downloading bank data',
@@ -164,9 +168,10 @@ MESSAGE_TEXT = {
     'ALPHA_VANTAGE_NO_DATA': 'AlphaVantage API returns no Data \n {}',
     'APP': 'APPLICATION and MARIDB Customizing Installation',
     'ASSINGNABLE_STATEMENTS': 'Assignable Statements for ledger in period {} to {}',
-    'BALANCE_DIFFERENCE':   'Bank Account {} {}:  {}  \n Ledger Account {} {}:  {}  \n Balance Difference: {}',
+    'BALANCE_DIFFERENCE':   'Difference LEDGER ./. STATEMENTS \n Bank Account {} {}:  {}  \n Ledger Account {} {}:  {}  \n Balance Difference: {}',
+    'BANK_BALANCE_DIFFERENCE':   'Difference: BANK ./. DOWNLOADED STATEMENTS \n Bank Account {} {}:  {} \n Balance of downloaded Statements: {} \n Balance Difference: {}',
     'BANK_CHALLENGE': '{} ({}) \n Bank Account: {} {}      \n Challenge_Text:\n  {}',
-    'BANK_CONSORS_TRANSFER': '\n\n Open Consors Secure Plus \nGenerate QR-TAN with Secure Plus',    
+    'BANK_CONSORS_TRANSFER': '\n\n Open Consors Secure Plus \nGenerate QR-TAN with Secure Plus',
     'BANK_CODE_EXIST': 'Bank Code exists',
     'BANK_DATA_ACCOUNTS_MISSED': 'BankCode {}: Accounts missed, Run Customizing',
     'BANK_DATA_NEW': 'Created {} ({}. Next Step: SYNCHRONIZE Bank \n\n Then restart application',
@@ -215,10 +220,12 @@ MESSAGE_TEXT = {
     'FIELDLIST_MIN': 'Select at least {} positions in fieldlist',
     'FIELDLIST_INTERSECTION_EMPTY': 'Intersection of the data in the selected period of all selected isin_codes is empty',
     'FIXED': '{} MUST HAVE {} Characters ',
+    'FINTS_UPDATE_BPD_VERSION': 'Bank: {} \n Version of the bank parameter data updated.\n  New version: {}',
+    'FINTS_UPDATE_UPD_VERSION': 'Bank: {} \n Version of the user parameter data updated.\n  New version: {}',
     'HELP_PANDASTABLE': 'Show Row Menu: \n          Select row\n          Click on row number with the right mouse button',
     'HELP_CHECK_UPLOAD': 'Start with FIRST row to be checked\n\n Show Row Menu: \n          Select row\n          Click on row number with the right mouse button\n          Then select Update Selected Row and UPDATE if the row and all previous rows are OK',
     'HITAN6': 'Bank: {} \n Bank Account: {}  {}       \n     Could not find HITAN6/7 task_reference',
-    'HIKAZ':  'Response HIKAZ missing: bank_name {}, account_number {}, account_product_name {}',
+    'HIKAZ':  'Response {} missing: bank_name {}, account_number {}, account_product_name {}',
     'HITAN': 'Security clearance is provided via another channel\n{}',
     'HITAN_MISSED': 'Response HITAN missing: bank_name {}, account_number {}, account_product_name {}',
     'HIUPD_EXTENSION': 'Bank: {} \n Bank Account: {}  {}       \n     IBAN {} received Bank Information: \n     {}',
@@ -284,6 +291,7 @@ MESSAGE_TEXT = {
     'SYMBOL_USED': 'Symbol already used in {}',
     'SYNC': 'Synchronization Data incomplete    \nSynchronization must be done \nBank: {} ',
     'SYNC_START': 'Next Stepp: You must start Synchronization Bank: {} ',
+    'SUPPORTED_CAMT_MESSAGES': 'Refresh Bank_parameter: Supported camt_message_name missed',
     'TA_OTHER_PARAMETER': 'function contains additional parameters: \n  {}',
     'TA_NO_RESULT': 'Technical Analysis no result!\n Category: {}  Indicator: {}',
     'TA_METHOD_ERROR': 'Indicator {}: Name creation of the calling method not successful',
@@ -365,6 +373,7 @@ KEY_STORAGE_PERIOD = 'STORAGE_PERIOD'
 KEY_SYSTEM_ID = 'SYSTEM_ID'
 KEY_TAN = 'TAN'
 KEY_TWOSTEP = 'TWOSTEP_PARAMETERS'
+KEY_SUPPORTED_CAMT_MESSAGE = 'SUPPORTED_CAMT_MESSAGE'
 KEY_UPD = 'UPD_VERSION'
 KEY_USER_ID = 'USER_ID'
 KEY_MIN_PIN_LENGTH = 'MIN_PIN_LENGTH'
@@ -376,7 +385,7 @@ SHELVE_KEYS = [
     KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_DOWNLOAD_ACTIVATED, KEY_SECURITY_FUNCTION, KEY_VERSION_TRANSACTION,
     KEY_VERSION_TRANSACTION_ALLOWED,
     KEY_SEPA_FORMATS, KEY_SYSTEM_ID,
-    KEY_TWOSTEP, KEY_ACCOUNTS, KEY_UPD, KEY_BPD, KEY_STORAGE_PERIOD,
+    KEY_TWOSTEP, KEY_SUPPORTED_CAMT_MESSAGE, KEY_ACCOUNTS, KEY_UPD, KEY_BPD, KEY_STORAGE_PERIOD,
     KEY_MIN_PIN_LENGTH, KEY_MAX_PIN_LENGTH, KEY_MAX_TAN_LENGTH, KEY_TAN_REQUIRED,
 
 ]
@@ -660,8 +669,48 @@ Balance = namedtuple(
 """
 ----------------------------- DataClasses ------------
 """
+@dataclass
+class BpdUpdVersion:
+    """
+    BPD:
+        Die Bankparameterdaten dienen zum einen der automatisierten kreditinstitutsspezifischen
+        Konfiguration von Kundensystemen und zum anderen der dynamischen Anpassung
+        an institutsseitige Vorgaben hinsichtlich der Auftragsgenerierung.
+        Des Weiteren ist es mit Hilfe der BPD moeglich, bestimmte Fehler bereits auf der
+        Kundenseite zu erkennen, was sich wiederum positiv auf die institutsseitige
+        Verarbeitung der Auftragsdaten auswirkt.
 
+    UPD:
+        Die Userparameterdaten, die kreditinstitutsseitig benutzerbezogen generiert und
+        vorgehalten werden, erlauben eine automatisierte und dynamische Konfiguration
+        von Kundensystemen. In Abgrenzung zu den BPD enthalten die UPD ausschließlich
+        kunden- und kontenspezifische Informationen und sind somit haeufigeren Modifikationen unterworfen.
+        Waehrend die Bankparameterdaten die grundsaetzlich vom Kreditinstitut angebotenen
+        Geschaeftsvorfaelle angeben, gestatten die Userparameterdaten kontenbezogene
+        Berechtigungspruefungen im Kundenprodukt. So kann das Kundenprodukt mit Hilfe der
+        Userparameterdaten pruefen, ob der Kunde fuer die Ausfuehrung eines der in den
+        Bankparameterdaten angegebenen Geschaeftsvorfaelle in Verbindung mit einem
+        bestimmten Konto berechtigt ist.
+        Das Konto, das im jeweiligen Geschaeftsvorfall fuer die Berechtigungspruefung heran
+        zuziehen ist, ist im Regelfall entweder das Auftraggeberkonto oder das Depotkonto
+        bei Wertpapierauftraegen oder das Anlagekonto bei Festgeldanlagen. In den Faellen,
+        in denen es sich um ein hiervon abweichendes Konto handelt, ist dies in der
+        Geschaeftsvorfallbeschreibung vermerkt. Bei Geschaeftsvorfaellen ohne Kontenbezug
+        (z.B. Informationsbestellung) findet keine Berechtigungspruefung statt.
+        Bei Aenderungen werden die Userparameterdaten im Rahmen der Dialoginitialisierung
+        fuer den sich anmeldenden Benutzer automatisch aktualisiert. Die aktualisierten
+        UPD werden sofort aktiv (s. hierzu die Ausfuehrungen zu den BPD).
 
+    Source:
+        Financial Transaction Services (FinTS)
+        Dokument: Formals
+        Kapitel:  Bankparameterdaten (BPD)
+        Kapitel:  Userparameterdaten (UPD)
+    """
+    bpd: int  # stored Version of bank parameter data (MariaDB table shelves)
+    upd: int  # stored Version of user parameter data (MariaDB table shelves)
+    
+    
 @dataclass
 class Caller:
     """
@@ -713,14 +762,14 @@ class Informations(object):
     """
     Threading
     Download prices from Yahoo! or Alpha Vantage
-    Container öf messages, errors
+    Container oef messages, errors
     """
     prices_informations = ' '
     PRICES_INFORMATIONS = 'PRICES_INFORMATIONS'
 
     """
     Update prices in holding from Yahoo! or Alpha Vantage
-    Container öf messages, errors
+    Container of messages, errors
     """
     holding_informations = ' '
     HOLDING_INFORMATIONS = 'HOLDING_INFORMATIONS'

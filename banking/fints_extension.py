@@ -50,7 +50,8 @@ class PaymentStatusReport(DataElementGroup):
     version = DataElementField(
         type='an', max_length=10, required=False, _d='Payment Status Report Version')
     character_set = DataElementField(
-        type='an', max_length=35, required=False, _d='Payment Status Report Character Set')    
+        type='an', max_length=35, required=False, _d='Payment Status Report Character Set')
+
 
 class ResultPaymentStatusReport(DataElementGroup):
     """
@@ -143,6 +144,42 @@ class SecuritiesReference(DataElementGroup):
         enum=SecuritiesReferenceType, length=1, _d='Bezeichnung des TAN-Medium erforderlich')
     securities_code = DataElementField(
         type='an', max_length=30, required=True, _d='Wertpapiercode')
+
+
+class HKCAZ1(FinTS3Segment):
+    """Kontoumsätze anfordern/Zeitraum, version 5
+    Segment not implemented in Project FinTS (see module fints.segments.statement)
+    proprietäres Parametersegment vieler Banken.
+
+    Parameter-Segment für (I)nformationssegment zu (CA) Kontoauszügen/Zusammenfassungen → „S“ = Service/Supported
+
+     _additional_data = ['1', '1', '1', ['740', 'N', 'N', 'urn:iso:std:iso:20022:tech:xsd:camt.052.001.08']],
+
+         Aufschlüsselung:
+         Position    Bedeutung
+         '1'    Parameter: Multimandantenfähig? oder Anzahl Konten unterstützt – institutsspezifisch
+         '1'    Parameter: Unterstützte Historiearten – institutsspezifisch
+         '1'    Parameter: Unterstützte Buchungsarten – institutsspezifisch
+         ['740', 'N', 'N', 'urn:…camt.052…']    Formatblock für CAMT-Unterstützung
+         Der CAMT-Block:
+         Wert    Bedeutung
+         '740'    Geschäftsvorfall-Nummer (GV-Code) für CAMT-Umsatzabruf
+         'N'    Keine Sammlerbuchungen? (institutsspezifisch)
+         'N'    Keine Verdichtungen?
+         'urn:iso:std:iso:20022:tech:xsd:camt.052.001.08'    Unterstütztes XML-Format für „camt.052“ (Intraday-Umsätze)
+
+         Das Segment sagt dir also:
+          „Diese Bank unterstützt CAMT.052.001.08 für Kontoumsätze (GV 740).“
+
+    """
+
+    account = DataElementGroupField(type=KTI1, _d="Kontoverbindung international")
+    supported_camt_messages = DataElementField(type='an', max_length=256, required=True, _d="Unterstützte CAMT messages ")
+    all_accounts = DataElementField(type='jn', _d="Alle Konten")
+    date_start = DataElementField(type='dat', required=False, _d="Von Datum")
+    date_end = DataElementField(type='dat', required=False, _d="Bis Datum")
+    max_number_responses = DataElementField(type='num', max_length=4, required=False, _d="Maximale Anzahl Einträge")
+    touchdown_point = DataElementField(type='an', max_length=35, required=False, _d="Aufsetzpunkt")
 
 
 class HIKAZS6(ParameterSegment):

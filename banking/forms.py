@@ -50,11 +50,14 @@ from banking.declarations_mariadb import (
     DB_upload_check,
     DB_validity,
     DB_wkn,
-    DB_alpha_vantage_price_period
+    DB_alpha_vantage_price_period,
+    DB_eur_accounting, DB_tax_on_input, DB_value_added_tax,
+    DB_earnings, DB_spendings, DB_transfer_account, DB_transfer_rate
 )
 from banking.declarations import (
     ALPHA_VANTAGE, ALPHA_VANTAGE_REQUIRED, ALPHA_VANTAGE_REQUIRED_COMBO,
     ALPHA_VANTAGE_OPTIONAL_COMBO,
+    BUTTON_INDICATOR,
     CURRENCIES, CREDIT,
     DEBIT,
     ERROR, EURO, EDIT_ROW,
@@ -95,7 +98,7 @@ from banking.declarations import (
     WWW_YAHOO,
 
     COMBO, CHECK,
-    BUTTON_ADD_CHART, BUTTON_INDICATOR,
+    BUTTON_ADD_CHART,
     BUTTON_OK, BUTTON_ALPHA_VANTAGE, BUTTON_DATA, BUTTON_CREDIT, BUTTON_COPY, BUTTON_DEBIT,
     BUTTON_SAVE, BUTTON_NEW, BUTTON_APPEND, BUTTON_REPLACE, BUTTON_NEXT, BUTTON_UPDATE,
     BUTTON_DELETE, BUTTON_DELETE_ALL, BUTTON_STANDARD, BUTTON_SAVE_STANDARD, BUTTON_SELECT_ALL,
@@ -687,8 +690,7 @@ class InputISIN(BuiltSelectBox):
         if self.container_dict:  # name: isin
             combo_values = list(self.container_dict.keys())
         else:
-            self.footer.set(MESSAGE_TEXT['DATA_NO'].format(
-                ISIN, ''))
+            MessageBoxInfo(title=self.title, message=MESSAGE_TEXT['DATA_NO'].format(ISIN, ''))
             combo_values = []
         field_def = self.create_combo_field(
             DB_name,  DATABASE_FIELDS_PROPERTIES[DB_name].length,
@@ -1817,7 +1819,7 @@ class PandasBoxIsinTable(BuiltPandasBox):
                                title=self.title, button1_text=BUTTON_NEW)
         self.button_state = isin.button_state
         if isin.button_state == WM_DELETE_WINDOW:
-            return
+            return isin.button_state
         elif isin.button_state == BUTTON_NEW:
             if self.mariadb.row_exists(ISIN, isin_code=isin.field_dict[DB_ISIN]):
                 self.message = MESSAGE_TEXT['DATA_ROW_EXIST'].format(
@@ -2267,6 +2269,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                         del ledger.field_dict[field_name]
                 del ledger.field_dict[DB_credit_name]
                 del ledger.field_dict[DB_debit_name]
+                ledger.field_dict[DB_amount] = ledger.field_dict[DB_amount].removeprefix("-")  # menu ledger>account shows -amounts
                 self.mariadb.execute_insert(LEDGER_DELETE, ledger.field_dict)
                 self.mariadb.execute_delete(
                     # deletes per foreign key connected row in LEDGER_STATEMENT
@@ -2442,6 +2445,8 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
     TOP-LEVEL-WINDOW        LedgerCoa Pandastable
                             Row Actions: Show, Delete, Update, New
     """
+    NOT_USED = [DB_eur_accounting, DB_tax_on_input, DB_value_added_tax,
+                DB_earnings, DB_spendings, DB_transfer_account, DB_transfer_rate]
 
     def __init__(self, title, data, message, mode=EDIT_ROW, selected_row=0):
 
@@ -2496,7 +2501,7 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
 
         row_dict = self.get_selected_row()
         if row_dict:
-            protected = [DB_account]
+            protected = [DB_account] + PandasBoxLedgerCoaTable.NOT_USED
             mandatory = [DB_name]
             ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict,
                                               protected=protected, mandatory=mandatory,
@@ -2521,7 +2526,7 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
 
         mandatory = [DB_account, DB_name]
         ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict,
-                                          mandatory=mandatory,
+                                          mandatory=mandatory, protected=PandasBoxLedgerCoaTable.NOT_USED,
                                           title=self.title, button1_text=BUTTON_NEW)
         self.button_state = ledger_coa.button_state
         if ledger_coa.button_state == WM_DELETE_WINDOW:
@@ -3089,6 +3094,7 @@ class TechnicalIndicator(InputISIN):
         'Others': 'Others'
         }
 
+
     def __init__(self, title=MESSAGE_TITLE, data_dict={}, container_dict={}, selection_name=None):
 
         super().__init__(title=title, header=None, table=None,
@@ -3111,17 +3117,15 @@ class TechnicalIndicator(InputISIN):
         self.validation()
         if not self.footer.get():
             # create ta ohlc dataframe
+            
             symbol = self.container_dict[self.field_dict[DB_name]]
             import_prices_run(self.title, self.mariadb, [self.field_dict[DB_name]], BUTTON_APPEND)
             field_list = [DB_price_date, DB_open, DB_high, DB_low, DB_close, DB_volume]
             data = self.mariadb.select_table(
                 PRICES, field_list, result_dict=True, order=DB_price_date, symbol=symbol,
-                period=(self.data_dict[FN_FROM_DATE], self.data_dict[FN_TO_DATE]))
+                period=(self.field_dict[FN_FROM_DATE], self.field_dict[FN_TO_DATE]))
             if data:
-                dataframe = DataFrame(data)
-                for col in dataframe.columns:
-                    if dataframe[col].map(type).eq(Decimal).any():  # check if column has Decimals
-                        dataframe[col] = dataframe[col].map(float)
+                dataframe = self._convert_decimals_to_float(DataFrame(data))
                 # extend to technical indicator dataframe
                 dataframe = ta.utils.dropna(dataframe)
                 dataframe = ta.add_all_ta_features(
@@ -3137,6 +3141,19 @@ class TechnicalIndicator(InputISIN):
                 self._set_menu(dataframe)
             else:
                 self.footer.set(MESSAGE_TEXT["DATA_NO"].format(PRICES.upper(), self.data_dict[DB_name]))
+
+    def quit_widget(self):
+
+        self._geometry_put(self._box_window_top)
+        destroy_widget(self._box_window_top)
+
+    def _convert_decimals_to_float(self, df: DataFrame) -> DataFrame:
+        for col in df.columns:
+            # Check if the column contains at least one Decimal value
+            if df[col].map(lambda x: isinstance(x, Decimal)).any():
+                # Convert only Decimal values to float; leave all other values unchanged
+                df[col] = df[col].map(lambda x: float(x) if isinstance(x, Decimal) else x)
+        return df
 
     def _set_menu(self, dataframe):
         """

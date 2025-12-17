@@ -14,7 +14,7 @@ import sys
 import traceback
 import requests
 
-
+from typing import Dict, List
 from collections import Counter
 from threading import current_thread, main_thread
 from tkinter import Tk, messagebox, TclError
@@ -378,6 +378,18 @@ def list_of_tuples2list_of_dicts(list_of_tuples):
         return list_of_dicts
     else:
         type_error()
+
+
+def dict_get_nested_value(dictionary: Dict, keys: List[str]):
+    """
+    get values of a list of keys in nested dictionaries
+    """
+    cur = dictionary
+    for k in keys:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(k)
+    return cur
 
 
 def dict_get_first_key(dictionary, value):
@@ -759,12 +771,8 @@ class Amount():
     """Amount object containing currency and amount
     Args:
         amount (str): Amount using either a , or a . as decimal separator
-        status (str): Either C or D for credit or debit respectively
         currency (str): A 3 letter currency (e.g. EUR)
-    >>> Amount('123.45', 'C', 'EUR')
-    <123.45 EUR>
-    >>> Amount('123.45', 'D', 'EUR')
-    <-123.45 EUR>
+    >>> Amount('123.45', 'EUR') --> 123.45 EUR
     """
 
     def __init__(self, amount, currency=EURO, places=2):

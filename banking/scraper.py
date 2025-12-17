@@ -291,6 +291,7 @@ class BmwBank(object):
 
     def credentials(self):
 
+        time_out = 180
         if self.opened_bank_code != self.bank_code:
             while True:
                 try:
@@ -316,7 +317,7 @@ class BmwBank(object):
                     element.click()
                     try:
                         locator = "BMW Bank - Finanzstatus - Finanzstatus"
-                        WebDriverWait(self.driver, 60).until(
+                        WebDriverWait(self.driver, time_out).until(
                             EC.title_is(locator))
                         self.opened_bank_code = self.bank_code
                         return True

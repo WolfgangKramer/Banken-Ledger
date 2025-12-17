@@ -51,7 +51,7 @@ from banking.declarations import (
     SEPA_CREDITOR_IBAN, SEPA_CREDITOR_NAME, SEPA_EXECUTION_DATE, SEPA_PURPOSE,
     SEPA_PURPOSE_1, SEPA_PURPOSE_2, SEPA_REFERENCE,
     SHELVE_KEYS,
-    START_DATE_HOLDING, START_DATE_LEDGER,
+    START_DATE_HOLDING,
     TRANSACTION_DELIVERY, TRANSFER_DATA_SEPA_EXECUTION_DATE,
     WEBSITES, WARNING,
     # form declaratives
@@ -430,10 +430,10 @@ class BankenLedger(object):
         title = ' '.join([MENU_TEXT['Customize'], MENU_TEXT['New Bank']])
         if not bankidentifier:
             MessageBoxInfo(
-                title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(BANKIDENTIFIER.upper()))
+                title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(BANKIDENTIFIER.upper(), NOT_ASSIGNED))
         elif not bank_codes:
             MessageBoxInfo(
-                title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(SERVER.upper()))
+                title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(SERVER.upper(), NOT_ASSIGNED))
         else:
             bank_data_box = BankDataNew(
                 title, bank_codes=bank_codes)
@@ -623,7 +623,10 @@ class BankenLedger(object):
         if self.bank_names != {} and application_store.get(None):  # application customizing is done
             self._create_menu_show(menu, self.bank_owner_account, menu_font)
             self._create_menu_download(menu, menu_font)
+            """
+            Deactivated: Verification of Payyee
             self._create_menu_transfer(menu, self.bank_owner_account, menu_font)
+            """
         if application_store.get(None):  # application customizing is done
             self._create_menu_database(
                 menu, menu_font, self.bank_owner_account)
@@ -820,9 +823,11 @@ class BankenLedger(object):
                         cust_bank_menu.add_command(label=MENU_TEXT['Change FinTS Transaction Version'],
                                                    command=lambda
                                                    x=bank_code: self._bank_version_transaction(x))
+                        """
                         cust_bank_menu.add_command(label=MENU_TEXT['Refresh BankParameterData'],
                                                    command=lambda
                                                    x=bank_code: self._bank_refresh_bpd(x))
+                        """                           
                     cust_bank_menu.add_command(label=MENU_TEXT['Show Data'],
                                                command=lambda x=bank_code: self._bank_show_shelve(x))
                     customize_menu.add_separator()
@@ -888,7 +893,7 @@ class BankenLedger(object):
                                  command=lambda x=bank_code, y=bank_name: self._show_balances(x, y, owner_name=owner_name))
         if accounts:
             for acc in accounts:
-                if 'HKKAZ' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                if 'HKKAZ' in acc[KEY_ACC_ALLOWED_TRANSACTIONS] or 'HKCAZ' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
                     self.kaz_iban.append(acc[KEY_ACC_IBAN])
                     label = ' '.join(
                         [MENU_TEXT['Statement'], acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]])
@@ -1331,9 +1336,15 @@ class BankenLedger(object):
                                                                DB_price_date.upper(), date_days.convert(holding_dict[DB_price_date]), '\n']))
             return True
         return False
-
+    
     def _data_technical_indicators(self):
-
+        """      
+        def destroy_withdrawn():
+            for widget in root.winfo_children():
+                if isinstance(widget, Toplevel):
+                    if not widget.winfo_viewable():  # = withdrawn oder iconified
+                        widget.destroy()        
+        """
         self._delete_footer()
         title = MENU_TEXT['Technical Indicators']
         names_dict = dict(self.mariadb.select_isin_with_ticker([DB_name, DB_symbol], order=DB_name))
@@ -1632,7 +1643,7 @@ class BankenLedger(object):
         bank.account_number = account[KEY_ACC_ACCOUNT_NUMBER]
         bank.iban = account[KEY_ACC_IBAN]
         bank.subaccount_number = account[KEY_ACC_SUBACCOUNT_NUMBER]
-        bank.owner_name = account[KEY_ACC_OWNER_NAME]        
+        bank.owner_name = account[KEY_ACC_OWNER_NAME]
         sepa_credit_box = SepaCreditBox(
             bank, account, title=title)
         if sepa_credit_box.button_state == WM_DELETE_WINDOW:

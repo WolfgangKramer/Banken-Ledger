@@ -10,7 +10,11 @@ import json
 import logging
 import re
 import requests
+import xmltodict
+import xml.dom.minidom as minidom
 
+from decimal import Decimal
+from typing import Any, List, Union
 from datetime import date
 from operator import itemgetter
 from fints.message import FinTSInstituteMessage
@@ -22,24 +26,32 @@ from fints.segments.bank import HIBPA3, HIUPA4, HIUPD6
 from fints.segments.depot import HIWPD5, HIWPD6
 from fints.segments.dialog import HISYN4, HIRMG2, HIRMS2
 from fints.segments.message import HNHBK3
-from fints.segments.statement import HIKAZ6, HIKAZ7
+from fints.segments.statement import HIKAZ6, HIKAZ7, HICAZ1
 from fints.utils import Password
 from mt940.models import Transactions
 
 from banking.mariadb import MariaDB
 from banking.declarations_mariadb import (
     STATEMENT, TABLE_FIELDS,
-    DB_show_messages, DB_logging
+    DB_amount, DB_currency, DB_entry_date, DB_date,
+    DB_camt,
+    DB_show_messages, DB_logging,
+    DB_status, DB_bank_reference, DB_posting_text,
+    DB_end_to_end_reference, DB_mandate_id, DB_purpose_code, DB_applicant_name,
+    DB_applicant_iban, DB_applicant_bic,
+    DB_id, DB_transaction_code, DB_prima_nota, DB_remittance_information, DB_purpose,
+    DB_opening_balance, DB_opening_status, DB_opening_currency, DB_opening_entry_date,
+    DB_closing_balance, DB_closing_status, DB_closing_currency, DB_closing_entry_date,
     )
 from banking.declarations import (
-    CODE_0030, CODE_3010, CODE_3040, CODE_3955,
+    CODE_0030, CODE_3010, CODE_3040, CODE_3955, CREDIT,
     DIALOG_ID_UNASSIGNED,
-    ERROR,
+    ERROR, EURO,
     Informations, INFORMATION, IDENTIFIER,
     PERCENT,
     MESSAGE_TEXT,
     KEY_IDENTIFIER_DELIMITER, KEY_SYSTEM_ID,
-    KEY_BPD, KEY_UPD, KEY_BANK_NAME, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS,
+    KEY_BPD, KEY_UPD, KEY_BANK_NAME, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS, KEY_SUPPORTED_CAMT_MESSAGE,
     KEY_MIN_PIN_LENGTH, KEY_MAX_PIN_LENGTH, KEY_MAX_TAN_LENGTH,
     KEY_VERSION_TRANSACTION, KEY_VERSION_TRANSACTION_ALLOWED,
     KEY_SEPA_FORMATS, KEY_TAN_REQUIRED,
@@ -49,7 +61,7 @@ from banking.declarations import (
     PNS,
     WARNING,
     # form declaratives
-    WM_DELETE_WINDOW)
+    WM_DELETE_WINDOW, DEBIT)
 from banking.fints_extension import HIKAZS6, HIKAZS7,  HIWPDS5, HIWPDS6
 from banking.messagebox import (MessageBoxTermination, MessageBoxInfo, MessageBoxAsk)
 from banking.forms import PrintMessageCode, InputPIN
@@ -58,7 +70,7 @@ from banking.utils import (
     Amount, application_store,
     bankdata_informations_append,
     check_main_thread,
-    dec2, dec6,
+    dict_get_nested_value, dec2, dec6,
     create_iban,
     date_yymmdd,
     exception_error,
@@ -86,10 +98,13 @@ logger = logging.getLogger(__name__)
 log_target = logger.info
 
 
+
 class Dialogs(object):
     """
     Dialogues: Customer - Bank
     """
+    bpd_updated = False
+    upd_updated = False
 
     def __init__(self):
 
@@ -121,6 +136,8 @@ class Dialogs(object):
                 response, _ = self._send_msg(
                     bank, self.messages.msg_dialog_init(bank), dialog_init=True)
                 if response is not None:
+                    self._store_bpd_shelve(bank, response)
+                    self._store_upd_shelve(bank, response)
                     for seg in response.find_segments(HIUPD6):
                         if bank.iban == seg.iban and seg.extension:
                             formatted_string = json.dumps(
@@ -186,12 +203,29 @@ class Dialogs(object):
 
         seg = response.find_segment_first(HIBPA3)
         if seg is not None:
+            # update bpd if version changed
+            if Dialogs.bpd_updated:
+                return
+            elif seg.bpd_version <= 1:  # e.g. Consors; if version number not updated by the bank
+                pass            
+            elif bank.bpd_version == seg.bpd_version:
+                return
             bank.bpd_version = seg.bpd_version
             bank.bank_name = seg.bank_name
             self.mariadb.shelve_put_key(bank.bank_code, [
                 (KEY_BPD, bank.bpd_version), (KEY_BANK_NAME, bank.bank_name)])
+            Dialogs.bpd_updated =True
         else:
             return
+        seg = response.find_segment_first("HICAZS")
+        if seg is not None:
+            try:
+                bank.supported_camt_messages = seg._additional_data[3][3]  # camt_message_name
+                self.mariadb.shelve_put_key(
+                    bank.bank_code, (KEY_SUPPORTED_CAMT_MESSAGE, bank.supported_camt_messages))
+            except KeyError:
+                self.mariadb.shelve_put_key(
+                    bank.bank_code, (KEY_SUPPORTED_CAMT_MESSAGE, None))
         for hitans in [HITANS7, HITANS6, HITANS5, HITANS4, HITANS3, HITANS2, HITANS1]:
             seg = response.find_segment_first(hitans)
             if seg is not None:
@@ -290,6 +324,9 @@ class Dialogs(object):
                 bank.storage_period = 90
         self.mariadb.shelve_put_key(
             bank.bank_code, (KEY_STORAGE_PERIOD, bank.storage_period))
+        MessageBoxInfo(message=MESSAGE_TEXT["FINTS_UPDATE_BPD_VERSION"].format(
+            bank.bank_name, bank.bpd_version), bank=bank, information=INFORMATION)
+        
 
     def _store_sync_shelve(self, bank, response):
 
@@ -312,14 +349,23 @@ class Dialogs(object):
             self.mariadb.shelve_put_key(
                 bank.bank_code, (KEY_SEPA_FORMATS, bank.sepa_formats))
         self._store_upd_shelve(bank, response)
+        print("")
 
     def _store_upd_shelve(self, bank, response):
-        ' If Bank not provide User Parameter Data during Synchronization'
+
         seg = response.find_segment_first(HIUPA4)
         if seg is not None:
+            # update upd if version changed
+            if Dialogs.upd_updated:
+                return            
+            if seg.upd_version <= 1: # e.g. Consors; if version number not updated by the bank
+                pass
+            elif bank.upd_version == seg.upd_version:
+                return            
             bank.upd_version = seg.upd_version
             self.mariadb.shelve_put_key(
                 bank.bank_code, (KEY_UPD, bank.upd_version))
+            Dialogs.upd_updated =True
         else:
             return
         seg = response.find_segment_first(HIUPD6)
@@ -354,6 +400,8 @@ class Dialogs(object):
                     bank.accounts.append(acc)
             self.mariadb.shelve_put_key(
                 bank.bank_code, (KEY_ACCOUNTS, bank.accounts))
+        MessageBoxInfo(message=MESSAGE_TEXT["FINTS_UPDATE_UPD_VERSION"].format(
+            bank.bank_name, bank.upd_version), bank=bank, information=INFORMATION)            
 
     def _receive_msg(self, bank, response, hirms_codes):
 
@@ -396,6 +444,35 @@ class Dialogs(object):
 
     def _send_msg(self, bank, message, dialog_init=False):
 
+        def fints_code(bank, segment):
+
+            codes = []
+            error = False
+            for response in segment.responses:
+                codes.append(response.code)
+                message = ' ' .join(['Code', str(response.code), str(response.text)])
+                if response.code == '3076':      # SCA not required
+                    bank.sca = False
+                if response.code[0] in ['0', '1']:
+                    if self._show_message == INFORMATION:
+                        bankdata_informations_append(INFORMATION, message)
+                elif response.code[0] == '3':
+                    if response.code == '3010':    # no entries found
+                        MessageBoxInfo(message=MESSAGE_TEXT['NO_TURNOVER'].format(
+                            bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
+                    if self._show_message in [INFORMATION, WARNING]:
+                        bankdata_informations_append(WARNING, message)
+                        bank.warning_message = True
+                else:
+                    error = True
+                    bankdata_informations_append(WARNING, message)
+                    if response.reference_element:
+                        bankdata_informations_append(WARNING, ' ' .join(
+                            ['- Bezugssegment', str(response.reference_element)]))
+                    if response.parameters:
+                        bankdata_informations_append(ERROR, ' ' .join(
+                            ['- Parameters', str(response.parameters)]))
+            return error, codes
         if self._logging:
             log_out = io.StringIO()
             with Password.protect():
@@ -428,10 +505,10 @@ class Dialogs(object):
                              (log_out.getvalue()))
         # bank feedback message
         seg = response.find_segment_first(HIRMG2)
-        hirmg_error, fints_codes = self._fints_code(bank, seg)
+        hirmg_error, fints_codes = fints_code(bank, seg)
         hirms_error = None
         for seg in response.find_segments(HIRMS2):
-            hirms_error, hirms_codes = self._fints_code(bank, seg)
+            hirms_error, hirms_codes = fints_code(bank, seg)
             fints_codes = fints_codes + hirms_codes
         if hirmg_error or hirms_error:
             PrintMessageCode(text=Informations.bankdata_informations)
@@ -440,36 +517,6 @@ class Dialogs(object):
             else:
                 MessageBoxTermination(bank=bank)
         return response, fints_codes
-
-    def _fints_code(self, bank, segment):
-
-        codes = []
-        error = False
-        for response in segment.responses:
-            codes.append(response.code)
-            message = ' ' .join(['Code', str(response.code), str(response.text)])
-            if response.code == '3076':      # SCA not required
-                bank.sca = False
-            if response.code[0] in ['0', '1']:
-                if self._show_message == INFORMATION:
-                    bankdata_informations_append(INFORMATION, message)
-            elif response.code[0] == '3':
-                if response.code == '3010':    # no entries found
-                    MessageBoxInfo(message=MESSAGE_TEXT['NO_TURNOVER'].format(
-                        bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
-                if self._show_message in [INFORMATION, WARNING]:
-                    bankdata_informations_append(WARNING, message)
-                    bank.warning_message = True
-            else:
-                error = True
-                bankdata_informations_append(WARNING, message)
-                if response.reference_element:
-                    bankdata_informations_append(WARNING, ' ' .join(
-                        ['- Bezugssegment', str(response.reference_element)]))
-                if response.parameters:
-                    bankdata_informations_append(ERROR, ' ' .join(
-                        ['- Parameters', str(response.parameters)]))
-        return error, codes
 
     def _mt535_listdict(self, data):
         """
@@ -480,11 +527,47 @@ class Dialogs(object):
         Modified Coding copied from
             Pure-python FinTS (formerly known as HBCI) implementation https://pypi.python.org/pypi/fints
         """
+        def collapse_multilines(lines):
+
+            clauses = []
+            prevline = ""
+            for line in lines:
+                if line.startswith(":"):
+                    if prevline != "":
+                        clauses.append(prevline)
+                    prevline = line
+                elif line.startswith("-"):
+                    # last line
+                    clauses.append(prevline)
+                    clauses.append(line)
+                else:
+                    prevline += "|{}".format(line)
+            return clauses
+
+        def grab_financial_instrument_segments(clauses):
+            retval = []
+            stack = []
+            within_financial_instrument = False
+            for clause in clauses:
+                if clause.startswith(":16R:FIN"):
+                    # start of financial instrument
+                    within_financial_instrument = True
+                elif clause.startswith(":16S:FIN"):
+                    # end of financial instrument - move stack over to
+                    # return value
+                    retval.append(stack)
+                    stack = []
+                    within_financial_instrument = False
+                else:
+                    if within_financial_instrument:
+                        stack.append(clause)
+            return retval
+
         mt535_lines = str.splitlines(data)
         # The first line is empty.
         del mt535_lines[0]
         # First: Collapse multiline clauses into one clause
-        clauses = self._collapse_multilines(mt535_lines)
+        clauses = collapse_multilines(mt535_lines)
         # Check price_date header information
         for clause in clauses:
             m = re_pricedate04.match(clause)
@@ -498,7 +581,7 @@ class Dialogs(object):
                 _total_amount_portfolio = dec2.convert(
                     float(m.group(2) + '.' + m.group(3)))
         # Second: Scan sequence of clauses for financial instrument
-        finsegs = self._grab_financial_instrument_segments(clauses)
+        finsegs = grab_financial_instrument_segments(clauses)
         # Third: Extract financial instrument data
         mt535 = []
         for idx, finseg in enumerate(finsegs):
@@ -577,42 +660,6 @@ class Dialogs(object):
                                 mt535[idx]['market_price'], mt535[idx]['exchange_rate'])
             mt535[idx]['total_amount_portfolio'] = _total_amount_portfolio
         return mt535
-
-    def _collapse_multilines(self, lines):
-
-        clauses = []
-        prevline = ""
-        for line in lines:
-            if line.startswith(":"):
-                if prevline != "":
-                    clauses.append(prevline)
-                prevline = line
-            elif line.startswith("-"):
-                # last line
-                clauses.append(prevline)
-                clauses.append(line)
-            else:
-                prevline += "|{}".format(line)
-        return clauses
-
-    def _grab_financial_instrument_segments(self, clauses):
-        retval = []
-        stack = []
-        within_financial_instrument = False
-        for clause in clauses:
-            if clause.startswith(":16R:FIN"):
-                # start of financial instrument
-                within_financial_instrument = True
-            elif clause.startswith(":16S:FIN"):
-                # end of financial instrument - move stack over to
-                # return value
-                retval.append(stack)
-                stack = []
-                within_financial_instrument = False
-            else:
-                if within_financial_instrument:
-                    stack.append(clause)
-        return retval
 
     def _mt940_listdict(self, data, bank_code):
         """
@@ -721,6 +768,8 @@ class Dialogs(object):
 
         if 'purpose' in mt940:
             identifiers = []
+            if isinstance(mt940['purpose'], list):
+                mt940['purpose'] = " ".join(mt940['purpose'])
             purpose = mt940['purpose'].replace(' ', '')
             # select existing SEPA indentifiers in purpose
             for identifier in IDENTIFIER.keys():
@@ -751,6 +800,207 @@ class Dialogs(object):
                     mt940['purpose_wo_identifier'] = mt940['purpose']
 
         return mt940
+
+    def _parse_camt052(self, xml_string, bank):
+        """
+        Document:
+            www.ebics.de > Datenformate > Gueltige version
+            Die Deutsche Kreditwirtschaft
+            Version 3.9 vom 12.03.2025 (Final Version)
+            DFÜ – Abkommen
+            Anlage 3: Spezifikation der Datenformate
+            7.2 Bank to Customer Account Report (camt.052)
+        """
+        def ensure_list(x: Union[None, list, dict]) -> List:
+            if x is None:
+                return []
+            if isinstance(x, list):
+                return x
+            return [x]
+
+        def convert_amount(amount, status):
+            if isinstance(amount, Decimal):
+                amount = amount if status == CREDIT else -amount
+            else:
+                amount = dec2.convert(amount)
+                amount = amount if status == CREDIT else -amount
+            return amount
+
+        def normalize_amount(a: Any):
+            # a can be dict like {"#text":"123.45", "@Ccy":"EUR"}
+            if isinstance(a, dict):
+                # xmltodict typically gives text under None or '#text' or directly string
+                if "#text" in a:
+                    amount = dec2.convert(a["#text"])
+                    if "@Ccy" in a:
+                        currency = a["@Ccy"]
+                    return amount, currency
+            return None, EURO
+
+        identifier_delimiter = self.mariadb.shelve_get_key(bank.bank_code, KEY_IDENTIFIER_DELIMITER)
+        doc = xmltodict.parse(xml_string)
+        doc = doc.get("Document", {})
+        root = doc.get("BkToCstmrAcctRpt", {})
+        rpt = root.get("Rpt", {})
+        # Get opening balance
+        opening_balance = None
+        closing_balance = None
+        rpt_bal = rpt.get("Bal", [])
+        for bal in ensure_list(rpt_bal):
+            # bal could be dict with keys Tp->{Cd}, Amt, CdtDbtInd, Dt or Bal.Dt
+            tp = bal.get("Tp", {})
+            cd = None
+            # cd might be under Tp.Cd or Tp.Cd.CdOrPrtry
+            if isinstance(tp, dict):
+                cd = tp.get("Cd") or tp.get("CdOrPrtry", None)
+                # sometimes nested: Tp.Cd.Prtry...
+                if isinstance(cd, dict):
+                    # try nested representation
+                    cd = cd.get("#text") or cd.get("Cd")
+            if cd and cd == "OPBD":
+                opening_balance, opening_currency = normalize_amount(bal.get("Amt"))
+                if opening_balance:
+                    cdt_db = bal.get("CdtDbtInd")
+                    if cdt_db == "DBIT":
+                        opening_status = DEBIT
+                    else:
+                        opening_status = CREDIT
+                    opening_balance = convert_amount(opening_balance, opening_status)
+                    # date can be in bal.Dt or bal.Dt.Dt or in SubTp? prefer Dt.Dt
+                    dt = None
+                    dt_node = bal.get("Dt") or bal.get("DtTm")
+                    if isinstance(dt_node, dict):
+                        dt = dt_node.get("Dt") or dt_node.get("#text")
+                    else:
+                        dt = dt_node
+                    opening_date = dt
+            if cd and cd == "CLBD":
+                closing_balance, _ = normalize_amount(bal.get("Amt"))
+                if closing_balance:
+                    cdt_db = bal.get("CdtDbtInd")
+                    if cdt_db == "DBIT":
+                        closing_status = DEBIT
+                    else:
+                        closing_status = CREDIT
+                    closing_balance = convert_amount(closing_balance, closing_status)
+        # Get statements
+        entries_out = []
+        entry_obj = {}        
+        ntry = rpt.get("Ntry")
+        for entry in ensure_list(ntry):
+            if opening_balance:
+                entry_obj = {
+                    DB_opening_balance: abs(opening_balance),
+                    DB_opening_status: opening_status,
+                    DB_opening_currency: opening_currency,
+                    DB_opening_entry_date: opening_date,
+                    }
+            entry_obj[DB_amount], entry_obj[DB_currency] = normalize_amount(entry.get("Amt"))
+            entry_obj[DB_status] = DEBIT if entry.get("CdtDbtInd") == "DBIT" else CREDIT
+            entry_obj[DB_entry_date] = (entry.get("BookgDt") or {}).get("Dt") if isinstance(entry.get("BookgDt"), dict) else entry.get("BookgDt")
+            entry_obj[DB_date] = (entry.get("ValDt") or {}).get("Dt") if isinstance(entry.get("ValDt"), dict) else entry.get("ValDt")
+            entry_obj[DB_posting_text] = entry.get("AddtlNtryInf")
+            # "EntryReference": entry.get("NtryRef"),
+            entry_obj[DB_bank_reference] = entry.get("AcctSvcrRef")
+            if opening_balance:
+                opening_balance = dec2.add(
+                    convert_amount(entry_obj[DB_opening_balance], entry_obj[DB_opening_status]),
+                    convert_amount(entry_obj[DB_amount], entry_obj[DB_status])
+                    )
+                opening_status = CREDIT if (opening_balance > 0) else DEBIT
+                opening_date = entry_obj[DB_entry_date]
+                entry_obj[DB_closing_balance] = abs(opening_balance)
+                entry_obj[DB_closing_status] = opening_status
+                entry_obj[DB_closing_entry_date] = opening_date
+                entry_obj[DB_closing_currency] = opening_currency
+            """
+             Bank Transaction Code mapping (BkTxCd)
+            7.1.8.5.2
+            Belegung von <Prtry>
+            Bei Nutzung der Elementgruppe <Prtry> ist unter <Cd> folgender zusammengesetzter Code,
+            bestehend aus folgenden Teilen, die zusammen als String, verbunden mit jeweils “+”
+            eingestellt werden, spezifiziert:
+                    1. Vierstelliger SWIFT-Transaction-Code
+                    2. Geschäftsvorfallcode (GVC)
+                    3. Optional: Primanota-Nr. (maximal 10-stellig)
+                    4. Textschlüsselergänzung, falls darstellbar
+            Beispiel:
+            <Cd>NTRF+116+9002/405</Cd>
+            """
+            bk = entry.get("BkTxCd")
+            if isinstance(bk, dict):
+                # Proprietary Bank TransactionCodeStructure1
+                prtry = bk.get("Prtry", {})
+                if isinstance(prtry, dict):
+                    _prtry = prtry.get("Cd", None)
+                    if _prtry:
+                        _prtry = _prtry.split("+")
+                        entry_obj[DB_id] = _prtry[0]
+                        entry_obj[DB_transaction_code] = _prtry[1]
+                        entry_obj[DB_prima_nota] = _prtry[2]
+
+            # Entry details: one or many TxDtls under NtryDtls.TxDtls
+            ntrydtls = entry.get("NtryDtls", {})
+            txdtls = ntrydtls.get("TxDtls") or ntrydtls.get("TxDtls")
+            for tx in ensure_list(txdtls):
+                # "TransactionId": (tx.get("Refs") or {}).get("TxId"),
+                entry_obj[DB_remittance_information] = (tx.get("Refs") or {}).get("InstrId")
+                entry_obj[DB_end_to_end_reference] = (tx.get("Refs") or {}).get("EndToEndId")
+                # "ClearingSystemRef": (tx.get("Refs") or {}).get("ClrSysRef"),
+                entry_obj[DB_mandate_id] = (tx.get("DrctDbtTx", {}).get("MndtRltdInf") or {}).get("MndtId")
+                # "CreditorSchemeId": (tx.get("DrctDbtTx", {}).get("MndtRltdInf") or {}).get("CdtrSchmeId", {}),
+                entry_obj[DB_purpose_code] = (tx.get("Purp") or {}).get("Cd")
+                # "AdditionalTransactionInfo": tx.get("AddtlTxInf"),
+                # "ChargeAmount": self._normalize_amount(tx.get("ChrgsInf")),
+                # Remittance info
+                rmt = tx.get("RmtInf")
+                if rmt:
+                    entry_obj[DB_purpose] = rmt.get("Ustrd", {})
+                # Parties & Accounts (RltdAgts, RltdPties commonly used)
+                rltd = tx.get("RltdAgts") or {}
+                # Debtor Agent BICs
+                dbtragt = rltd.get("DbtrAgt") or {}
+                if isinstance(dbtragt, dict):
+                    entry_obj[DB_applicant_bic] = dict_get_nested_value(dbtragt, ["FinInstnId", "BICFI"])
+                rltd = tx.get("RltdPties") or {}
+                if entry_obj[DB_status] == CREDIT:
+                    # Debtor
+                    dbtr = rltd.get("Dbtr")
+                    if dbtr:
+                        entry_obj[DB_applicant_name] = dict_get_nested_value(dbtr, ["Pty", "Nm"])
+                    dbtracct = rltd.get("DbtrAcct")
+                    if dbtracct:
+                        # IBAN under Id.IBAN or Id.Othr.Id
+                        iban = dict_get_nested_value(dbtracct, ["Id", "IBAN"])
+                        if iban is None:
+                            iban = dict_get_nested_value(dbtracct, ["Id", "Othr", "Id"])
+                        entry_obj[DB_applicant_iban] = iban
+                else:
+                    # Creditor
+                    cdtr = rltd.get("Cdtr")
+                    if cdtr:
+                        entry_obj[DB_applicant_name] = dict_get_nested_value(cdtr, ["Pty", "Nm"])
+                    cdtract = rltd.get("CdtrAcct")
+                    if cdtract:
+                        iban = dict_get_nested_value(cdtract, ["Id", "IBAN"])
+                        if iban is None:
+                            iban = dict_get_nested_value(cdtract, ["Id", "Othr", "Id"])
+                        entry_obj[DB_applicant_iban] = iban
+                    entry_obj = self._create_identifiers(entry_obj, identifier_delimiter)
+                entry_obj[DB_camt] = "052"  # source format camt.052
+                entries_out.append(entry_obj)
+        if entry_obj and closing_balance:  # entries exist and closing_balance reported by bank
+            statements_closing_balance = convert_amount(entry_obj[DB_closing_balance], entry_obj[DB_closing_status])  # calculated closing_balance
+            if closing_balance != statements_closing_balance:
+                MessageBoxInfo(
+                    message=MESSAGE_TEXT['BANK_BALANCE_DIFFERENCE'].format(
+                        bank.account_product_name, bank.account_number, closing_balance,
+                        entry_obj[DB_closing_balance], statements_closing_balance,
+                        str(dec2.subtract(closing_balance, statements_closing_balance))
+                        ),
+                    bank=bank, information=WARNING
+                    )
+        return entries_out
 
     def anonymous(self, bank):
         ' HITANS >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>'
@@ -830,26 +1080,49 @@ class Dialogs(object):
                     MessageBoxInfo(message=MESSAGE_TEXT[CODE_3040].format(
                         bank.bank_name, bank.account_number, bank.account_product_name),
                         bank=bank, information=WARNING)
-                hikaz = self._get_segment(bank, 'KAZ')
-                seg = response.find_segment_first(hikaz)
-                if not seg:
-                    MessageBoxInfo(message=MESSAGE_TEXT['HIKAZ'].format(
-                        bank.bank_name, bank.account_number, bank.account_product_name),
-                        bank=bank, information=ERROR)
-                    return statements  # threading continues
-                try:
-                    statement_booked_str = seg.statement_booked.decode('utf-8')
-                except UnicodeDecodeError:
-                    statement_booked_str = seg.statement_booked.decode(
-                        'latin1')
-                if self._logging:
-                    logger.debug('\n\n>>>>> START MT940 DATA ' +
-                                 40 * '>' + '\n')
-                    log_target(statement_booked_str)
-                    logging.getLogger(__name__).debug(
-                        '\n\n>>>>> START MT940 DATA PARSING ' + 30 * '>' + '\n')
-                statements = self._mt940_listdict(
-                    statement_booked_str, bank.bank_code)
+                if bank.statement_mt940:
+                    hikaz = self._get_segment(bank, 'KAZ')
+                    seg = response.find_segment_first(hikaz)
+                    if not seg:
+                        MessageBoxInfo(message=MESSAGE_TEXT['HIKAZ'].format(
+                            'HKKAZ', bank.bank_name, bank.account_number, bank.account_product_name
+                            ),
+                             bank=bank, information=ERROR
+                             )
+                        return statements  # threading continues
+                    try:
+                        statement_booked_str = seg.statement_booked.decode('utf-8')
+                    except UnicodeDecodeError:
+                        statement_booked_str = seg.statement_booked.decode(
+                            'latin1')
+                    if self._logging:
+                        logger.debug('\n\n>>>>> START MT940 DATA ' +
+                                     40 * '>' + '\n')
+                        log_target(statement_booked_str)
+                        logging.getLogger(__name__).debug(
+                            '\n\n>>>>> START MT940 DATA PARSING ' + 30 * '>' + '\n')
+                    statements = self._mt940_listdict(
+                        statement_booked_str, bank.bank_code)
+                elif bank.statement_camt:
+                    seg = response.find_segment_first(HICAZ1)
+                    if not seg:
+                        MessageBoxInfo(
+                            message=MESSAGE_TEXT['HIKAZ'].format(
+                                'HKCAZ', bank.bank_name, bank.account_number, bank.account_product_name
+                                ),
+                            bank=bank, information=ERROR
+                            )
+                        return statements  # threading continues
+                    statements = seg.statement_booked.camt_statements._data[0]
+                    if self._logging:
+                        dom = minidom.parseString(statements)
+                        pretty_xml = dom.toprettyxml(indent="  ")
+                        logger.debug('\n\n>>>>> START CAMT_052 DATA ' +
+                                     40 * '>' + '\n')
+                        log_target(pretty_xml)
+                        logging.getLogger(__name__).debug(
+                            '\n\n>>>>> START CAMT_052 DATA PARSING ' + 30 * '>' + '\n')
+                    statements = self._parse_camt052(statements, bank)
             self._end_dialog(bank)
         return statements
 

@@ -2,7 +2,6 @@ Only German banks with FINTS access and PIN/TAN authentication
 # Features
 * Storing account statements, securities account data
  * Storing historical stock prices from Yahoo! Finance or AlphaVantage
- * Transfers and appointment transfers
  * Depot and historical price data evaluations
  * Transfer bank statements to Ledger application tables
  * Charts of 43 technical indicators (see PyPi ta) with implicit download of share prices
@@ -41,4 +40,4 @@ pip install -r requirements.txt
  * BMW Bank (download of current daily transfer and savings transactions)
  * Consors 
  * Flatexdegiro Bank AG
- * VR Bank (not tested securities account data)
+ * VR Bank (not tested securities account data) (HKCAZ tested)

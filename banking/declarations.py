@@ -710,17 +710,6 @@ class BpdUpdVersion:
     bpd: int  # stored Version of bank parameter data (MariaDB table shelves)
     upd: int  # stored Version of user parameter data (MariaDB table shelves)
     
-    
-@dataclass
-class Caller:
-    """
-    Used to remember window position
-    (see formbuilt.py  methods geometry_get, geometry_put)
-    Contains class name of calling Class)
-    """
-    caller: str
-
-
 @dataclass
 class ToolbarSwitch:
     """
@@ -762,7 +751,7 @@ class Informations(object):
     """
     Threading
     Download prices from Yahoo! or Alpha Vantage
-    Container oef messages, errors
+    Container of messages, errors
     """
     prices_informations = ' '
     PRICES_INFORMATIONS = 'PRICES_INFORMATIONS'

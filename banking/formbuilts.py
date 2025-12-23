@@ -41,7 +41,7 @@ from banking.declarations_mariadb import (
 )
 from banking.declarations import (
 
-    Caller, ToolbarSwitch, Informations,
+    ToolbarSwitch, Informations,
     EURO, EDIT_ROW,
     FN_COLUMNS_EURO, FN_COLUMNS_PERCENT, FN_FROM_DATE, FN_TO_DATE,
     HEIGHT_TEXT,
@@ -490,7 +490,7 @@ class BuiltBox(object):
             width=WIDTH_WIDGET, width_canvas=WIDTH_CANVAS, height_canvas=HEIGHT_CANVAS,
             grab=True, scrollable=False):
 
-        Caller.caller = self.caller = self.__class__.__name__
+        self.window_id = self.__class__.__name__
         self.mariadb = MariaDB()
         self.button_state = None
         self._box_window_top = Toplevel()
@@ -561,7 +561,7 @@ class BuiltBox(object):
             destroy_widget(self._box_window_top)
         else:
             MessageBoxInfo(
-                title=title, message=MESSAGE_TEXT['THREAD'].format(Caller.caller))
+                title=title, message=MESSAGE_TEXT['THREAD'].format(self.window_id))
 
     def calculate_width_canvas(self):
         # Get the number of (rows not used and) columns
@@ -578,7 +578,7 @@ class BuiltBox(object):
 
     def set_geometry(self):
 
-        result = self.mariadb.select_table(GEOMETRY, '*', caller=self.caller, result_dict=True)
+        result = self.mariadb.select_table(GEOMETRY, '*', caller=self.window_id, result_dict=True)
         if result:
             geometry = result[0][DB_geometry]
         else:
@@ -687,7 +687,7 @@ class BuiltBox(object):
                 height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
         else:
             geometry = BUILTBOX_WINDOW_POSITION
-        self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.caller, DB_geometry: geometry})
+        self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.window_id, DB_geometry: geometry})
 
     def button_1_button1(self, event):
 
@@ -764,7 +764,6 @@ class BuiltRadioButtons(BuiltBox):
                               '234': 'Description of RadioButton2',
                               '345': 'Description of RadioButton3'}):
 
-        Caller.caller = self.__class__.__name__
         self.field = None
         self._radiobutton_dict = radiobutton_dict
         self._default_value = default_value
@@ -838,7 +837,6 @@ class BuiltCheckButton(BuiltBox):
             checkbutton_texts=['Description of Checkbox1', 'Description of Checkbox2',
                                'Description of Checkbox3']):
 
-        Caller.caller = self.__class__.__name__
         self.field_list = default_texts.copy()
         self.default_texts = default_texts
         self.checkbutton_texts = checkbutton_texts
@@ -935,7 +933,6 @@ class BuiltEnterBox(BuiltBox):
                                      default_value='Default Wert fuer Feld211111111111111111111111111111111111111111111111111')
                  )):
 
-        Caller.caller = self.__class__.__name__
         self.field_dict = None
         self._field_defs = field_defs
         super().__init__(title=title, header=header, width=width, grab=grab,
@@ -1161,7 +1158,6 @@ class BuiltSelectBox(BuiltEnterBox):
                  container_dict={}
                  ):
 
-        Caller.caller = self.__class__.__name__
         self.mariadb = MariaDB()
         self.title = title
         self.header = header
@@ -1333,7 +1329,6 @@ class BuiltTableRowBox(BuiltEnterBox):
                  button1_text=BUTTON_SAVE, button2_text=BUTTON_RESTORE,
                  button3_text=None, button4_text=None):
 
-        Caller.caller = self.__class__.__name__
         self.title = title
         self.header = header
         self.table = table
@@ -1451,7 +1446,7 @@ class BuiltText(object):
 
     def __init__(self, title=MESSAGE_TITLE, header='', text='', fullscreen=False):
 
-        Caller.caller = self.__class__.__name__
+        self.window_id = self.__class__.__name__
         if check_main_thread():
             if header == Informations.PRICES_INFORMATIONS:
                 Informations.prices_informations = ''
@@ -1500,7 +1495,7 @@ class BuiltText(object):
             self._builttext_window.mainloop()
             destroy_widget(self._builttext_window)
         else:
-            MessageBoxInfo(title=title, message=MESSAGE_TEXT['THREAD'].format(Caller.caller
+            MessageBoxInfo(title=title, message=MESSAGE_TEXT['THREAD'].format(self.window_id
                                                                               ))
 
     def _wm_deletion_window(self):
@@ -1589,7 +1584,7 @@ class BuiltPandasBox(Frame):
                  cellwidth_resizeable=True, selected_row=0
                  ):
 
-        Caller.caller = self.caller = self.__class__.__name__
+        self.window_id = self.__class__.__name__
         self.button_state = ''
         self.title = title
         self.mariadb = MariaDB()
@@ -1740,12 +1735,12 @@ class BuiltPandasBox(Frame):
     def _save_col_width(self, column_width):
 
         self.column_width = column_width
-        self.mariadb.execute_update(GEOMETRY, {DB_column_width: column_width}, caller=self.caller)
+        self.mariadb.execute_update(GEOMETRY, {DB_column_width: column_width}, caller=self.window_id)
 
     def _get_col_width(self):
 
         self.column_width = self.pandas_table.maxcellwidth / 2
-        result = self.mariadb.select_table(GEOMETRY, DB_column_width, caller=self.caller)
+        result = self.mariadb.select_table(GEOMETRY, DB_column_width, caller=self.window_id)
         if result:
             column_width = result[0][0]
             if column_width:
@@ -1762,13 +1757,13 @@ class BuiltPandasBox(Frame):
                 height = window.winfo_height()
                 geometry = ''.join([str(width), 'x', str(
                     height), '+', str(window.winfo_x()), '+', str(window.winfo_y())])
-                self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.caller, DB_geometry: geometry, DB_column_width: self.column_width})
+                self.mariadb.execute_replace(GEOMETRY, {DB_caller: self.window_id, DB_geometry: geometry, DB_column_width: self.column_width})
             except AttributeError:
                 pass  # column_with used in subclasses
 
     def set_geometry(self):
 
-        result = self.mariadb.select_table(GEOMETRY, DB_geometry, caller=self.caller)
+        result = self.mariadb.select_table(GEOMETRY, DB_geometry, caller=self.window_id)
         if result:
             geometry = result[0][0]
             geometry = geometry.replace('x', ' ')
@@ -1780,7 +1775,7 @@ class BuiltPandasBox(Frame):
                     # geometry = >width<x>height<+>x-position<+>y-position<
                     geometry = ''.join(
                         [geometry_values[0], 'x', str(height), '+', geometry_values[2], '+', geometry_values[3]])
-                    self.mariadb.execute_update(GEOMETRY, {DB_geometry: geometry}, caller=self.caller)
+                    self.mariadb.execute_update(GEOMETRY, {DB_geometry: geometry}, caller=self.window_id)
         else:
             cellwidth = self.pandas_table.maxcellwidth / 2
             width = int(cellwidth * (self.pandas_table.cols + 1))

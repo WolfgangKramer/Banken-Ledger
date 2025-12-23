@@ -123,11 +123,11 @@ from banking.forms import (
 from banking.mariadb import MariaDB
 from banking.scraper import AlphaVantage, BmwBank
 from banking.sepa import SepaCreditTransfer
+from banking.utils import exception_error
 from banking.utils import (
     application_store,
     date_days, date_years, dec2,
     dict_get_first_key,
-    exception_error,
     holding_informations_append,
 )
 

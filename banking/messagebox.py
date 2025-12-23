@@ -15,8 +15,9 @@ from banking.declarations import (
     Informations, ERROR, INFORMATION,
     MESSAGE_TEXT, MESSAGE_TITLE
     )
+from banking.utils import exception_error
 from banking.utils import (
-    check_main_thread, exception_error,
+    check_main_thread,
     bankdata_informations_append, prices_informations_append
     )
 
@@ -91,8 +92,9 @@ class MessageBoxError():
                 messagebox.showerror(title=title, message=message)
                 MessageBoxTermination()
         except Exception:
+            
             exception_error(message=message)
-
+            
 
 class MessageBoxTermination(MessageBoxInfo):
     """

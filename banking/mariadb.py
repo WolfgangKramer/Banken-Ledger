@@ -1612,7 +1612,7 @@ class MariaDB(object):   # Singleton with controlled initialization
                     return {}
         else:
             Termination(
-                info=MESSAGE_TEXT['SHELVE_NAME_MISSED'].format(shelve_name))
+                info=MESSAGE_TEXT['SHELVE_NAME_MISSED'].format(shelve_name)).terminate()
 
     def shelve_put_key(self, shelve_name, data):
         """ PARAMETER:   data: LIST of tuples (key, value)   or

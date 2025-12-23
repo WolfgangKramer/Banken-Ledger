@@ -222,7 +222,7 @@ def list_positioning(listing, pattern):
     Returns 1st item (and index) of listing or next greater or last one
     """
     if not isinstance(listing, list):
-        Termination()
+        Termination().terminate()
     if not listing:
         return listing, 0
     lowercase_list = list(map(str.lower, listing))
@@ -330,7 +330,7 @@ def type_error(message=MESSAGE_TEXT['STACK']):
     line = inspect.stack()[1][2]
     method = inspect.stack()[1][3]
     Termination(info='TypeError' + '\n' +
-                message.format(method, line, filename))
+                message.format(method, line, filename)).terminate()
 
 
 def value_error(message=MESSAGE_TEXT['STACK']):
@@ -339,7 +339,7 @@ def value_error(message=MESSAGE_TEXT['STACK']):
     line = inspect.stack()[1][2]
     method = inspect.stack()[1][3]
     Termination(info='ValueError' + '\n' +
-                message.format(method, line, filename))
+                message.format(method, line, filename)).terminate()
 
 
 def copy_list(list_):
@@ -605,7 +605,7 @@ class Calculate(object):
             assert y != 0, 'Division by Zero {}/{}'.format(x, y)
             result = self.context.divide(Decimal(x), Decimal(y))
         except DivisionByZero:
-            Termination()
+            Termination().terminate()
         return self._places(result)
 
     def percent(self, x, y):
@@ -764,8 +764,10 @@ class Termination(Info):
                 str(line) + '   METHOD: ' + method
             )
         super().__init__(message=message, title=MESSAGE_TITLE)
-        sys.exit()
-
+        
+    def terminate(self, code=1):
+        sys.exit(code)        
+ 
 
 class Amount():
     """Amount object containing currency and amount

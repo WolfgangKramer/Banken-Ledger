@@ -44,11 +44,10 @@ from banking.declarations_mariadb import (
     DB_closing_balance, DB_closing_entry_date, DB_closing_status,
     DB_opening_balance, DB_opening_entry_date, DB_opening_status
 )
-from banking.messagebox import (MessageBoxError, MessageBoxInfo)
+from banking.messagebox import MessageBoxError, MessageBoxInfo
 from banking.forms import InputPIN
-from banking.utils import (
-    dec2, http_error_code, exception_error
-)
+from banking.utils import exception_error
+from banking.utils import dec2, http_error_code
 
 
 def convert_date(date_):

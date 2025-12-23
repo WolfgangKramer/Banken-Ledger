@@ -112,7 +112,6 @@ from banking.declarations import (
     WM_DELETE_WINDOW, FORMAT_VARIABLE,
     )
 from banking.formbuilts import (
-    Caller,
     BuiltTableRowBox, BuiltPandasBox, BuiltCheckButton, BuiltEnterBox, BuiltText, BuiltSelectBox,
     FieldDefinition, destroy_widget, )
 from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
@@ -299,7 +298,6 @@ class AlphaVantageParameter(BuiltEnterBox):
 
     def __init__(self, title, function, api_key, parameter_list, default_values, alpha_vantage_symbols):
 
-        Caller.caller = self.__class__.__name__
         self.title = ' '.join([title, function.upper()])
         _field_defs = []
         ALPHA_VANTAGE_REQUIRED_COMBO[DB_symbol] = alpha_vantage_symbols
@@ -363,7 +361,6 @@ class AppCustomizing(BuiltTableRowBox):
 
     def __init__(self,  row_dict):
 
-        Caller.caller = self.__class__.__name__
         alpha_vantage_price_period_list = [
             TIME_SERIES_INTRADAY, TIME_SERIES_DAILY, TIME_SERIES_DAILY_ADJUSTED,
             TIME_SERIES_WEEKLY, TIME_SERIES_WEEKLY_ADJUSTED, TIME_SERIES_MONTHLY,
@@ -742,7 +739,6 @@ class InputPIN(BuiltEnterBox):
 
         self.mariadb = MariaDB()
         self.pin = ''
-        Caller.caller = self.__class__.__name__
         self._bank_code = bank_code
         bank_names_dict = self.mariadb.dictbank_names()
         if bank_code in bank_names_dict:
@@ -785,7 +781,6 @@ class InputTAN(BuiltEnterBox):
 
     def __init__(self, bank_code, bank_name):
 
-        Caller.caller = self.__class__.__name__
         self._bank_code = bank_code
         self.mariadb = MariaDB()
         bank_names_dict = self.mariadb.dictbank_names()
@@ -823,7 +818,6 @@ class BankDataNew(BuiltEnterBox):
 
     def __init__(self,  title, bank_codes=[]):
 
-        Caller.caller = self.__class__.__name__
         self.bank_codes = bank_codes
         FieldNames = namedtuple('FieldNames', [
             KEY_BANK_CODE, KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_SERVER,
@@ -913,7 +907,6 @@ class BankDataChange(BuiltEnterBox):
 
     def __init__(self, title, bank_code, login_data):
 
-        Caller.caller = self.__class__.__name__
         servers = MariaDB().select_server(code=bank_code)
         field_defs = [
             FieldDefinition(name=KEY_BANK_NAME, length=70, protected=True),
@@ -955,7 +948,6 @@ class BankDelete(BuiltEnterBox):
 
     def __init__(self,  title):
 
-        Caller.caller = self.__class__.__name__
         FieldNames = namedtuple('FieldNames', [KEY_BANK_CODE, KEY_BANK_NAME])
         super().__init__(
             title=title, button1_text=BUTTON_DELETE,
@@ -1203,7 +1195,6 @@ class SepaCreditBox(BuiltEnterBox):
 
     def __init__(self, bank, account, title=MESSAGE_TITLE):
 
-        Caller.caller = self.__class__.__name__
         self.mariadb = MariaDB()
         period = (date_years.subtract(date.today(), 2), date.today())
         self.combo_values = self.mariadb.select_sepa_transfer_creditor_names(
@@ -1363,7 +1354,6 @@ class SelectFields(BuiltCheckButton):
                                     'Description of Checkbox3']
                  ):
 
-        Caller.caller = self.__class__.__name__
         self.mariadb = MariaDB()
         self.standard = standard
         super().__init__(
@@ -1452,7 +1442,6 @@ class SelectDownloadPrices(BuiltCheckButton):
                                     'Description of Checkbox3']
                  ):
 
-        Caller.caller = self.__class__.__name__
         super().__init__(
             title=title, header=MESSAGE_TEXT['CHECKBOX'],
             button1_text=button1_text,
@@ -1714,7 +1703,6 @@ class PandasBoxIsinTable(BuiltPandasBox):
 
     def __init__(self, title, data, message, mode=EDIT_ROW, selected_row=0):
 
-        Caller.caller = self.__class__.__name__
         self.title = title
         self.data = data
         self.mariadb = MariaDB()
@@ -1949,7 +1937,6 @@ class PandasBoxHoldingTable(BuiltPandasBox):
 
     def __init__(self, title, data, message, iban, mode=EDIT_ROW):
 
-        Caller.caller = self.__class__.__name__
         self.title = title
         self.data = data
         self.mariadb = MariaDB()
@@ -2136,7 +2123,6 @@ class PandasBoxLedgerTable(BuiltPandasBox):
 
     def __init__(self, title, data, message, mode=EDIT_ROW, color_columns_dict={}, period=None, selected_row=0):
 
-        Caller.caller = self.__class__.__name__
         self.button_state = ''
         self.title = title
         self.data = data
@@ -2450,7 +2436,6 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
 
     def __init__(self, title, data, message, mode=EDIT_ROW, selected_row=0):
 
-        Caller.caller = self.__class__.__name__
         self.title = title
         self.data = data
         self.mariadb = MariaDB()
@@ -2549,7 +2534,6 @@ class PandasBoxLedgerStatement(BuiltPandasBox):
 
     def __init__(self, title, iban, status, ledger_dict):
 
-        Caller.caller = self.__class__.__name__
         self.title = title
         self.status = status
         self.iban = iban
@@ -2616,7 +2600,6 @@ class PandasBoxStatementTable(BuiltPandasBox):
 
     def __init__(self, title, data, message, mode=EDIT_ROW):
 
-        Caller.caller = self.__class__.__name__
         self.title = title
         self.data = data
         self.message = message
@@ -2705,7 +2688,6 @@ class PandasBoxBalancesAllBanks(PandasBoxStatementBalances):
 
     def __init__(self, title, dataframe, mode, bank_names):
 
-        Caller.caller = self.__class__.__name__
         self.bank_names = bank_names
         super().__init__(title=title, dataframe=dataframe, mode=mode)
 
@@ -2825,7 +2807,6 @@ class PandasBoxTotals(BuiltPandasBox):
 
     def __init__(self, title, data, portfolio=['DE81101308001002902112', 'DEXX504000000004414413']):
 
-        Caller.caller = self.__class__.__name__
         self.title = title
         self.data = data
         self.portfolio = portfolio
@@ -2935,7 +2916,6 @@ class PandasBoxTransactionTableShow (BuiltPandasBox):
 
     def __init__(self, title, data, message, iban, isin='', isin_name='', mode=EDIT_ROW):
 
-        Caller.caller = self.__class__.__name__
         self.title = title
         self.data = data
         self.mariadb = MariaDB()
@@ -3232,7 +3212,6 @@ class SelectCloseVolume(BuiltCheckButton):
 
     def __init__(self):
 
-        Caller.caller = self.__class__.__name__
         super().__init__(
             title=MESSAGE_TEXT['TA_ADD_CHART'], header=MESSAGE_TEXT['CHECKBOX'],
             button1_text=BUTTON_ADD_CHART, button2_text=None,
@@ -3317,7 +3296,6 @@ class VersionTransaction(BuiltEnterBox):
 
     def __init__(self, title, bank_code, transaction_versions):
 
-        Caller.caller = self.__class__.__name__
         self.bank_code = bank_code
         self.transaction_versions = transaction_versions
         transaction_version_allowed = MariaDB().shelve_get_key(self.bank_code, KEY_VERSION_TRANSACTION_ALLOWED)

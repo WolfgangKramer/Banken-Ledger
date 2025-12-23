@@ -66,6 +66,7 @@ from banking.fints_extension import HIKAZS6, HIKAZS7,  HIWPDS5, HIWPDS6
 from banking.messagebox import (MessageBoxTermination, MessageBoxInfo, MessageBoxAsk)
 from banking.forms import PrintMessageCode, InputPIN
 from banking.message import Messages
+from banking.utils import exception_error
 from banking.utils import (
     Amount, application_store,
     bankdata_informations_append,
@@ -73,7 +74,6 @@ from banking.utils import (
     dict_get_nested_value, dec2, dec6,
     create_iban,
     date_yymmdd,
-    exception_error,
     )
 
 

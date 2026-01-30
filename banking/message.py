@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-05-31"
+__updated__ = "2026-01-27"
 @author: Wolfgang Kramer
 """
 

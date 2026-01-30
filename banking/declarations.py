@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-07-17"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 """
 
@@ -18,7 +18,7 @@ from banking.declarations_mariadb import (
 """
 ------------------------- Globals ---------------------------------------------------
 """
-technical_indicator_counter =  0
+technical_indicator_counter = 0
 
 PNS = {}
 """
@@ -30,7 +30,7 @@ START_CURRENCY_EUR = '2002-01-01'
 # e.g. start www download of prices e.g. from https://www.alphavantage.co
 START_DATE_PRICES = '2000-01-01'
 # start download of statements from bank; attention check storage_period of your bank
-START_DATE_STATEMENTS = date(2010, 1, 1)
+START_DATE_STATEMENTS = date(2000, 1, 1)
 # start date transaction date
 START_DATE_TRANSACTIONS = date(2000, 1, 1)
 # start date holding_data
@@ -76,7 +76,6 @@ FINTS_SERVER = " \n\nContains German Bank FINTS Server Address \nRegistrate to g
 """
 --------------------------- Messages --------------------------------------------------
 """
-MESSAGE_TITLE = 'BANK ARCHIVE'
 MENU_TEXT = {
     'Connect DB': 'Connect DB',
     'Ledger': 'Ledger',
@@ -154,173 +153,6 @@ CODE_3040 = '3040'  # Download partially executed
 CODE_0030 = '0030'  # Download not executed
 CODE_3955 = '3955'  # Security clearance is provided via another channel
 
-MESSAGE_TEXT = {
-    CODE_0030: 'Bank: {} \n Bank Account: {}  {}       \n     Download not executed,    use single downloading bank data',
-    CODE_3040: 'Bank: {} \n Bank Account: {}  {}       \n     Download partially executed',
-    'ACCOUNT_IBAN_MISSED': 'Check TABLE LEDGER_COA: {}, \n Assign valid IBAN to ledger account: {}, {}',
-    'ACQUISITION_HEADER': '{}  ACQUISITION AMOUNT CHANGE {} in Period {} - {}',
-    'ACQUISITION_AMOUNT': 'Bank: {} \n Bank Account: {}  {}  {}      \n     Acquisition Amount must be adjusted manually',
-    'ALPHA_VANTAGE': 'DOWNLOAD Prices from ALPHA_VANTAGE ({}/{}) failed (see ERROR Message before)',
-    'ALPHA_VANTAGE_REFRESH_RUN': 'AlphaVantage Functions Creation started',
-    'ALPHA_VANTAGE_REFRESH': 'AlphaVantage Functions successfully created\ntest\ntest\ntest\ntest\ntest\ntest\ntest\ntest\ntest\ntest',
-    'ALPHA_VANTAGE_ERROR': 'API Parameter Information not created',
-    'ALPHA_VANTAGE_ERROR_MSG': 'AlphaVantage Error Message: \n{} \n\n Generated URl: \n{}',
-    'ALPHA_VANTAGE_NO_DATA': 'AlphaVantage API returns no Data \n {}',
-    'APP': 'APPLICATION and MARIDB Customizing Installation',
-    'ASSINGNABLE_STATEMENTS': 'Assignable Statements for ledger in period {} to {}',
-    'BALANCE_DIFFERENCE':   'Difference LEDGER ./. STATEMENTS \n Bank Account {} {}:  {}  \n Ledger Account {} {}:  {}  \n Balance Difference: {}',
-    'BANK_BALANCE_DIFFERENCE':   'Difference: BANK ./. DOWNLOADED STATEMENTS \n Bank Account {} {}:  {} \n Balance of downloaded Statements: {} \n Balance Difference: {}',
-    'BANK_CHALLENGE': '{} ({}) \n Bank Account: {} {}      \n Challenge_Text:\n  {}',
-    'BANK_CONSORS_TRANSFER': '\n\n Open Consors Secure Plus \nGenerate QR-TAN with Secure Plus',
-    'BANK_CODE_EXIST': 'Bank Code exists',
-    'BANK_DATA_ACCOUNTS_MISSED': 'BankCode {}: Accounts missed, Run Customizing',
-    'BANK_DATA_NEW': 'Created {} ({}. Next Step: SYNCHRONIZE Bank \n\n Then restart application',
-    'BANK_DATA_NEW_SCRAPER': 'Created {} ({})',
-    'BANK_DELETED': 'DELETE BANK LOGIN DATA \nBankcode: {}',
-    'BANK_DELETE_failed': 'DELETE BANK {} failed!! \n IBAN of bank exists in table {}',
-    'BANK_LOGIN': 'Bank Scraper Login failed \nException: {} \nURL: {}\nPassword: {}\nUserName: {}',
-    'BANK_PERIOD': '{} ({}) \n Bank Account: {} {}      \n Account Postings only available from {} onwards',
-    'BMW_ZFA2': 'Please confirm the login process with your BMW Bank 2FA app',
-    'BMW_ZFA2_REJECTED': 'login process not confirmed with your BMW Bank 2FA app; Login rejected',
-    'CONNECT_IMAGE_ERROR': 'Image error, Could not load background image:\n {}',
-    'CONNECT_MARIADB_ERROR': 'MariaDB connection error: {}',
-    'CONNECT_MARIADB': 'MariaDb connected: {}',
-    'CONNECT_SELECT_DB': 'Please select or specify a database.',
-    'CONNECT_CREATE_DB': 'New database? \n The database {} does not exist.\n  Do you want to create it?',
-    'CONNECT_DB_CREATED': 'Database {} created.',
-    'CONNECT_CREATE_DB_ABORTED': 'Database creation aborted.',
-    'CONNECT_DB_CONNECTED': 'Connected to database {}',
-    'CREDENTIALS': '{} Login failed',
-    'CREDENTIALS_CHECK': '{} Checking Credentials',
-    'CHECKBOX': 'Select at least one of the Check Box Icons',
-    'CONN': 'Database Connection failed  \nMariaDBuser: {} \nMariaDBname: {}',
-    'DATA_INSERTED': '{}       Data inserted',
-    'DATA_CHANGED': '{}       Data changed',
-    'DATA_DELETED': '{}       Data deleted',
-    'DATA_ROW_EXIST': '{}       Data Row exists',
-    'DATA_NO': '{} \n{} \nData not available',
-    'DATABASE': 'D A T A B A S E:  {}',
-    'DATABASE_REFRESH': 'Database Credentials changed \n You must restart Banking',
-    'DATE': '{} invalid or missing (Format e.g. 2020-12-12)',
-    'DATE_ADJUSTED': 'Price_Date not in Table Holding \n Adjusted by existing previous Date',
-    'DATE_TODAY': '{} Less todays date',
-    'DATE_NO_WORKDAY': '{} is no  working day',
-    'DBLOGIN': 'Database Connection failed! \n Check Database LOGIN Parameter in CUSTOMIZINDG Application/MariaDB',
-    'DECIMAL': 'Invalid Decimal Format Field {} e.g. 12345.00',
-    'DOWNLOAD_BANK':  'BANK: {}    Download Bank Data started',
-    'DOWNLOAD_ACCOUNT': 'Bank: {} {}\n Bank Account: {}  {}       \n     Download Bank Data of Iban {}',
-    'DOWNLOAD_ACCOUNT_NOT_ACTIVATED': 'Bank: {} {}\n Bank Account: {}  {}       \n     Download Bank Data of Iban {} not activated in LEDGER_COA',
-    'DOWNLOAD_DONE': 'BANK: {}   Data downloading finished',
-    'DOWNLOAD_NOT_DONE': 'BANK: {}   Data downloading finished with E R R O R ',
-    'DOWNLOAD_REPEAT': 'Download {} canceled by User! \n\nStart Download once more!',
-    'DOWNLOAD_RUNNING': '{} Data Download running',
-    'EXCEL': 'Excel File {} created, sheet added',
-    'ENTRY': 'Enter Data',
-    'ENTRY_DATE': 'Entry_date missed',
-    'FIELDLIST_MIN': 'Select at least {} positions in fieldlist',
-    'FIELDLIST_INTERSECTION_EMPTY': 'Intersection of the data in the selected period of all selected isin_codes is empty',
-    'FIXED': '{} MUST HAVE {} Characters ',
-    'FINTS_UPDATE_BPD_VERSION': 'Bank: {} \n Version of the bank parameter data updated.\n  New version: {}',
-    'FINTS_UPDATE_UPD_VERSION': 'Bank: {} \n Version of the user parameter data updated.\n  New version: {}',
-    'HELP_PANDASTABLE': 'Show Row Menu: \n          Select row\n          Click on row number with the right mouse button',
-    'HELP_CHECK_UPLOAD': 'Start with FIRST row to be checked\n\n Show Row Menu: \n          Select row\n          Click on row number with the right mouse button\n          Then select Update Selected Row and UPDATE if the row and all previous rows are OK',
-    'HITAN6': 'Bank: {} \n Bank Account: {}  {}       \n     Could not find HITAN6/7 task_reference',
-    'HIKAZ':  'Response {} missing: bank_name {}, account_number {}, account_product_name {}',
-    'HITAN': 'Security clearance is provided via another channel\n{}',
-    'HITAN_MISSED': 'Response HITAN missing: bank_name {}, account_number {}, account_product_name {}',
-    'HIUPD_EXTENSION': 'Bank: {} \n Bank Account: {}  {}       \n     IBAN {} received Bank Information: \n     {}',
-    'HOLDING_INSERT': 'Holding data for date {} does not exist. Insert?',
-    'HTTP': 'Server not connected! HTTP Status Code: {}\nBank: {}  Server: {}',
-    'HTTP_INPUT': 'Server not valid or not available! HTTP Status Code: {}',
-    'IBAN': 'IBAN invalid',
-    'IBAN_USED': 'IBAN is already assigned to account {}',
-    'IMPORT_CSV': 'Import CSV_File into Table {}\n\n Source: \n{}',
-    'ISIN_ALPHABETIC': 'Isin_code must start with an alphabetic character',
-    'ISIN_DATA': 'Enter ISIN Data',
-    'ISIN_IN_HOLDING': 'No deletion allowed \n {} ({}) \n Used in holding or transaction table',
-    'ISDIGIT': 'Invalid Integer Field {}',
-    'LEDGER_ACTIVATE': 'Ledger activated',
-    'LEDGER_ROW': 'No additional statement data available for table row ',
-    'LEDGER_STATEMENT_ASSIGMENT_EMPTY': 'There are no assignment statements for ledger IdNo {} and Ledger Account {}',
-    'LEDGER_STATEMENT_ASSIGMENT_MISSED': 'Update and select new assignment (statement) of credit/debit accounts marked in red !',
-    'LENGTH': '{} Exceeds Length OF {} Characters',
-    'LOAD_DATA': 'Data imported if no message was displayed previously \nfrom File {}',
-    'LOGGING_ACTIVE': 'Logging activated',
-    'LOGGING_FILE': 'OS Error Logging_file',
-    'LOGIN': 'LOGIN Data incomplete.   \nCustomizing e.g. synchronization LOGIN Data must be done \nBank_Code: {} (Key Error: {})',
-    'LOGIN_SCRAPER': 'LOGIN Data incomplete.   \nCustomizing LOGIN Data/Scraping must be done \nBank: {} ({})',
-    'MANDATORY': '{} is mandatory',
-    'MARIADB_DUPLICATE': 'Duplicate Entry ignored\nSQL Statement: \n{} \n Error: \n{} \n Vars: \n{}',
-    'MARIADB_ERROR_SQL': 'SQL_Statement\n {} \n\nVars\n {}',
-    'MARIADB_ERROR': 'MariaDB Error\n{} \n {}',
-    'MIN_LENGTH': '{} Must have a Length OF {} Characters',
-    'NAME_INPUT': 'Enter Query Name (Name of Stored Procedure, allowed Chars [alphanumeric and _): ',
-    'NAMING': 'Fix Naming. Allowed Characters: A-Z, a-z, 0-9, _',
-    'NO_TURNOVER': 'Bank: {} \n Bank Account: {}  {}       \n     No new turnover',
-    'NOTALLOWED': '{} Value not allowed, select from list \n {}',
-    'SHELVE_NAME_MISSED': 'Shelve name  {} not found',
-    'OPENING_ACCOUNT_MISSED': 'Opening balance account is missing in Chart of Accounts',
-    'OPENING_LEDGER_MISSED': 'Opening balances missed in {}. Account: {}',
-    'PAIN': 'SEPA Format pain.001.001.03 not found/allowed\nBank: {}',
-    'PERIOD':               'Period ({}, {})',
-    'PIN': 'PIN missing! \nBank: {} ({})',
-    'PIN_INPUT': 'Enter PIN   {} ({}) ',
-    'PRICES_DELETED': '{}:  Prices deleted\n\n Used Ticker Symbol {} \n ISIN: {}',
-    'PRICES_LOADED': '{}:  Price loaded for Period {}\n\n Used Ticker Symbol {} \n ISIN: {}',
-    'PRICES_ALREADY': '{}:  No new Prices found\n\n Used Ticker Symbol {} {}\n ISIN: {}  {} \n Prices already available until {}',
-    'PRICES_NO': '{}:  No new Prices found\n\n Used Ticker Symbol {} {}\n ISIN: {}  {}',
-    'PRODUCT_ID': 'Product_ID missing, No Bank Access possible\n Get your Product_Id: https://www.hbci-zka.de/register/prod_register.htm',
-    'RADIOBUTTON': 'Select one of SELECT the RadioButtons',
-    'RESPONSE': 'Got unvalid response from bank',
-    'SCRAPER_BALANCE': 'Last closing balance from database: {} \n Opening balance from the transaction overview: {}',
-    'SCRAPER_NO_TRANSACTION_TO_STORE': '{} {} All transactions already saved in database',
-    'SCRAPER_PAGE_ERROR': 'Connection interrupted!',
-    'SCRAPER_SELENIUM_EXCEPTION': 'An error occurred:\n  Error type: {}\n  Error message: {}',
-    'SCRAPER_TIMEOUT': 'Connection TimeOut',
-    'SCROLL': 'Scroll forward: CTRL+RIGHT   Scroll backwards: CTRL+LEFT',
-    'SEGMENT_VERSION': 'Segment {}{} Version {} not implemented',
-    'SELECT_DATA': 'Selection incomplete',
-    'SELECT_INCOMPLETE': 'Enter your Selection',
-    'SELECT_ROW': 'Select row, then right clicking on row number',
-    'SEPA_CRDT_TRANSFER': 'SEPA Credit Transfer \nBank:    {}  \nAccount:    {} ({})',
-    'SQLALCHEMY_ERROR': "Error Calling SQLAlchemy {}:    {}",
-    'SHELVE': '\n LOGON Data, Synchronization Data >>>>> BANK: {}\n\n',
-    'STACK': '\n\n LINE\n {} \n        MODULE  {}\n        METHOD {}',
-    'SYMBOL_MISSING_ALL': '{} \n \n No ticker/symbol found in Table ISIN. \n You must add ticker symbols in Table ISIN',
-    'SYMBOL_MISSING': 'No ticker/symbol (symbol_origin) found. \n ISIN: {}  /  {} \n\n You must add ticker symbol in Table ISIN',
-    'SYMBOL_USED': 'Symbol already used in {}',
-    'SYNC': 'Synchronization Data incomplete    \nSynchronization must be done \nBank: {} ',
-    'SYNC_START': 'Next Stepp: You must start Synchronization Bank: {} ',
-    'SUPPORTED_CAMT_MESSAGES': 'Refresh Bank_parameter: Supported camt_message_name missed',
-    'TA_OTHER_PARAMETER': 'function contains additional parameters: \n  {}',
-    'TA_NO_RESULT': 'Technical Analysis no result!\n Category: {}  Indicator: {}',
-    'TA_METHOD_ERROR': 'Indicator {}: Name creation of the calling method not successful',
-    'TA_CLASS_NO_METHOD': 'Category: {} \nMethods in class {} not found',
-    'TA_NO_OHLC': 'Category: {} \n No OHCL Series parameter of Class {}',
-    'TA_ADD_CHART': 'Add Charts',
-    'TASK_DONE': 'Task finished.',
-    'TASK_WARNING': 'Finished with Warnings',
-    'TASK_STARTED': '{}: Task started.',
-    'TAN_INPUT': 'Enter TAN  {} ({}): ',
-    'TAN_CANCEL': 'Input TAN canceled, request aborted',
-    'TERMINATION': 'FinTS MariaDB Banking Termination',
-    'THREAD': 'Task {} aborted. No Dialogue. Its no mainthread',
-    'THREADING_ACTIVE': 'Threading activated',
-    'TRANSACTION_CHECK': '{} Difference Pieces of Transactions / Pieces of Portfolio',
-    'TRANSACTION_CLOSED_EMPTY': ' No Closed Transactions in Period {} - {}',
-    'TRANSACTION_HEADER_SYNC_TABLE': 'SYNCHRONIZE TRANSACTIONS',
-    'TRANSACTION_NO': ' No Transactions in Period {} - {}',
-    'TRANSACTION_PIECES_NEGATIVE': 'Transactions faulty! On {} cumulated Pieces negative!',
-    'TRANSACTION_PIECES_PORTFOLIO': ' Difference Pieces of Transactions / Pieces of Portfolio',
-    'TRANSACTION_TITLE': '{}  TRANSACTIONS  {} ',
-    'TWOSTEP': 'Select one of the Security Functions \n Only Two-Step TAN Procedure \n SCA Strong Customer Authentication',
-    'UNEXCEPTED_ERROR': 'E X C E P T I O N    E R R O R  !\n\nMODULE: {}\n\nLINE  of EXCEPTION ERROR Call: {}\n\nMETHOD: {}\n\nTYPE:\n {} \n\nVALUE:  {} \n\nTRACEBACK:\n {}',
-    'VERSION_TRANSACTION': 'TRANSACTION HK{}{} not available',
-    'VOP_HHDUC': 'Verfication of Payee: No PNG header found in challenge_hhduc',
-    'VOP_FAILED': 'Verfication of Payee failed',
-    'WEBDRIVER': 'Installing {} WEB Driver failed\n\n{}',
-    'WEBDRIVER_INSTALL': '{} WEB Driver installed to project.root/.wdm'
-}
 
 """
 --------------------------- FinTS --------------------------------------------------
@@ -669,6 +501,8 @@ Balance = namedtuple(
 """
 ----------------------------- DataClasses ------------
 """
+
+
 @dataclass
 class BpdUpdVersion:
     """
@@ -709,7 +543,8 @@ class BpdUpdVersion:
     """
     bpd: int  # stored Version of bank parameter data (MariaDB table shelves)
     upd: int  # stored Version of user parameter data (MariaDB table shelves)
-    
+
+
 @dataclass
 class ToolbarSwitch:
     """
@@ -739,38 +574,14 @@ class HoldingAcquisition:
     origin: str = field(default=0)
 
 
-class Informations(object):
-    """
-    Threading
-    Downloading Bankdata using FinTS
-    Container of messages, responses of banks, errors
-    """
-    bankdata_informations = ''
-    BANKDATA_INFORMATIONS = 'BANKDATA INFORMATIONS'
-
-    """
-    Threading
-    Download prices from Yahoo! or Alpha Vantage
-    Container of messages, errors
-    """
-    prices_informations = ' '
-    PRICES_INFORMATIONS = 'PRICES_INFORMATIONS'
-
-    """
-    Update prices in holding from Yahoo! or Alpha Vantage
-    Container of messages, errors
-    """
-    holding_informations = ' '
-    HOLDING_INFORMATIONS = 'HOLDING_INFORMATIONS'
-
-
 class TechnicalIndicatorData(object):
     """
     Controlling the display of indicator charts
     """
     TA_CLOSE = []  # charts close added to plot of technical indicator
     # TA_LINES inserts y-line into chart (line_name, y_value)
-    TA_LINES = {'RSIIndicator': [('OVERSOLD', 30), ('OVERBOUGHT', 70)]}
+    TA_LINES = {'RSIIndicator': [('OVERSOLD', 30), ('OVERBOUGHT', 70)],
+                'StochRSIIndicator': [('OVERSOLD', 0.2), ('OVERBOUGHT', 0.8)], }
     """
     1. Volume Indicators
         Accumulation/Distribution Index (ADI) > AccDistIndexIndicator

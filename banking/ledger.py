@@ -1,21 +1,14 @@
 """
 Created on 11.08.2024
-__updated__ = "2025-05-25"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 """
 from datetime import date, timedelta
 
-from banking.declarations import (
-    NOT_ASSIGNED,
-    WARNING,
-    CREDIT, DEBIT,
-)
-from banking.declarations import (
-    MESSAGE_TEXT, START_DATE_LEDGER
-)
+from banking.declarations import NOT_ASSIGNED, WARNING, CREDIT, DEBIT
+from banking.declarations import START_DATE_LEDGER
 from banking.declarations_mariadb import (
     LEDGER, LEDGER_COA, STATEMENT, LEDGER_STATEMENT,
-
     DB_account,
     DB_amount,
     DB_applicant_iban,
@@ -41,7 +34,7 @@ from banking.declarations_mariadb import (
     DB_purpose_wo_identifier,
     DB_status,
 )
-from banking.messagebox import MessageBoxInfo
+from banking.message_handler import get_message, MessageBoxInfo, MESSAGE_TEXT
 from banking.utils import dec2,  date_days
 
 
@@ -80,7 +73,10 @@ def _recommend_account(mariadb, account, statement_dict, posting_text_dict):
                     statement_dict[DB_iban], period=period, applicant_name=statement_dict[DB_applicant_name])
             elif field_name == DB_purpose_wo_identifier:
                 account = mariadb.select_sepa_fields_in_statement(
-                    statement_dict[DB_iban], period=period, purpose_wo_identifier=statement_dict[DB_purpose_wo_identifier][:20] + '%')
+                    statement_dict[DB_iban], period=period,
+                    clause=f"{DB_purpose_wo_identifier} LIKE ?",
+                    clause_vars=(f"{statement_dict[DB_purpose_wo_identifier][:20]} + %",)
+                    )
             if account != NOT_ASSIGNED:
                 return account
     # 3. dictionary  used posting_text_dict of last 365 days
@@ -99,8 +95,8 @@ def transfer_statement_to_ledger(mariadb, bank):
         bank.iban)
     posting_text_debit_dict = mariadb.select_ledger_posting_text_account(
         bank.iban, credit=False)
-    ledger_max_entry_date = mariadb.select_max_column_value(
-        LEDGER_STATEMENT, DB_entry_date, iban=bank.iban)
+    ledger_max_entry_date = mariadb.select_scalar(
+        LEDGER_STATEMENT, f"MAX({DB_entry_date})", iban=bank.iban)
     if ledger_max_entry_date is None:
         ledger_max_entry_date = START_DATE_LEDGER
     clause_amount_0 = ' '.join([DB_amount, '!=', str(0)])
@@ -114,17 +110,32 @@ def transfer_statement_to_ledger(mariadb, bank):
     if statements:
         # get ledger account_number assigned to iban of bank-account
         result = mariadb.select_table(
-            LEDGER_COA, [DB_account, DB_name], result_dict=True, portfolio=False, iban=bank.iban)
+            LEDGER_COA, [DB_account, DB_name], result_dict=True, portfolio=False, iban=bank.iban
+            )
         if result:
             account_dict = result[0]
         else:
-            MessageBoxInfo(message=MESSAGE_TEXT['ACCOUNT_IBAN_MISSED'].format(
-                bank.bank_name, bank.account_product_name, bank.account_number))
+            MessageBoxInfo(
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'ACCOUNT_IBAN_MISSED',
+                    bank.bank_name,
+                    bank.account_product_name,
+                    bank.account_number
+                    )
+                )
             return
 
         if account_dict == NOT_ASSIGNED:  # cancel download of this bank account
-            MessageBoxInfo(message=MESSAGE_TEXT['ACCOUNT_IBAN_MISSED'].format(
-                bank.bank_name, bank.account_product_name, bank.account_number))
+            MessageBoxInfo(
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'ACCOUNT_IBAN_MISSED',
+                    bank.bank_name,
+                    bank.account_product_name,
+                    bank.account_number
+                    )
+                )
             return
         # initialize credit/debit
         opening_balance = statements[0][DB_opening_balance]
@@ -137,7 +148,7 @@ def transfer_statement_to_ledger(mariadb, bank):
             entry_date = statement_dict[DB_entry_date]
             counter = statement_dict[DB_counter]
             status = statement_dict[DB_status]
-            if mariadb.row_exists(LEDGER_STATEMENT, iban=iban, entry_date=entry_date,  counter=counter, status=status):
+            if mariadb.select_exists(LEDGER_STATEMENT, iban=iban, entry_date=entry_date,  counter=counter, status=status):
                 pass  # statement already assigned in ledger
             else:
                 # create ledger
@@ -145,8 +156,8 @@ def transfer_statement_to_ledger(mariadb, bank):
                 to_id_no = (entry_date.year + 1) * 1000000
                 clause = ' '.join(
                     [DB_id_no, ">", str(from_id_no), 'AND', DB_id_no, "<", str(to_id_no)])
-                max_id_no = mariadb.select_max_column_value(
-                    LEDGER, DB_id_no, clause=clause)
+                max_id_no = mariadb.select_scalar(
+                    LEDGER, f"MAX({DB_id_no})", clause=clause)
                 if max_id_no:
                     id_no = max_id_no + 1
                 else:
@@ -184,12 +195,12 @@ def transfer_statement_to_ledger(mariadb, bank):
         # check balances of LEDGER and STATEMENT table
         period = (ledger_max_entry_date, date(date.today().year, 12, 31))
         # compare balances
-        credit = mariadb.select_table_sum(
-            LEDGER, DB_amount, date_name=DB_entry_date, period=period, credit_account=account_dict[DB_account])
+        credit = mariadb.select_scalar(
+            LEDGER, f"SUM({DB_amount})", date_name=DB_entry_date, period=period, credit_account=account_dict[DB_account])
         if credit is None:
             credit = 0
-        debit = mariadb.select_table_sum(
-            LEDGER, DB_amount, date_name=DB_entry_date, period=period, debit_account=account_dict[DB_account])
+        debit = mariadb.select_scalar(
+            LEDGER, f"SUM({DB_amount})", date_name=DB_entry_date, period=period, debit_account=account_dict[DB_account])
         if debit is None:
             debit = 0
         ledger_balance = opening_balance + credit - debit
@@ -198,10 +209,16 @@ def transfer_statement_to_ledger(mariadb, bank):
             closing_balance = -closing_balance
         if closing_balance != ledger_balance:
             MessageBoxInfo(
-                message=MESSAGE_TEXT['BALANCE_DIFFERENCE'].format(
-                    bank.account_product_name, bank.account_number, closing_balance,
-                    account_dict[DB_name], account_dict[DB_account], ledger_balance,
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'BALANCE_DIFFERENCE',
+                    bank.account_product_name,
+                    bank.account_number,
+                    closing_balance,
+                    account_dict[DB_name],
+                    account_dict[DB_account],
+                    ledger_balance,
                     str(dec2.subtract(closing_balance, ledger_balance))
                 ),
-                bank=bank, information=WARNING
+                information=WARNING
             )

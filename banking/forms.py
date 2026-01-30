@@ -41,7 +41,6 @@ from banking.declarations_mariadb import (
     DB_date, DB_debit_account, DB_debit_name, DB_dividends,
     DB_entry_date, DB_exchange_rate,  DB_exchange_currency_2, DB_exchange_currency_1,
     DB_iban, DB_ISIN, DB_id_no, DB_industry,
-    DB_location,
     DB_market_price, DB_name,
     DB_opening_balance, DB_opening_currency, DB_opening_status,   DB_origin, DB_origin_symbol,
     DB_pieces, DB_posted_amount,  DB_price, DB_price_currency, DB_price_date, DB_purpose_wo_identifier, DB_portfolio,
@@ -65,28 +64,24 @@ from banking.declarations import (
     FN_DATE, FN_PROFIT_LOSS, FN_TOTAL_PERCENT, FN_PERIOD_PERCENT, FN_DAILY_PERCENT,
     FN_FROM_DATE, FN_TO_DATE,
     FN_SHARE,  FN_INDEX, FN_TOTAL,
-    FN_PROFIT_CUM, FN_PIECES_CUM, FN_PROFIT,
+    FN_PROFIT_CUM, FN_PIECES_CUM, FN_PROFIT, FN_BALANCE,
     HTTP_CODE_OK,
-    Informations,
     OUTPUTSIZE_FULL, OUTPUTSIZE_COMPACT,
-    PERCENT, POPUP_MENU_TEXT,
+    PERCENT,
     INFORMATION,
     KEY_BANK_CODE, KEY_BANK_NAME, KEY_MAX_PIN_LENGTH,
     KEY_DOWNLOAD_ACTIVATED,
     KEY_MAX_TAN_LENGTH, KEY_MIN_PIN_LENGTH,
     KEY_VERSION_TRANSACTION_ALLOWED,
     KEY_TAN, MAX_PIN_LENGTH, MAX_TAN_LENGTH,
-    KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_PRODUCT_NAME, KEY_ACC_BANK_CODE,
+    KEY_ACC_PRODUCT_NAME, KEY_ACC_BANK_CODE,
     KEY_PIN, KEY_BIC,
     KEY_SERVER, KEY_USER_ID, KEY_IDENTIFIER_DELIMITER,
     LIGHTBLUE,
-    MENU_TEXT,  MESSAGE_TEXT, MESSAGE_TITLE, MIN_PIN_LENGTH, MIN_TAN_LENGTH,
+    MIN_PIN_LENGTH, MIN_TAN_LENGTH,
     CURRENCY_SIGN, ORIGINS,
     ORIGIN_SYMBOLS, ORIGIN_LEDGER, ORIGIN_BANKDATA_CHANGED, ORIGIN_INSERTED,
     SCRAPER_BANKDATA,
-    SEPA_AMOUNT, SEPA_CREDITOR_BANK_LOCATION, SEPA_CREDITOR_BANK_NAME, SEPA_CREDITOR_BIC,
-    SEPA_CREDITOR_IBAN, SEPA_CREDITOR_NAME, SEPA_EXECUTION_DATE, SEPA_PURPOSE_1, SEPA_PURPOSE_2,
-    SEPA_REFERENCE, SEPA_TRANSFER_APPLCANT_NAMES,
     START_DATE_TRANSACTIONS,
     TechnicalIndicatorData,
     TIME_SERIES_INTRADAY,  TIME_SERIES_DAILY_ADJUSTED,
@@ -101,27 +96,32 @@ from banking.declarations import (
     BUTTON_ADD_CHART,
     BUTTON_OK, BUTTON_ALPHA_VANTAGE, BUTTON_DATA, BUTTON_CREDIT, BUTTON_COPY, BUTTON_DEBIT,
     BUTTON_SAVE, BUTTON_NEW, BUTTON_APPEND, BUTTON_REPLACE, BUTTON_NEXT, BUTTON_UPDATE,
-    BUTTON_DELETE, BUTTON_DELETE_ALL, BUTTON_STANDARD, BUTTON_SAVE_STANDARD, BUTTON_SELECT_ALL,
+    BUTTON_DELETE, BUTTON_STANDARD, BUTTON_SAVE_STANDARD, BUTTON_SELECT_ALL,
     BUTTON_PRICES_IMPORT,
     COLOR_HOLDING, COLOR_NOT_ASSIGNED, COLOR_ERROR,
     ENTRY,
     FORMAT_FIXED,
     NUMERIC,
     STANDARD,
-    TYP_DECIMAL, TYP_DATE, TYP_ALPHANUMERIC,
+    TYP_ALPHANUMERIC,
     WM_DELETE_WINDOW, FORMAT_VARIABLE,
     )
 from banking.formbuilts import (
     BuiltTableRowBox, BuiltPandasBox, BuiltCheckButton, BuiltEnterBox, BuiltText, BuiltSelectBox,
     FieldDefinition, destroy_widget, )
-from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
+from banking.message_handler import (
+    get_message,
+    MESSAGE_TITLE, MESSAGE_TEXT,
+    Informations, prices_informations_append,
+    MessageBoxInfo, MessageBoxTermination
+    )
 from banking.utils import (
     application_store,
     Amount,
-    check_iban, Calculate,
+    Calculate,
     dec2,
-    date_years, date_days,
-    prices_informations_append,
+    date_days,
+    get_popup_menu_text, get_menu_text,
     http_error_code)
 
 message_transaction_new = True  # Switch to show Message just once
@@ -152,27 +152,46 @@ def import_prices_run(title, mariadb, field_list, state):
             isin = select_isin_data[DB_ISIN]
             if state == BUTTON_DELETE:
                 mariadb.execute_delete(PRICES, symbol=symbol)
-                MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                               message=MESSAGE_TEXT['PRICES_DELETED'].format(
-                                   name, message_symbol, isin))
+                MessageBoxInfo(
+                    title=title,
+                    info_storage=Informations.PRICES_INFORMATIONS,
+                    message=get_message(
+                        MESSAGE_TEXT,
+                        'PRICES_DELETED',
+                        name,
+                        message_symbol,
+                        isin
+                        )
+                    )
             else:
                 if symbol == NOT_ASSIGNED or origin_symbol == NOT_ASSIGNED:
-                    MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS, information=WARNING,
-                                   message=MESSAGE_TEXT['SYMBOL_MISSING'].format(isin, name))
+                    MessageBoxInfo(title=title, info_storage=Informations.PRICES_INFORMATIONS, information=WARNING,
+                                   message=get_message(MESSAGE_TEXT, 'SYMBOL_MISSING', isin, name))
                 else:
                     from_date = date_days.convert('2000-01-01')
                     start_date_prices = from_date
                     if state == BUTTON_APPEND:
-                        max_price_date = mariadb.select_max_column_value(
-                            PRICES, DB_price_date, symbol=symbol)
+                        max_price_date = mariadb.select_scalar(
+                            PRICES, f"MAX({DB_price_date})", symbol=symbol)
                         if max_price_date:
                             from_date = max_price_date + timedelta(days=1)
                     # to_date = date_days.subtract(date.today(), 1)
                     to_date = date.today()
                     if from_date > to_date:
-                        MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                       message=MESSAGE_TEXT['PRICES_ALREADY'].format(
-                                           name, message_symbol, origin_symbol, isin, '', to_date))
+                        MessageBoxInfo(
+                            title=title,
+                            info_storage=Informations.PRICES_INFORMATIONS,
+                            message=get_message(
+                                MESSAGE_TEXT,
+                                'PRICES_ALREADY',
+                                name,
+                                message_symbol,
+                                origin_symbol,
+                                isin,
+                                '',
+                                to_date
+                                )
+                            )
                     if origin_symbol == YAHOO:
                         tickers = Ticker(symbol)
                         f = io.StringIO()
@@ -243,8 +262,8 @@ def import_prices_run(title, mariadb, field_list, state):
                                                '5. volume': DB_volume}
                             except Exception:
                                 prices_informations_append(ERROR, data)
-                                MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                               message=MESSAGE_TEXT['ALPHA_VANTAGE'].format(isin, name))
+                                MessageBoxInfo(title=title, info_storage=Informations.PRICES_INFORMATIONS,
+                                               message=get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE', isin, name))
                                 return
                         else:
                             try:
@@ -252,13 +271,23 @@ def import_prices_run(title, mariadb, field_list, state):
                             except Exception:
                                 pass
                             prices_informations_append(ERROR, data)
-                            MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                           message=MESSAGE_TEXT['ALPHA_VANTAGE'].format(isin, name))
+                            MessageBoxInfo(title=title, info_storage=Informations.PRICES_INFORMATIONS,
+                                           message=get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE', isin, name))
                             return
                     if dataframe.empty:
-                        MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                       message=MESSAGE_TEXT['PRICES_NO'].format(
-                                           name, message_symbol, origin_symbol, isin, ''))
+                        MessageBoxInfo(
+                            title=title,
+                            info_storage=Informations.PRICES_INFORMATIONS,
+                            message=get_message(
+                                MESSAGE_TEXT,
+                                'PRICES_NO',
+                                name,
+                                message_symbol,
+                                origin_symbol,
+                                isin,
+                                ''
+                                )
+                            )
                     else:
                         dataframe = dataframe.reset_index()
                         dataframe[DB_symbol] = symbol
@@ -280,9 +309,18 @@ def import_prices_run(title, mariadb, field_list, state):
                         mariadb.execute_delete(
                             PRICES, symbol=symbol, period=period)
                         if mariadb.import_prices(title, dataframe):
-                            MessageBoxInfo(title=title, information_storage=Informations.PRICES_INFORMATIONS,
-                                           message=MESSAGE_TEXT['PRICES_LOADED'].format(
-                                               name, period, message_symbol, isin))
+                            MessageBoxInfo(
+                                title=title,
+                                info_storage=Informations.PRICES_INFORMATIONS,
+                                message=get_message(
+                                    MESSAGE_TEXT,
+                                    'PRICES_LOADED',
+                                    name,
+                                    period,
+                                    message_symbol,
+                                    isin
+                                    )
+                                )
 
 
 class AlphaVantageParameter(BuiltEnterBox):
@@ -328,7 +366,7 @@ class AlphaVantageParameter(BuiltEnterBox):
             _set_defaults(_field_defs, default_values)
         super().__init__(title=title,
                          button1_text=BUTTON_DATA, button2_text=BUTTON_ALPHA_VANTAGE,
-                         button3_text=MENU_TEXT['ISIN Table'],
+                         button3_text=get_menu_text("ISIN Table"),
                          field_defs=self._field_defs)
 
     def button_1_button1(self, event):
@@ -345,7 +383,7 @@ class AlphaVantageParameter(BuiltEnterBox):
 
     def button_1_button3(self, event):
 
-        self.button_state = MENU_TEXT['ISIN Table']
+        self.button_state = get_menu_text("ISIN Table")
         self.quit_widget()
 
 
@@ -399,7 +437,7 @@ class SelectLedgerAccountCategory(BuiltSelectBox):
             field_defs_list.append(self.create_combo_field(
                 DB_account, 50, TYP_ALPHANUMERIC, combo_values))
         else:
-            self.footer.set(MESSAGE_TEXT['DATA_NO'].format(LEDGER_COA.upper()))
+            self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', LEDGER_COA.upper()))
         # from_date
         field_defs_list.append(self.create_date_field(FN_FROM_DATE))
         # to_date
@@ -430,7 +468,7 @@ class SelectLedgerAccount(BuiltSelectBox):
             field_defs_list.append(self.create_combo_field(
                 DB_account, 50, TYP_ALPHANUMERIC, combo_values))
         else:
-            self.footer.set(MESSAGE_TEXT['DATA_NO'].format(LEDGER_COA.upper()))
+            self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', LEDGER_COA.upper()))
         # from_date
         field_defs_list.append(self.create_date_field(FN_FROM_DATE))
         # to_date
@@ -529,16 +567,16 @@ class InputDateHolding(InputPeriod):
             from_date = date_days.convert(from_date)
             getattr(self._field_defs, FN_FROM_DATE).textvar.set(
                 from_date)  # adjusted date returned
-            self.footer.set(MESSAGE_TEXT['DATE_ADJUSTED'])
+            self.footer.set(get_message(MESSAGE_TEXT, 'DATE_ADJUSTED'))
         if (from_date > to_date):
-            self.footer.set(MESSAGE_TEXT['DATE'].format(from_date))
+            self.footer.set(get_message(MESSAGE_TEXT, 'DATE', from_date))
 
     def _validate_date(self, _date):
-        data_exists = self.mariadb.row_exists(
+        data_exists = self.mariadb.select_exists(
             HOLDING, iban=self.container_dict[DB_iban], price_date=_date)
         if not data_exists:
             _date = self._get_prev_date(_date)
-            self.footer.set(MESSAGE_TEXT['DATE_ADJUSTED'])
+            self.footer.set(get_message(MESSAGE_TEXT, 'DATE_ADJUSTED'))
         return _date
 
     def _get_prev_date(self, _date):
@@ -654,8 +692,15 @@ class InputDateTransactions(BuiltSelectBox):
             transaction_isin = self.mariadb.select_dict(
                 TRANSACTION_VIEW, DB_name, DB_ISIN, iban=self.data_dict[DB_iban])
         if transaction_isin == {}:
-            MessageBoxInfo(title=self.title, message=MESSAGE_TEXT['DATA_NO'].format(
-                '', self.data_dict[DB_iban]))
+            MessageBoxInfo(
+                title=self.title,
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'DATA_NO',
+                    '',
+                    self.data_dict[DB_iban]
+                    )
+                )
             combo_values = []
         else:
             combo_values = list(transaction_isin.keys())
@@ -687,7 +732,7 @@ class InputISIN(BuiltSelectBox):
         if self.container_dict:  # name: isin
             combo_values = list(self.container_dict.keys())
         else:
-            MessageBoxInfo(title=self.title, message=MESSAGE_TEXT['DATA_NO'].format(ISIN, ''))
+            MessageBoxInfo(title=self.title, message=get_message(MESSAGE_TEXT, 'DATA_NO', ISIN, ''))
             combo_values = []
         field_def = self.create_combo_field(
             DB_name,  DATABASE_FIELDS_PROPERTIES[DB_name].length,
@@ -755,7 +800,7 @@ class InputPIN(BuiltEnterBox):
             pin_min_length = pin_length[KEY_MIN_PIN_LENGTH]
         while True:
             super().__init__(
-                header=MESSAGE_TEXT['PIN_INPUT'].format(bank_name, bank_code), title=title,
+                header=get_message(MESSAGE_TEXT, 'PIN_INPUT', bank_name, bank_code), title=title,
                 button1_text=BUTTON_OK, button2_text=None, button3_text=None,
                 field_defs=[FieldDefinition(name=KEY_PIN, length=pin_max_length,
                                             min_length=pin_min_length)]
@@ -793,7 +838,7 @@ class InputTAN(BuiltEnterBox):
             tan_max_length = MAX_TAN_LENGTH
         while True:
             super().__init__(
-                header=MESSAGE_TEXT['TAN_INPUT'].format(bank_code, bank_name), title=title,
+                header=get_message(MESSAGE_TEXT, 'TAN_INPUT', bank_code, bank_name), title=title,
                 button1_text=BUTTON_OK, button2_text=None, button3_text=None,
                 field_defs=[
                     FieldDefinition(name=KEY_TAN, length=tan_max_length, min_length=MIN_TAN_LENGTH)]
@@ -843,8 +888,7 @@ class BankDataNew(BuiltEnterBox):
 
         if field_def.name == KEY_BANK_CODE:
             if field_def.widget.get() in self.mariadb.listbank_codes():
-                self.footer.set(MESSAGE_TEXT['BANK_CODE_EXIST'].
-                                format(field_def.widget.get()))
+                self.footer.set(get_message(MESSAGE_TEXT, 'BANK_CODE_EXIST', field_def.widget.get()))
             else:
                 if field_def.widget.get() in list(SCRAPER_BANKDATA.keys()):
                     getattr(self._field_defs,
@@ -854,8 +898,7 @@ class BankDataNew(BuiltEnterBox):
         if field_def.name == KEY_SERVER:
             http_code = http_error_code(field_def.widget.get())
             if http_code not in HTTP_CODE_OK:
-                self.footer.set(MESSAGE_TEXT['HTTP_INPUT'].
-                                format(http_code, field_def.widget.get()))
+                self.footer.set(get_message(MESSAGE_TEXT, 'HTTP_INPUT', http_code, field_def.widget.get()))
 
     def comboboxselected_action(self, event):
 
@@ -933,8 +976,7 @@ class BankDataChange(BuiltEnterBox):
         if field_def.name == KEY_SERVER:
             http_code = http_error_code(field_def.widget.get())
             if http_code not in HTTP_CODE_OK:
-                self.footer.set(MESSAGE_TEXT['HTTP_INPUT'].
-                                format(http_code, field_def.widget.get()))
+                self.footer.set(get_message(MESSAGE_TEXT, 'HTTP_INPUT', http_code, field_def.widget.get()))
 
 
 class BankDelete(BuiltEnterBox):
@@ -1068,7 +1110,7 @@ class IsinTableRowBox(BuiltTableRowBox):
                     ISIN, [DB_name, DB_symbol], symbol=symbol)
                 if len(result) > 0 and result[0][0] != getattr(self._field_defs, DB_name).widget.get():
                     MessageBoxInfo(
-                        title=self.title, message=MESSAGE_TEXT['SYMBOL_USED'].format(result))
+                        title=self.title, message=get_message(MESSAGE_TEXT, 'SYMBOL_USED', result))
         elif field_def.name == DB_validity:
             validity = getattr(self._field_defs, DB_validity).widget.get()
             if validity > VALIDITY_DEFAULT:
@@ -1081,7 +1123,7 @@ class IsinTableRowBox(BuiltTableRowBox):
             getattr(self._field_defs, DB_ISIN).textvar.set(isin_code)
             if not isin_code[0].isalpha():
                 # necessary because of use as field name in named tuples (otherwise runtime error)
-                self.footer.set(MESSAGE_TEXT['ISIN_ALPHABETIC'])
+                self.footer.set(get_message(MESSAGE_TEXT, 'ISIN_ALPHABETIC'))
 
 
 class LedgerCoaTableRowBox(BuiltTableRowBox):
@@ -1104,7 +1146,7 @@ class LedgerCoaTableRowBox(BuiltTableRowBox):
                     for account_tuple in result:
                         if account != account_tuple[0]:
                             self.footer.set(
-                                MESSAGE_TEXT['IBAN_USED'].format(account_tuple[0]))
+                                get_message(MESSAGE_TEXT, 'IBAN_USED', account_tuple[0]))
                             return
 
 
@@ -1161,8 +1203,14 @@ class LedgerTableRowBox(BuiltTableRowBox):
                 title = ' '.join([BUTTON_CREDIT, STATEMENT.upper()])
             else:
                 title = ' '.join([BUTTON_DEBIT, STATEMENT.upper()])
-            result = self.mariadb.select_table(STATEMENT, '*', order=None, result_dict=True, date_name=None,
-                                               iban=ledger_statement[DB_iban], entry_date=ledger_statement[DB_entry_date], counter=ledger_statement[DB_counter])
+            result = self.mariadb.select_table(
+                STATEMENT,
+                '*',
+                result_dict=True,
+                iban=ledger_statement[DB_iban],
+                entry_date=ledger_statement[DB_entry_date],
+                counter=ledger_statement[DB_counter]
+                )
             if result:
                 statement = BuiltTableRowBox(STATEMENT, STATEMENT, result[0],
                                              protected=protected,
@@ -1170,7 +1218,7 @@ class LedgerTableRowBox(BuiltTableRowBox):
                 if statement.button_state == WM_DELETE_WINDOW:
                     return
         else:
-            self.message = MESSAGE_TEXT['LEDGER_ROW']
+            self.message = get_message(MESSAGE_TEXT, 'LEDGER_ROW')
         self.quit_widget()
 
     def button_1_button3(self, event):
@@ -1180,155 +1228,6 @@ class LedgerTableRowBox(BuiltTableRowBox):
     def button_1_button4(self, event):
 
         self.show_data(DEBIT)
-
-
-class SepaCreditBox(BuiltEnterBox):
-    """
-    TOP-LEVEL-WINDOW        EnterBox SEPA Credit Transfer Data
-
-    PARAMETER:
-        field_defs          List of Field Definitions (see Class FieldDefintion)
-    INSTANCE ATTRIBUTES:
-        button_state        Text of selected Button
-        field_dict          Dictionary of SEPA Credit Transfer Data
-    """
-
-    def __init__(self, bank, account, title=MESSAGE_TITLE):
-
-        self.mariadb = MariaDB()
-        period = (date_years.subtract(date.today(), 2), date.today())
-        self.combo_values = self.mariadb.select_sepa_transfer_creditor_names(
-            posting_text=SEPA_TRANSFER_APPLCANT_NAMES,
-            date_name=DB_entry_date, period=period)
-        Field_Names = namedtuple(
-            'Field_Names', [SEPA_CREDITOR_NAME, SEPA_CREDITOR_IBAN, SEPA_CREDITOR_BIC,
-                            SEPA_CREDITOR_BANK_NAME, SEPA_CREDITOR_BANK_LOCATION, SEPA_AMOUNT,
-                            SEPA_PURPOSE_1, SEPA_PURPOSE_2, SEPA_REFERENCE]
-        )
-
-        field_defs = Field_Names(
-            FieldDefinition(definition=COMBO, name=SEPA_CREDITOR_NAME, length=70, selected=True,
-                            combo_values=self.combo_values, combo_insert_value=True, focus_out=True),
-            FieldDefinition(name=SEPA_CREDITOR_IBAN,
-                            length=34, focus_out=True),
-            FieldDefinition(name=SEPA_CREDITOR_BIC,
-                            length=11, lformat=FORMAT_FIXED),
-            FieldDefinition(name=SEPA_CREDITOR_BANK_NAME, length=70, mandatory=False,
-                            protected=True),
-            FieldDefinition(name=SEPA_CREDITOR_BANK_LOCATION, length=70, mandatory=False,
-                            protected=True),
-            FieldDefinition(name=SEPA_AMOUNT, length=14, typ=TYP_DECIMAL),
-            FieldDefinition(name=SEPA_PURPOSE_1, length=70, mandatory=False),
-            FieldDefinition(name=SEPA_PURPOSE_2, length=70, mandatory=False),
-            FieldDefinition(name=SEPA_REFERENCE, length=35, mandatory=False)
-        )
-        header = MESSAGE_TEXT['SEPA_CRDT_TRANSFER'].format(
-            bank.bank_name, account[KEY_ACC_PRODUCT_NAME], account[KEY_ACC_ACCOUNT_NUMBER])
-        if 'HKCSE' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
-            Field_Names = namedtuple(
-                'Field_Names', [*Field_Names._fields] + [SEPA_EXECUTION_DATE])
-            field_defs = Field_Names(
-                *field_defs,
-                FieldDefinition(name=SEPA_EXECUTION_DATE, length=10, typ=TYP_DATE,
-                                default_value=date.today(), mandatory=False))
-        super().__init__(
-            header=header, title=title,
-            button1_text=BUTTON_OK, button2_text=BUTTON_DELETE_ALL,
-            field_defs=field_defs)
-
-    def validation_addon(self, field_def):
-
-        if field_def.name == SEPA_CREDITOR_IBAN and not check_iban(field_def.widget.get()):
-            self.footer.set(MESSAGE_TEXT['IBAN'])
-            return
-        if field_def.name == SEPA_EXECUTION_DATE:
-            date_ = date_ = field_def.widget.get()[0:10]
-            try:
-                day = int(date_.split('-')[2])
-                month = int(date_.split('-')[1])
-                year = int(date_.split('-')[0])
-                date_ = date(year, month, day)
-            except (ValueError, EOFError, IndexError):
-                self.footer.set(MESSAGE_TEXT['DATE'])
-                return
-            days = date_ - date.today()
-            if days.days < 0:
-                self.footer.set(MESSAGE_TEXT['DATE_TODAY'])
-                return
-
-    def button_1_button1(self, event):
-
-        BuiltEnterBox.button_1_button1(self, event)
-        getattr(self._field_defs, SEPA_CREDITOR_NAME).combo_positioning = True
-        getattr(self._field_defs, SEPA_CREDITOR_NAME).combo_insert_value = True
-
-    def button_1_button2(self, event):
-
-        self.button_state = self._button2_text
-        self.clear_form_fields()
-        getattr(self._field_defs, SEPA_CREDITOR_NAME).combo_positioning = True
-        getattr(self._field_defs, SEPA_CREDITOR_NAME).combo_insert_value = True
-
-    def clear_form_fields(self):
-
-        getattr(self._field_defs, SEPA_CREDITOR_IBAN).textvar.set('')
-        getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set('')
-        getattr(self._field_defs, SEPA_CREDITOR_BANK_NAME).textvar.set('')
-        getattr(self._field_defs, SEPA_CREDITOR_BANK_LOCATION).textvar.set('')
-        getattr(self._field_defs, SEPA_AMOUNT).textvar.set('')
-        getattr(self._field_defs, SEPA_PURPOSE_1).textvar.set('')
-        getattr(self._field_defs, SEPA_PURPOSE_2).textvar.set('')
-        getattr(self._field_defs, SEPA_REFERENCE).textvar.set('')
-
-    def comboboxselected_action(self, event):
-
-        result = self.mariadb.select_sepa_transfer_creditor_data(
-            applicant_name=getattr(self._field_defs, SEPA_CREDITOR_NAME).widget.get())
-        if result:
-            applicant_iban, applicant_bic, purpose = result[0]
-            getattr(self._field_defs, SEPA_CREDITOR_IBAN).textvar.set(
-                applicant_iban)
-            getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set(
-                applicant_bic)
-            self._bankdata(applicant_iban)
-            getattr(self._field_defs, SEPA_PURPOSE_1).textvar.set(purpose[:70])
-            getattr(self._field_defs, SEPA_PURPOSE_2).textvar.set(purpose[70:])
-
-    def focus_out_action(self, event):
-
-        if event.widget.myId == SEPA_CREDITOR_NAME:
-            result = self.mariadb.select_sepa_transfer_creditor_data(
-                applicant_name=getattr(self._field_defs, SEPA_CREDITOR_NAME).widget.get())
-            if not result:
-                getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set('')
-                getattr(self._field_defs, SEPA_CREDITOR_IBAN).textvar.set('')
-                getattr(self._field_defs,
-                        SEPA_CREDITOR_BANK_NAME).textvar.set('')
-                getattr(self._field_defs,
-                        SEPA_CREDITOR_BANK_LOCATION).textvar.set('')
-                getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set('')
-                getattr(self._field_defs, SEPA_PURPOSE_1).textvar.set('')
-                getattr(self._field_defs, SEPA_PURPOSE_2).textvar.set('')
-        if event.widget.myId == SEPA_CREDITOR_IBAN:
-            iban = getattr(self._field_defs, SEPA_CREDITOR_IBAN).widget.get()
-            iban = iban.replace(' ', '')
-            iban = iban.strip()
-            getattr(self._field_defs, SEPA_CREDITOR_IBAN).textvar.set(iban)
-            self._bankdata(iban)
-
-    def _bankdata(self, iban):
-        bank_code = iban[4:12]
-        field_dict = self.mariadb.select_table(
-            BANKIDENTIFIER, [DB_name, DB_location, DB_bic], result_dict=True, code=bank_code)
-        if field_dict and DB_name in field_dict[0]:
-            getattr(self._field_defs, SEPA_CREDITOR_BANK_NAME).textvar.set(
-                field_dict[0][DB_name])
-        if field_dict and DB_location in field_dict[0]:
-            getattr(self._field_defs,
-                    SEPA_CREDITOR_BANK_LOCATION).textvar.set(field_dict[0][DB_location])
-        if field_dict and DB_bic in field_dict[0]:
-            getattr(self._field_defs, SEPA_CREDITOR_BIC).textvar.set(
-                field_dict[0][DB_bic])
 
 
 class SelectFields(BuiltCheckButton):
@@ -1357,7 +1256,7 @@ class SelectFields(BuiltCheckButton):
         self.mariadb = MariaDB()
         self.standard = standard
         super().__init__(
-            title=title, header=MESSAGE_TEXT['CHECKBOX'],
+            title=title, header=get_message(MESSAGE_TEXT, 'CHECKBOX'),
             button1_text=button1_text, button2_text=button2_text, button3_text=button3_text,
             button4_text=button4_text,
             default_texts=default_texts,
@@ -1390,7 +1289,7 @@ class SelectFields(BuiltCheckButton):
 
     def validate_all(self):
 
-        if self.standard == MENU_TEXT['Show'] + MENU_TEXT['Statement']:
+        if self.standard == get_menu_text("Show") + get_menu_text("Statement"):
             if DB_amount in self.field_list:
                 if DB_status not in self.field_list:
                     self.field_list.append(DB_status)
@@ -1406,7 +1305,7 @@ class SelectFields(BuiltCheckButton):
                     self.field_list.append(DB_closing_status)
                 if DB_closing_currency not in self.field_list:
                     self.field_list.append(DB_closing_currency)
-        elif self.standard == MENU_TEXT['Show'] + MENU_TEXT['Holding']:
+        elif self.standard == get_menu_text("Show") + get_menu_text("Holding"):
             if (
                 (DB_total_amount in self.field_list or
                  DB_total_amount_portfolio in self.field_list or
@@ -1443,7 +1342,7 @@ class SelectDownloadPrices(BuiltCheckButton):
                  ):
 
         super().__init__(
-            title=title, header=MESSAGE_TEXT['CHECKBOX'],
+            title=title, header=get_message(MESSAGE_TEXT, 'CHECKBOX'),
             button1_text=button1_text,
             button2_text=button2_text, button3_text=button3_text,
             checkbutton_texts=checkbutton_texts
@@ -1751,8 +1650,20 @@ class PandasBoxIsinTable(BuiltPandasBox):
             elif isin.button_state == BUTTON_DELETE:
                 self.mariadb.execute_delete(
                     ISIN, isin_code=isin.field_dict[DB_ISIN])
-                self.message = MESSAGE_TEXT['DATA_DELETED'].format(
-                    ' '.join([self.title, '\n', DB_ISIN.upper(), isin.field_dict[DB_ISIN], '\n', isin.field_dict[DB_name]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_DELETED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_ISIN.upper(),
+                            isin.field_dict[DB_ISIN],
+                            '\n',
+                            isin.field_dict[DB_name]
+                            ]
+                        )
+                    )
         self.quit_widget()
 
     def update_row(self):
@@ -1782,8 +1693,18 @@ class PandasBoxIsinTable(BuiltPandasBox):
                 return
             elif isin.button_state == BUTTON_UPDATE:
                 self.mariadb.execute_replace(ISIN, isin.field_dict)
-                self.message = MESSAGE_TEXT['DATA_CHANGED'].format(
-                    ' '.join([self.title, DB_ISIN.upper(), isin.field_dict[DB_ISIN], isin.field_dict[DB_name]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_CHANGED',
+                    ' '.join(
+                        [
+                            self.title,
+                            DB_ISIN.upper(),
+                            isin.field_dict[DB_ISIN],
+                            isin.field_dict[DB_name]
+                            ]
+                        )
+                    )
             elif isin.button_state == BUTTON_PRICES_IMPORT:
                 self.selected_row_dict = isin.field_dict
         self.quit_widget()
@@ -1809,16 +1730,47 @@ class PandasBoxIsinTable(BuiltPandasBox):
         if isin.button_state == WM_DELETE_WINDOW:
             return isin.button_state
         elif isin.button_state == BUTTON_NEW:
-            if self.mariadb.row_exists(ISIN, isin_code=isin.field_dict[DB_ISIN]):
-                self.message = MESSAGE_TEXT['DATA_ROW_EXIST'].format(
-                    ' '.join([ISIN.upper(), '\n', DB_ISIN.upper(), isin.field_dict[DB_ISIN]]))
-            elif self.mariadb.row_exists(ISIN, name=isin.field_dict[DB_name]):
-                self.message = MESSAGE_TEXT['DATA_ROW_EXIST'].format(
-                    ' '.join([ISIN.upper(), '\n',  DB_name.upper(), isin.field_dict[DB_name]]))
+            if self.mariadb.select_exists(ISIN, isin_code=isin.field_dict[DB_ISIN]):
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_ROW_EXIST',
+                    ' '.join(
+                        [
+                            ISIN.upper(),
+                            '\n',
+                            DB_ISIN.upper(),
+                            isin.field_dict[DB_ISIN]
+                            ]
+                        )
+                    )
+            elif self.mariadb.select_exists(ISIN, name=isin.field_dict[DB_name]):
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_ROW_EXIST',
+                    ' '.join(
+                        [
+                            ISIN.upper(),
+                            '\n',
+                            DB_name.upper(),
+                            isin.field_dict[DB_name]
+                            ]
+                        )
+                    )
             else:
                 self.mariadb.execute_insert(ISIN, isin.field_dict)
-                self.message = MESSAGE_TEXT['DATA_INSERTED'].format(
-                    ' '.join([self.title, DB_ISIN.upper(), '\n', isin.field_dict[DB_ISIN], isin.field_dict[DB_name]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_INSERTED',
+                    ' '.join(
+                        [
+                            self.title,
+                            DB_ISIN.upper(),
+                            '\n',
+                            isin.field_dict[DB_ISIN],
+                            isin.field_dict[DB_name]
+                            ]
+                        )
+                    )
         if self.isins_exist:
             self.quit_widget()  # see BuiltPandasBox
         else:
@@ -1982,8 +1934,23 @@ class PandasBoxHoldingTable(BuiltPandasBox):
             elif holding.button_state == BUTTON_DELETE:
                 self.mariadb.execute_delete(
                     HOLDING, iban=holding.field_dict[DB_iban], isin_code=holding.field_dict[DB_ISIN], price_date=holding.field_dict[DB_price_date])
-                self.message = MESSAGE_TEXT['DATA_DELETED'].format(
-                    ' '.join([self.title, '\n', DB_price_date.upper(), holding.field_dict[DB_price_date], '\n', DB_ISIN.upper(), holding.field_dict[DB_ISIN], '\n', holding.field_dict[DB_name]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_DELETED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_price_date.upper(),
+                            holding.field_dict[DB_price_date],
+                            '\n',
+                            DB_ISIN.upper(),
+                            holding.field_dict[DB_ISIN],
+                            '\n',
+                            holding.field_dict[DB_name]
+                            ]
+                        )
+                    )
         self.quit_widget()
 
     def update_row(self):
@@ -2024,8 +1991,21 @@ class PandasBoxHoldingTable(BuiltPandasBox):
                     field_dict = {DB_total_amount_portfolio: result[0][1]}
                     self.mariadb.execute_update(
                         HOLDING, field_dict, iban=row_dict[DB_iban], price_date=row_dict[DB_price_date])
-                self.message = MESSAGE_TEXT['DATA_CHANGED'].format(
-                    ' '.join([self.title, '\n', DB_price_date.upper(), holding.field_dict[DB_price_date], '\n', DB_ISIN.upper(), holding.field_dict[DB_ISIN], name]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_CHANGED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_price_date.upper(),
+                            holding.field_dict[DB_price_date],
+                            '\n',
+                            DB_ISIN.upper(),
+                            holding.field_dict[DB_ISIN], name
+                            ]
+                        )
+                    )
         self.quit_widget()
 
     def new_row(self):
@@ -2045,16 +2025,44 @@ class PandasBoxHoldingTable(BuiltPandasBox):
             return holding
         elif holding.button_state == BUTTON_NEW:
             name = holding.field_dict[DB_name]
-            if self.mariadb.row_exists(HOLDING, iban=holding.field_dict[DB_iban], isin_code=holding.field_dict[DB_ISIN], price_date=holding.field_dict[DB_price_date]):
-                self.message = MESSAGE_TEXT['DATA_ROW_EXIST'].format(
-                    ' '.join([HOLDING.upper(), '\n', DB_price_date.upper(), holding.field_dict[DB_price_date], '\n', DB_ISIN.upper(), holding.field_dict[DB_ISIN], name]))
+            if self.mariadb.select_exists(HOLDING, iban=holding.field_dict[DB_iban], isin_code=holding.field_dict[DB_ISIN], price_date=holding.field_dict[DB_price_date]):
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_ROW_EXIST',
+                    ' '.join(
+                        [
+                            HOLDING.upper(),
+                            '\n',
+                            DB_price_date.upper(),
+                            holding.field_dict[DB_price_date],
+                            '\n',
+                            DB_ISIN.upper(),
+                            holding.field_dict[DB_ISIN],
+                            name
+                            ]
+                        )
+                    )
             else:
                 holding.field_dict[DB_origin] = ORIGIN_INSERTED
                 del holding.field_dict[DB_name]
                 del holding.field_dict[DB_symbol]
                 self.mariadb.execute_insert(HOLDING, holding.field_dict)
-                self.message = MESSAGE_TEXT['DATA_INSERTED'].format(
-                    ' '.join([self.title, '\n', DB_price_date.upper(), holding.field_dict[DB_price_date], '\n', DB_ISIN.upper(), holding.field_dict[DB_ISIN], name]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_INSERTED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_price_date.upper(),
+                            holding.field_dict[DB_price_date],
+                            '\n',
+                            DB_ISIN.upper(),
+                            holding.field_dict[DB_ISIN],
+                            name
+                            ]
+                        )
+                    )
         return holding
 
     def new_row_properties(self):
@@ -2149,11 +2157,11 @@ class PandasBoxLedgerTable(BuiltPandasBox):
         """
         Append Sum Row for column amount for Menu Ledger > Account
         """
-        if (self.title.startswith(' '.join([MENU_TEXT['Ledger'], MENU_TEXT['Account']]))
+        if (self.title.startswith(' '.join([get_menu_text("Ledger"), get_menu_text("Account")]))
                 and DB_credit_account in self.dataframe.columns
                 and DB_debit_account in self.dataframe.columns):
             start_account_name = len(
-                ' '.join([MENU_TEXT['Ledger'], MENU_TEXT['Account']])) + 2
+                ' '.join([get_menu_text("Ledger"), get_menu_text("Account")])) + 2
             account = self.title[start_account_name:start_account_name+4]
             self.dataframe[DB_amount] = self.dataframe.apply(
                 lambda row: row[DB_amount] if row[DB_credit_account] == account else -row[DB_amount], axis=1)
@@ -2213,8 +2221,14 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                 LEDGER_STATEMENT, '*', result_dict=True, id_no=row_dict[DB_id_no], status=status)
             if result:
                 ledger_statement = result[0]
-                result = self.mariadb.select_table(STATEMENT, '*', order=None, result_dict=True, date_name=None,
-                                                   iban=ledger_statement[DB_iban], entry_date=ledger_statement[DB_entry_date], counter=ledger_statement[DB_counter])
+                result = self.mariadb.select_table(
+                    STATEMENT,
+                    '*',
+                    result_dict=True,
+                    iban=ledger_statement[DB_iban],
+                    entry_date=ledger_statement[DB_entry_date],
+                    counter=ledger_statement[DB_counter]
+                    )
                 if result:
                     BuiltTableRowBox(STATEMENT, STATEMENT, result[0],
                                      protected=protected,
@@ -2223,19 +2237,19 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                 else:
                     self.mariadb.exceute_delete(
                         LEDGER_STATEMENT, id_no=row_dict[DB_id_no], status=status)
-                    self.message = MESSAGE_TEXT['LEDGER_ROW']
+                    self.message = get_message(MESSAGE_TEXT, 'LEDGER_ROW')
             else:
-                self.message = MESSAGE_TEXT['LEDGER_ROW']
+                self.message = get_message(MESSAGE_TEXT, 'LEDGER_ROW')
         self.quit_widget()
 
     def show_credit_data(self):
 
-        title = ' '.join([self.title, POPUP_MENU_TEXT['Show credit data']])
+        title = ' '.join([self.title, get_popup_menu_text("Show credit data")])
         self.show_data(title, CREDIT)
 
     def show_debit_data(self):
 
-        title = ' '.join([self.title, POPUP_MENU_TEXT['Show debit data']])
+        title = ' '.join([self.title, get_popup_menu_text("Show debit data")])
         self.show_data(title, DEBIT)
 
     def del_row(self):
@@ -2260,8 +2274,11 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                 self.mariadb.execute_delete(
                     # deletes per foreign key connected row in LEDGER_STATEMENT
                     LEDGER, id_no=ledger.field_dict[DB_id_no])
-                self.message = MESSAGE_TEXT['DATA_DELETED'].format(
-                    ' '.join([DB_id_no.upper(), ledger.field_dict[DB_id_no]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_DELETED',
+                    ' '.join([DB_id_no.upper(), ledger.field_dict[DB_id_no]])
+                    )
         self.quit_widget()
 
     def update_row(self):
@@ -2276,11 +2293,11 @@ class PandasBoxLedgerTable(BuiltPandasBox):
             else:
                 return
             combo_dict,  combo_insert_value, combo_positioning_dict, protected, mandatory = self.new_row_properties()
-            if self.mariadb.row_exists(LEDGER_STATEMENT, id_no=row_dict[DB_id_no], status=CREDIT):
+            if self.mariadb.select_exists(LEDGER_STATEMENT, id_no=row_dict[DB_id_no], status=CREDIT):
                 button3_text = BUTTON_CREDIT
             else:
                 button3_text = None
-            if self.mariadb.row_exists(LEDGER_STATEMENT, id_no=row_dict[DB_id_no], status=DEBIT):
+            if self.mariadb.select_exists(LEDGER_STATEMENT, id_no=row_dict[DB_id_no], status=DEBIT):
                 button4_text = BUTTON_DEBIT
             else:
                 button4_text = None
@@ -2301,17 +2318,20 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                 self._update_ledger_statement(
                     DEBIT, ledger.field_dict, row_dict)
                 # Special for LEDGER Check Upload
-                if self.title.startswith(' '.join([MENU_TEXT['Ledger'], MENU_TEXT['Check Upload']])):
+                if self.title.startswith(' '.join([get_menu_text("Ledger"), get_menu_text("Check Upload")])):
                     clause_upload_check = ' '.join(
                         [DB_id_no, "<=", ledger.field_dict[DB_id_no], "AND NOT", DB_upload_check])
                     self.mariadb.execute_update(
                         LEDGER, {DB_upload_check: 1}, clause=clause_upload_check)
                 # Special for LEDGER Check Bank Statement
-                if self.title.startswith(' '.join([MENU_TEXT['Ledger'], MENU_TEXT['Check Bank Statement']])):
+                if self.title.startswith(' '.join([get_menu_text("Ledger"), get_menu_text("Check Bank Statement")])):
                     self.mariadb.execute_update(
                         LEDGER, {DB_bank_statement_checked: 1}, id_no=ledger.field_dict[DB_id_no])
-                self.message = MESSAGE_TEXT['DATA_CHANGED'].format(
-                    ' '.join([DB_id_no.upper(), ledger.field_dict[DB_id_no]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_CHANGED',
+                    ' '.join([DB_id_no.upper(), ledger.field_dict[DB_id_no]])
+                    )
         self.quit_widget()
 
     def _update_ledger_statement(self, status, ledger_dict, row_dict):
@@ -2327,7 +2347,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
             row_account = row_dict[DB_debit_account]
         if row_account != ledger_account:
             # disconnect old ledger statement credit/debit connection
-            if self.mariadb.row_exists(LEDGER_STATEMENT, id_no=ledger_dict[DB_id_no], status=status):
+            if self.mariadb.select_exists(LEDGER_STATEMENT, id_no=ledger_dict[DB_id_no], status=status):
                 self.mariadb.execute_delete(
                     LEDGER_STATEMENT, id_no=ledger_dict[DB_id_no])
         ledger_coa = self.mariadb.select_table(
@@ -2339,7 +2359,7 @@ class PandasBoxLedgerTable(BuiltPandasBox):
             # its a bank account, show selection of statements to assign
             PandasBoxLedgerStatement(
                 self.title, ledger_coa[0][DB_iban], status, ledger_dict)
-        elif not self.mariadb.row_exists(LEDGER_STATEMENT, id_no=ledger_dict[DB_id_no], status=status):
+        elif not self.mariadb.select_exists(LEDGER_STATEMENT, id_no=ledger_dict[DB_id_no], status=status):
             # account not changed, its a bank account, but ledger statement connection not yet done
             PandasBoxLedgerStatement(
                 self.title, ledger_coa[0][DB_iban], status, ledger_dict)
@@ -2381,18 +2401,28 @@ class PandasBoxLedgerTable(BuiltPandasBox):
                 to_id_no = (_year + 1) * 1000000
                 clause = ' '.join(
                     [DB_id_no, ">", str(from_id_no), 'AND', DB_id_no, "<", str(to_id_no)])
-                max_id_no = self.mariadb.select_max_column_value(
-                    LEDGER, DB_id_no, clause=clause)
+                max_id_no = self.mariadb.select_scalar(
+                    LEDGER, f"MAX({DB_id_no})", clause=clause)
                 if max_id_no:
                     id_no = max_id_no + 1
                 else:
                     id_no = from_id_no + 1
                 ledger.field_dict[DB_id_no] = id_no
                 self.mariadb.execute_insert(LEDGER, ledger.field_dict)
-                self.message = MESSAGE_TEXT['DATA_INSERTED'].format(
-                    ' '.join([LEDGER.upper(), '\n', DB_id_no.upper(), str(id_no)]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_INSERTED',
+                    ' '.join(
+                        [
+                            LEDGER.upper(),
+                            '\n',
+                            DB_id_no.upper(),
+                            str(id_no)
+                            ]
+                        )
+                    )
             else:
-                self.message = MESSAGE_TEXT['ENTRY_DATE']
+                self.message = get_message(MESSAGE_TEXT, 'ENTRY_DATE')
         return ledger
 
     def new_row_properties(self):
@@ -2469,17 +2499,21 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
         row_dict = self.get_selected_row()
         if row_dict:
             protected = TABLE_FIELDS[LEDGER_COA]
-            ledger_coa = LedgerCoaTableRowBox(LEDGER_COA, LEDGER_COA, row_dict,
-                                              protected=protected,
-                                              title=self.title, button1_text=BUTTON_DELETE, button2_text=None)
+            ledger_coa = LedgerCoaTableRowBox(
+                LEDGER_COA, LEDGER_COA, row_dict, protected=protected,
+                title=self.title, button1_text=BUTTON_DELETE, button2_text=None
+                )
             self.button_state = ledger_coa.button_state
             if ledger_coa.button_state == WM_DELETE_WINDOW:
                 return
             elif ledger_coa.button_state == BUTTON_DELETE:
                 self.mariadb.execute_delete(
                     LEDGER_COA, account=ledger_coa.field_dict[DB_account])
-                self.message = MESSAGE_TEXT['DATA_DELETED'].format(
-                    ' '.join([self.title, '\n', DB_account.upper(), ledger_coa.field_dict[DB_account]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_DELETED',
+                    ' '.join([self.title, '\n', DB_account.upper(), ledger_coa.field_dict[DB_account]])
+                    )
         self.quit_widget()
 
     def update_row(self):
@@ -2497,8 +2531,18 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
                 return
             elif ledger_coa.button_state == BUTTON_UPDATE:
                 self.mariadb.execute_replace(LEDGER_COA, ledger_coa.field_dict)
-                self.message = MESSAGE_TEXT['DATA_CHANGED'].format(
-                    ' '.join([self.title, '\n', DB_account.upper(), ledger_coa.field_dict[DB_account]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_CHANGED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_account.upper(),
+                            ledger_coa.field_dict[DB_account]
+                            ]
+                        )
+                    )
         self.quit_widget()
 
     def new_row(self):
@@ -2517,13 +2561,33 @@ class PandasBoxLedgerCoaTable(BuiltPandasBox):
         if ledger_coa.button_state == WM_DELETE_WINDOW:
             return ledger_coa
         elif ledger_coa.button_state == BUTTON_NEW:
-            if self.mariadb.row_exists(LEDGER_COA, iban=ledger_coa.field_dict[DB_account]):
-                self.message = MESSAGE_TEXT['DATA_ROW_EXIST'].format(
-                    ' '.join([LEDGER_COA.upper(), '\n', DB_account.upper(), ledger_coa.field_dict[DB_account]]))
+            if self.mariadb.select_exists(LEDGER_COA, iban=ledger_coa.field_dict[DB_account]):
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_ROW_EXIST',
+                    ' '.join(
+                        [
+                            LEDGER_COA.upper(),
+                            '\n',
+                            DB_account.upper(),
+                            ledger_coa.field_dict[DB_account]
+                            ]
+                        )
+                    )
             else:
                 self.mariadb.execute_insert(LEDGER_COA, ledger_coa.field_dict)
-                self.message = MESSAGE_TEXT['DATA_INSERTED'].format(
-                    ' '.join([self.title, '\n', DB_account.upper(), ledger_coa.field_dict[DB_account]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_INSERTED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_account.upper(),
+                            ledger_coa.field_dict[DB_account]
+                            ]
+                        )
+                    )
         return ledger_coa
 
 
@@ -2548,10 +2612,19 @@ class PandasBoxLedgerStatement(BuiltPandasBox):
             self.to_date = date_days.convert(self.ledger_dict[DB_entry_date])
             self.from_date = date_days.convert(
                 date_days.subtract(self.ledger_dict[DB_entry_date], 5))
-        title = ' '.join([self.title, MESSAGE_TEXT['ASSINGNABLE_STATEMENTS'].format(
-            self.from_date, self.to_date)])
+        title = ' '.join(
+            [
+                self.title,
+                get_message(
+                    MESSAGE_TEXT,
+                    'ASSINGNABLE_STATEMENTS',
+                    self.from_date,
+                    self.to_date
+                    )
+                ]
+            )
         super().__init__(title=title,
-                         message=MESSAGE_TEXT['SELECT_ROW'], mode=CURRENCY_SIGN)
+                         message=get_message(MESSAGE_TEXT, 'SELECT_ROW'), mode=CURRENCY_SIGN)
 
     def create_dataframe(self):
 
@@ -2563,17 +2636,29 @@ class PandasBoxLedgerStatement(BuiltPandasBox):
                                                    amount=self.ledger_dict[DB_amount])
         new_statement_list = []
         for statement_dict in statement_list:
-            if not self.mariadb.row_exists(LEDGER_STATEMENT, iban=statement_dict[DB_iban], entry_date=statement_dict[DB_entry_date], counter=statement_dict[DB_counter]):
+            if not self.mariadb.select_exists(LEDGER_STATEMENT, iban=statement_dict[DB_iban], entry_date=statement_dict[DB_entry_date], counter=statement_dict[DB_counter]):
                 new_statement_list.append(statement_dict)
         if new_statement_list:
             self.dataframe = DataFrame(new_statement_list)
         else:
             if self.status == CREDIT:
-                MessageBoxInfo(MESSAGE_TEXT['LEDGER_STATEMENT_ASSIGMENT_EMPTY'].format(
-                    self.ledger_dict[DB_id_no], self.ledger_dict[DB_credit_account]))
+                MessageBoxInfo(
+                    get_message(
+                        MESSAGE_TEXT,
+                        'LEDGER_STATEMENT_ASSIGMENT_EMPTY',
+                        self.ledger_dict[DB_id_no],
+                        self.ledger_dict[DB_credit_account]
+                        )
+                    )
             else:
-                MessageBoxInfo(MESSAGE_TEXT['LEDGER_STATEMENT_ASSIGMENT_EMPTY'].format(
-                    self.ledger_dict[DB_id_no], self.ledger_dict[DB_debit_account]))
+                MessageBoxInfo(
+                    get_message(
+                        MESSAGE_TEXT,
+                        'LEDGER_STATEMENT_ASSIGMENT_EMPTY',
+                        self.ledger_dict[DB_id_no],
+                        self.ledger_dict[DB_debit_account]
+                        )
+                    )
             self.abort = True
             destroy_widget(self.dataframe_window)
 
@@ -2648,10 +2733,14 @@ class PandasBoxStatementTable(BuiltPandasBox):
 
         row_dict = self.get_selected_row()
         if row_dict:
-            row_dict = self.mariadb.select_table(STATEMENT, '*', order=None, result_dict=True,
-                                                 date_name=None, iban=row_dict[DB_iban],
-                                                 entry_date=row_dict[DB_entry_date],
-                                                 counter=row_dict[DB_counter])
+            row_dict = self.mariadb.select_table(
+                STATEMENT,
+                '*',
+                result_dict=True,
+                iban=row_dict[DB_iban],
+                entry_date=row_dict[DB_entry_date],
+                counter=row_dict[DB_counter]
+                )
             if not row_dict:
                 return
             statement = BuiltTableRowBox(
@@ -2805,53 +2894,21 @@ class PandasBoxTotals(BuiltPandasBox):
         data           data_total_amounts (list of tuple: (iban/account, entry_date, sum)
     """
 
-    def __init__(self, title, data, portfolio=['DE81101308001002902112', 'DEXX504000000004414413']):
+    def __init__(self, title, data):
 
         self.title = title
         self.data = data
-        self.portfolio = portfolio
         super().__init__(title=title, dataframe=data, mode=NUMERIC)
-
-    def _debit(self, amount, status=CREDIT, places=2):
-
-        if status == DEBIT:
-            amount = amount * -1
-        return amount
 
     def create_dataframe(self):
 
-        self.dataframe = DataFrame(self.dataframe, columns=[
-            DB_iban, DB_date, DB_status, DB_total_amount])
-        self.dataframe[DB_total_amount] = self.dataframe[[DB_total_amount, DB_status]].apply(
-            lambda x: self._debit(*x), axis=1)
-        self.dataframe = self.dataframe.sort_values([DB_iban, DB_date])
+        self.dataframe = DataFrame(self.data)
+        self.dataframe[DB_account] = self.dataframe[DB_account].astype(str) + "/" + self.dataframe[DB_name].astype(str)
+        self.dataframe = self.dataframe.sort_values([DB_account, DB_date])
         self.dataframe = self.dataframe.pivot_table(index=[DB_date], columns=[
-            DB_iban], values=[DB_total_amount])
-        self.ffill_dataframe()
+            DB_account], values=[FN_BALANCE])
         self.dataframe[FN_TOTAL] = self.dataframe.sum(
             axis=1).apply(lambda x: dec2.convert(x))
-        self.dataframe = self.dataframe.iloc[1:]
-        dict1 = self.mariadb.select_dict(LEDGER_COA, DB_iban, DB_name)
-        dict2 = self.mariadb.select_dict(LEDGER_COA, DB_account, DB_name)
-        self.dataframe.columns = [col[1] for col in self.dataframe.columns]  # column header with 2 levels
-        self.dataframe = self.dataframe.rename(columns=lambda c: dict1.get(c, dict2.get(c, c)))
-
-    def ffill_dataframe(self):
-        '''
-        ffill account columns
-        '''
-        columns = self.dataframe.columns.to_list()
-        for column in columns:
-            _, iban = column
-            if iban in self.portfolio:
-                # index of first not empty cell
-                start_index = self.dataframe[column].first_valid_index()
-                # index of last not empty cell
-                end_index = self.dataframe[column].last_valid_index()
-                self.dataframe.loc[start_index:end_index,
-                                   column] = self.dataframe.loc[start_index:end_index, column].ffill()
-            else:
-                self.dataframe[column] = self.dataframe[column].ffill()
 
 
 class PandasBoxTransactionProfit(BuiltPandasBox):
@@ -2965,8 +3022,21 @@ class PandasBoxTransactionTable(PandasBoxTransactionTableShow):
             elif transaction.button_state == BUTTON_DELETE:
                 self.mariadb.execute_delete(
                     TRANSACTION, iban=transaction.field_dict[DB_iban], isin_code=transaction.field_dict[DB_ISIN], price_date=transaction.field_dict[DB_price_date], counter=transaction.field_dict[DB_counter])
-                self.message = MESSAGE_TEXT['DATA_DELETED'].format(
-                    ' '.join([self.title, '\n', DB_price_date.upper(), transaction.field_dict[DB_price_date], '\n', DB_counter.upper(), transaction.field_dict[DB_counter]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_DELETED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_price_date.upper(),
+                            transaction.field_dict[DB_price_date],
+                            '\n',
+                            DB_counter.upper(),
+                            transaction.field_dict[DB_counter]
+                            ]
+                        )
+                    )
         self.quit_widget()
 
     def update_row(self):
@@ -2999,8 +3069,21 @@ class PandasBoxTransactionTable(PandasBoxTransactionTableShow):
                 del transaction.field_dict[DB_name]
                 self.mariadb.execute_replace(
                     TRANSACTION, transaction.field_dict)
-                self.message = MESSAGE_TEXT['DATA_CHANGED'].format(
-                    ' '.join([self.title, '\n', DB_price_date.upper(), transaction.field_dict[DB_price_date], '\n', DB_counter.upper(), transaction.field_dict[DB_counter]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_CHANGED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_price_date.upper(),
+                            transaction.field_dict[DB_price_date],
+                            '\n',
+                            DB_counter.upper(),
+                            transaction.field_dict[DB_counter]
+                            ]
+                        )
+                    )
         self.quit_widget()
 
     def new_row(self):
@@ -3023,17 +3106,49 @@ class PandasBoxTransactionTable(PandasBoxTransactionTableShow):
         if transaction.button_state == WM_DELETE_WINDOW:
             return transaction
         elif transaction.button_state == BUTTON_NEW:
-            if self.mariadb.row_exists(TRANSACTION, iban=transaction.field_dict[DB_iban], isin_code=transaction.field_dict[DB_ISIN], price_date=transaction.field_dict[DB_price_date], counter=transaction.field_dict[DB_counter]):
-                self.message = MESSAGE_TEXT['DATA_ROW_EXIST'].format(
-                    ' '.join([TRANSACTION.upper(), '\n', DB_price_date.upper(), transaction.field_dict[DB_price_date], '\n', DB_ISIN.upper(), transaction.field_dict[DB_ISIN], '\n', DB_counter.upper(), transaction.field_dict[DB_counter]]))
+            if self.mariadb.select_exists(TRANSACTION, iban=transaction.field_dict[DB_iban], isin_code=transaction.field_dict[DB_ISIN], price_date=transaction.field_dict[DB_price_date], counter=transaction.field_dict[DB_counter]):
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_ROW_EXIST',
+                    ' '.join(
+                        [
+                            TRANSACTION.upper(),
+                            '\n',
+                            DB_price_date.upper(),
+                            transaction.field_dict[DB_price_date],
+                            '\n',
+                            DB_ISIN.upper(),
+                            transaction.field_dict[DB_ISIN],
+                            '\n',
+                            DB_counter.upper(),
+                            transaction.field_dict[DB_counter]
+                            ]
+                        )
+                    )
             else:
                 transaction.field_dict[DB_posted_amount] = dec2.multiply(
                     transaction.field_dict[DB_price], transaction.field_dict[DB_pieces])
                 del transaction.field_dict[DB_name]
                 self.mariadb.execute_insert(
                     TRANSACTION, transaction.field_dict)
-                self.message = MESSAGE_TEXT['DATA_INSERTED'].format(
-                    ' '.join([self.title, '\n', DB_price_date.upper(), transaction.field_dict[DB_price_date], '\n', DB_ISIN.upper(), transaction.field_dict[DB_ISIN], '\n', DB_counter.upper(), transaction.field_dict[DB_counter]]))
+                self.message = get_message(
+                    MESSAGE_TEXT,
+                    'DATA_INSERTED',
+                    ' '.join(
+                        [
+                            self.title,
+                            '\n',
+                            DB_price_date.upper(),
+                            transaction.field_dict[DB_price_date],
+                            '\n',
+                            DB_ISIN.upper(),
+                            transaction.field_dict[DB_ISIN],
+                            '\n',
+                            DB_counter.upper(),
+                            transaction.field_dict[DB_counter]
+                            ]
+                        )
+                    )
         return transaction
 
     def new_row_properties(self):
@@ -3074,7 +3189,6 @@ class TechnicalIndicator(InputISIN):
         'Others': 'Others'
         }
 
-
     def __init__(self, title=MESSAGE_TITLE, data_dict={}, container_dict={}, selection_name=None):
 
         super().__init__(title=title, header=None, table=None,
@@ -3097,7 +3211,7 @@ class TechnicalIndicator(InputISIN):
         self.validation()
         if not self.footer.get():
             # create ta ohlc dataframe
-            
+
             symbol = self.container_dict[self.field_dict[DB_name]]
             import_prices_run(self.title, self.mariadb, [self.field_dict[DB_name]], BUTTON_APPEND)
             field_list = [DB_price_date, DB_open, DB_high, DB_low, DB_close, DB_volume]
@@ -3120,7 +3234,7 @@ class TechnicalIndicator(InputISIN):
                 dataframe = dataframe.set_index(dataframe.columns[0])
                 self._set_menu(dataframe)
             else:
-                self.footer.set(MESSAGE_TEXT["DATA_NO"].format(PRICES.upper(), self.data_dict[DB_name]))
+                self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', PRICES.upper(), self.data_dict[DB_name]))
 
     def quit_widget(self):
 
@@ -3146,31 +3260,31 @@ class TechnicalIndicator(InputISIN):
                 volume_menu.add_command(
                     label=indicator,
                     command=lambda x=dataframe, y=TechnicalIndicatorData.TA_VOLUME[indicator], z=indicator: self._show_indicator(x, y, z))
-            menubar.add_cascade(label=self.TA_MENU_TEXT['Volume'], menu=volume_menu)
+            menubar.add_cascade(label=self.TA_MENU_TEXT.get("Volume"), menu=volume_menu)
             volatility_menu = Menu(menubar, tearoff=0)
             for indicator in TechnicalIndicatorData.TA_VOLATILITY.keys():
                 volatility_menu.add_command(
                     label=indicator,
                     command=lambda x=dataframe, y=TechnicalIndicatorData.TA_VOLATILITY[indicator], z=indicator: self._show_indicator(x, y, z))
-            menubar.add_cascade(label=self.TA_MENU_TEXT['Volatility'], menu=volatility_menu)
+            menubar.add_cascade(label=self.TA_MENU_TEXT.get("Volatility"), menu=volatility_menu)
             trend_menu = Menu(menubar, tearoff=0)
             for indicator in TechnicalIndicatorData.TA_TREND.keys():
                 trend_menu.add_command(
                     label=indicator,
                     command=lambda x=dataframe, y=TechnicalIndicatorData.TA_TREND[indicator], z=indicator: self._show_indicator(x, y, z))
-            menubar.add_cascade(label=self.TA_MENU_TEXT['Trend'], menu=trend_menu)
+            menubar.add_cascade(label=self.TA_MENU_TEXT.get("Trend"), menu=trend_menu)
             momentum_menu = Menu(menubar, tearoff=0)
             for indicator in TechnicalIndicatorData.TA_MOMENTUM.keys():
                 momentum_menu.add_command(
                     label=indicator,
                     command=lambda x=dataframe, y=TechnicalIndicatorData.TA_MOMENTUM[indicator], z=indicator: self._show_indicator(x, y, z))
-            menubar.add_cascade(label=self.TA_MENU_TEXT['Momentum'], menu=momentum_menu)
+            menubar.add_cascade(label=self.TA_MENU_TEXT.get("Momentum"), menu=momentum_menu)
             others_menu = Menu(menubar, tearoff=0)
             for indicator in TechnicalIndicatorData.TA_OTHERS.keys():
                 others_menu.add_command(
                     label=indicator,
                     command=lambda x=dataframe, y=TechnicalIndicatorData.TA_OTHERS[indicator], z=indicator: self._show_indicator(x, y, z))
-            menubar.add_cascade(label=self.TA_MENU_TEXT['Others'], menu=others_menu)
+            menubar.add_cascade(label=self.TA_MENU_TEXT.get("Others"), menu=others_menu)
             self._box_window_top.config(menu=menubar)
         except Exception as e:
             import traceback
@@ -3213,7 +3327,7 @@ class SelectCloseVolume(BuiltCheckButton):
     def __init__(self):
 
         super().__init__(
-            title=MESSAGE_TEXT['TA_ADD_CHART'], header=MESSAGE_TEXT['CHECKBOX'],
+            title=get_message(MESSAGE_TEXT, 'TA_ADD_CHART'), header=get_message(MESSAGE_TEXT, 'CHECKBOX'),
             button1_text=BUTTON_ADD_CHART, button2_text=None,
             checkbutton_texts=[DB_close, DB_volume],
             default_texts=TechnicalIndicatorData.TA_CLOSE

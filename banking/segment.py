@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-05-31"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 """
 
@@ -34,9 +34,13 @@ from fints.segments.statement import HKKAZ6, HKKAZ7
 from fints.segments.transfer import HKCCS1
 from fints.types import SegmentSequence
 
-from banking.declarations import MESSAGE_TEXT, PNS, SYSTEM_ID_UNASSIGNED, WM_DELETE_WINDOW, KEY_TWOSTEP
+from banking.declarations import PNS, SYSTEM_ID_UNASSIGNED, WM_DELETE_WINDOW, KEY_TWOSTEP
 from banking.fints_extension import HKCSE1, HKVPP1, PaymentStatusReport, HKCAZ1
-from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
+from banking.message_handler import (
+    get_message,
+    MESSAGE_TEXT,
+    MessageBoxInfo, MessageBoxTermination
+    )
 from banking.forms import InputTAN
 from banking.mariadb import MariaDB
 from banking.declarations_mariadb import SERVER, DB_server
@@ -109,16 +113,16 @@ def from_to_date(bank):
         bank.to_date = _latest_date
         if bank.period_message:
             return
-        MessageBoxInfo(MESSAGE_TEXT['BANK_PERIOD'].format(
-            bank.bank_name, bank.bank_code, bank.account_number, bank.account_product_name, _latest_date), bank=bank)
+        MessageBoxInfo(get_message(MESSAGE_TEXT,'BANK_PERIOD', 
+            bank.bank_name, bank.bank_code, bank.account_number, bank.account_product_name, _latest_date))
         bank.period_message = True  # trigger:  message is shown
     else:
         if bank.from_date < _latest_date:
             bank.from_date = _latest_date
             if bank.period_message:
                 return
-            MessageBoxInfo(MESSAGE_TEXT['BANK_PERIOD'].format(
-                bank.bank_name, bank.bank_code, bank.account_number, bank.account_product_name, _latest_date), bank=bank)
+            MessageBoxInfo(get_message(MESSAGE_TEXT,'BANK_PERIOD', 
+                bank.bank_name, bank.bank_code, bank.account_number, bank.account_product_name, _latest_date))
             bank.period_message = True
 
 
@@ -128,7 +132,7 @@ def _get_segment(bank, segment_type):
         if (seg.__name__[2:5] == segment_type
                 and seg.__name__[5:6] == str(bank.transaction_versions[segment_type])):
             return seg
-    MessageBoxTermination(info=MESSAGE_TEXT['VERSION_TRANSACTION'].format(
+    MessageBoxTermination(info=get_message(MESSAGE_TEXT,'VERSION_TRANSACTION', 
         'HK', segment_type, bank.transaction_versions[segment_type]), bank=bank)
     return False  # thread checking
 
@@ -435,7 +439,7 @@ class Segments():
                 date_end=bank.to_date
             )
             return message
-        MessageBoxTermination(info=MESSAGE_TEXT['HIKAZ'].format(
+        MessageBoxTermination(info=get_message(MESSAGE_TEXT,'HIKAZ', 
             'HKKAZ', bank.bank_name, bank.account_number, bank.account_product_name),
             bank=bank
             )
@@ -572,9 +576,18 @@ class Segments():
             message += HKSYN3(SynchronizationMode.NEW_SYSTEM_ID)
         if bank.tan_process != 'S':
             if bank.bank_code == '76030080' and bank.challenge_hhduc:  # Consors  Show QR_Code
-                challenge_text = bank.challenge + '/n/n' + MESSAGE_TEXT['BANK_CONSORS_TRANSFER']
-                MessageBoxInfo(MESSAGE_TEXT['BANK_CHALLENGE'].format(
-                    bank.bank_name, bank.bank_code, bank.account_number, bank.account_product_name, challenge_text), bank=bank)
+                challenge_text = bank.challenge + '/n/n' + get_message(MESSAGE_TEXT, 'BANK_CONSORS_TRANSFER')
+                MessageBoxInfo(
+                    get_message(
+                        MESSAGE_TEXT,
+                        'BANK_CHALLENGE',
+                        bank.bank_name,
+                        bank.bank_code,
+                        bank.account_number,
+                        bank.account_product_name,
+                        challenge_text
+                        )
+                    )
                 self._show_tan_qr_code(bank.challenge_hhduc)
             # tan decoupled
             input_tan = InputTAN(bank.bank_code, bank.bank_name)

@@ -2,7 +2,7 @@
 # -*- coding: ISO-8859-15 -*-
 """
 Created on 27.06.2021
-__updated__ = "2025-06-26"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 
   Attention! new Scraper Class, see     Module: mariadb.py
@@ -31,7 +31,7 @@ from banking.declarations import (
     DEBIT, CREDIT,
     HTTP_CODE_OK,
     KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_SERVER, KEY_BANK_NAME, KEY_ACCOUNTS,
-    MESSAGE_TEXT, MENU_TEXT, PNS,
+    PNS,
     SCRAPER_BANKDATA, SHELVE_KEYS,
     ERROR, WARNING,
     # form declaratives
@@ -44,10 +44,14 @@ from banking.declarations_mariadb import (
     DB_closing_balance, DB_closing_entry_date, DB_closing_status,
     DB_opening_balance, DB_opening_entry_date, DB_opening_status
 )
-from banking.messagebox import MessageBoxError, MessageBoxInfo
+from banking.message_handler import (
+    get_message,
+    Informations,
+    MESSAGE_TEXT,
+    MessageBoxError, MessageBoxInfo, MessageBoxException
+    )
 from banking.forms import InputPIN
-from banking.utils import exception_error
-from banking.utils import dec2, http_error_code
+from banking.utils import dec2, http_error_code, get_menu_text
 
 
 def convert_date(date_):
@@ -76,10 +80,23 @@ def setup_driver(title):
             driver = webdriver.Edge(options=options, service=Service(
                 EdgeChromiumDriverManager().install()))
             MessageBoxInfo(
-                message=MESSAGE_TEXT['WEBDRIVER_INSTALL'].format('Edge'), bank=True)
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'WEBDRIVER_INSTALL',
+                    'Edge'
+                    ),
+                info_storage=Informations.BANKDATA_INFORMATIONS
+                )
         except Exception as e:
-            exception_error(
-                title=title, message=MESSAGE_TEXT['WEBDRIVER'].format('Edge', f'{type(e).__name__}: {e}'))
+            MessageBoxException(
+                title=title,
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'WEBDRIVER',
+                    'Edge',
+                    f'{type(e).__name__}: {e}'
+                    )
+                )
             driver = None
     return driver
 
@@ -95,7 +112,7 @@ class ReturnValueThread(Thread):
         try:
             self.result = self._target(*self._args, **self._kwargs)
         except Exception:
-            exception_error()
+            MessageBoxException()
 
     def join(self, name, *args, **kwargs):
         """
@@ -143,7 +160,7 @@ class AlphaVantage(object):
         error = refresh_alpha_vantage.join(refresh_alpha_vantage)
         if error:
             MessageBoxInfo(
-                title=MENU_TEXT['Refresh Alpha Vantage'], message=error, bank=True)
+                title=get_menu_text("Refresh Alpha Vantage"), message=error)
             return False
         return True
 
@@ -152,7 +169,7 @@ class AlphaVantage(object):
         error = None
         self.parameter_dict = {}
         self.function_list = []
-        self.driver = setup_driver(MENU_TEXT['Refresh Alpha Vantage'])
+        self.driver = setup_driver(get_menu_text("Refresh Alpha Vantage"))
         if self.driver:
 
             try:
@@ -193,8 +210,13 @@ class AlphaVantage(object):
                 return error
             except Exception as error:
                 print(error)
-                exception_error(title=MENU_TEXT['Refresh Alpha Vantage'],
-                                message=MESSAGE_TEXT['ALPHA_VANTAGE_ERROR'])
+                MessageBoxException(
+                    get_menu_text("Refresh Alpha Vantage"),
+                    get_message(
+                        MESSAGE_TEXT,
+                        'ALPHA_VANTAGE_ERROR'
+                        )
+                    )
                 return error
 
 
@@ -222,14 +244,28 @@ class BmwBank(object):
             self.bic = shelve_file[KEY_BIC]
             self.server = shelve_file[KEY_SERVER]
         except KeyError as key_error:
-            MessageBoxError(title=self.title,
-                            message=MESSAGE_TEXT['LOGIN'].format(self.bank_code, key_error))
+            MessageBoxError(
+                title=self.title,
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'LOGIN',
+                    self.bank_code,
+                    key_error
+                    )
+                )
             return   # thread checking
         # Checking / Installing FINTS server connection
         http_code = http_error_code(self.server)
         if http_code not in HTTP_CODE_OK:
-            MessageBoxError(message=MESSAGE_TEXT['HTTP'].format(http_code,
-                                                                self.bank_code, self.server))
+            MessageBoxError(
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'HTTP',
+                    http_code,
+                    self.bank_code,
+                    self.server
+                    )
+                )
             return  # thread checking
         self.accounts = shelve_file[KEY_ACCOUNTS]
         # Setting Dialog Variables
@@ -267,11 +303,22 @@ class BmwBank(object):
 
         if error:
             # Print detailed selenium error information
-            MessageBoxInfo(message=MESSAGE_TEXT['SCRAPER_SELENIUM_EXCEPTION'].format(
-                type(error).__name__, error.msg), information=ERROR, bank=True)
-        exception_error()
-        MessageBoxInfo(title=self.title,
-                       message=MESSAGE_TEXT['SCRAPER_PAGE_ERROR'], information=ERROR, bank=True)
+            MessageBoxInfo(
+                message=get_message(
+                    MESSAGE_TEXT,
+                    'SCRAPER_SELENIUM_EXCEPTION',
+                    type(error).__name__,
+                    error.msg
+                    ),
+                information=ERROR,
+                info_storage=Informations.BANKDATA_INFORMATIONS
+                )
+        MessageBoxException(
+            message=get_message(
+                MESSAGE_TEXT,
+                'SCRAPER_PAGE_ERROR'
+                )
+            )
         self.logoff()
 
     def _wait_ready_state(self, seconds=20):
@@ -321,8 +368,15 @@ class BmwBank(object):
                         self.opened_bank_code = self.bank_code
                         return True
                     except TimeoutException:
-                        MessageBoxInfo(title=self.title,
-                                       message=MESSAGE_TEXT['SCRAPER_TIMEOUT'], bank=True)
+                        MessageBoxInfo(
+                            title=self.title,
+                            message=get_message(
+                                MESSAGE_TEXT,
+                                'SCRAPER_TIMEOUT'
+                                ),
+                            information=WARNING,
+                            info_storage=Informations.BANKDATA_INFORMATIONS
+                            )
                         return False
                     except WebDriverException as error:
                         self._exception_handling_logoff(
@@ -425,10 +479,13 @@ class BmwBank(object):
         dataframe[DB_closing_entry_date] = dataframe[DB_entry_date]
         statements = dataframe.to_dict(orient='records')
         # get last stored statement
-        order = [DB_entry_date]
-        field_list = [DB_entry_date, DB_purpose, DB_amount, DB_closing_balance]
-        result_dict = self.mariadb.select_table_last(
-            STATEMENT, field_list, result_dict=True, iban=self.iban, order=order)
+        result_dict = self.mariadb.select_last_row(
+            STATEMENT,
+            [DB_entry_date, DB_purpose, DB_amount, DB_closing_balance],
+            order=DB_entry_date,
+            result_dict=True,
+            iban=self.iban
+            )
         if result_dict:
             entry_date = result_dict[DB_entry_date]
             mariadb_closing_balance = result_dict[DB_closing_balance]
@@ -438,10 +495,18 @@ class BmwBank(object):
                 del statements[idx]
                 idx -= 1
             if not statements:
-                MessageBoxInfo(title=title, message=MESSAGE_TEXT['SCRAPER_NO_TRANSACTION_TO_STORE'].format(
-                    self.account_product_name, self.iban), bank=True)
+                MessageBoxInfo(
+                    title=title,
+                    message=get_message(
+                        MESSAGE_TEXT,
+                        'SCRAPER_NO_TRANSACTION_TO_STORE',
+                        self.account_product_name,
+                        self.iban
+                        ),
+                    info_storage=Informations.BANKDATA_INFORMATIONS
+                    )
                 return []
-        # get last closing balance of transactions; Verfügbarer Betrag
+        # get last closing balance of transactions; Verfï¿œgbarer Betrag
         locator = "//span[contains(@class, 'xl:text-2xl')]"
         element = self.wait.until(
             EC.presence_of_element_located((By.XPATH, locator)))
@@ -464,8 +529,13 @@ class BmwBank(object):
             idx -= 1
         # check if last closing balance of database with opening balance of transactions
         if statements and result_dict and mariadb_closing_balance != statements[0][DB_opening_balance]:
-            message = MESSAGE_TEXT['SCRAPER_BALANCE'].format(
-                mariadb_closing_balance, statements[0][DB_opening_balance])
+            message = get_message(
+                MESSAGE_TEXT,
+                'SCRAPER_BALANCE',
+                mariadb_closing_balance,
+                statements[0][DB_opening_balance]
+                )
             MessageBoxInfo(
-                title=title, message=message, information=WARNING, bank=True)
+                title=title, message=message, information=WARNING,
+                info_storage=Informations.BANKDATA_INFORMATIONS)
         return statements

@@ -1,6 +1,6 @@
 """
 Created on 28.01.2020
-__updated__ = "2025-07-17"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 """
 
@@ -41,11 +41,10 @@ from banking.declarations_mariadb import (
 )
 from banking.declarations import (
 
-    ToolbarSwitch, Informations,
+    ToolbarSwitch,
     EURO, EDIT_ROW,
     FN_COLUMNS_EURO, FN_COLUMNS_PERCENT, FN_FROM_DATE, FN_TO_DATE,
     HEIGHT_TEXT,
-    MESSAGE_TEXT, MESSAGE_TITLE,
     NO_CURRENCY_SIGN, NUMERIC, NOT_ASSIGNED,
     # form declaratives
     ENTRY,
@@ -67,9 +66,14 @@ from banking.declarations import (
 from banking.pandastable_extension import Table, TableRowEdit, MyPlotViewer
 from banking.utils import (
     application_store,
-    Amount, check_main_thread, dec2, list_positioning,
+    Amount, dec2, list_positioning
     )
-from banking.messagebox import (MessageBoxInfo, MessageBoxTermination)
+from banking.message_handler import (
+    MESSAGE_TITLE, MESSAGE_TEXT,
+    is_main_thread, get_message,
+    Informations,
+    MessageBoxInfo, MessageBoxTermination
+    )
 from banking.mariadb import MariaDB
 
 # package pandastable: standard values  (see class table self.font and self.fontsize
@@ -143,22 +147,20 @@ def field_validation(name, field_def):
         return ''
     field_value = field_def.widget.get()
     if field_def.mandatory and field_value == '':
-        footer = MESSAGE_TEXT['MANDATORY'].format(name)
+        footer = get_message(MESSAGE_TEXT, 'MANDATORY', name)
         return footer
     if name in DATABASE_FIELDS_PROPERTIES:
         if DATABASE_FIELDS_PROPERTIES[name].data_type in INTEGER and not field_value.isdigit():
-            return MESSAGE_TEXT['ISDIGIT'].format(name)
+            return get_message(MESSAGE_TEXT, 'ISDIGIT', name)
     if field_value:
         if field_def.lformat == FORMAT_FIXED:
             if len(field_value) != field_def.length and field_value != NOT_ASSIGNED:
-                return MESSAGE_TEXT['FIXED'].format(name, field_def.length)
+                return get_message(MESSAGE_TEXT, 'FIXED', name, field_def.length)
         else:
             if len(field_value) > field_def.length:
-                return MESSAGE_TEXT['LENGTH'].format(name, field_def.length)
+                return get_message(MESSAGE_TEXT, 'LENGTH', name, field_def.length)
             elif len(field_value) < field_def.min_length:
-                return MESSAGE_TEXT['MIN_LENGTH'].format(
-                    name, field_def.min_length)
-                return footer
+                return get_message(MESSAGE_TEXT, 'MIN_LENGTH', name, field_def.min_length)
         if field_def.typ == TYP_DECIMAL:
             field_value = field_value.replace(',', '.')
             field_value = field_value.strip()
@@ -166,7 +168,7 @@ def field_validation(name, field_def):
             field_def.widget.insert(0, field_value)
             if (re_amount.fullmatch(field_value) is None and
                     re_amount_int.fullmatch(field_value) is None):
-                return MESSAGE_TEXT['DECIMAL'].format(name)
+                return get_message(MESSAGE_TEXT, 'DECIMAL', name)
         if field_def.typ == TYP_DATE:
             if len(field_value) == 10:
                 date_ = field_value[0:10]
@@ -176,16 +178,15 @@ def field_validation(name, field_def):
                     year = int(date_.split('-')[0])
                     date_ = date(year, month, day)
                 except (ValueError, EOFError, IndexError):
-                    return MESSAGE_TEXT['DATE'].format(name)
+                    return get_message(MESSAGE_TEXT, 'DATE', name)
             else:
-                return MESSAGE_TEXT['DATE'].format(name)
+                return get_message(MESSAGE_TEXT, 'DATE', name)
         # if combo_list contains extended values e.g. DB_credit_account in class BuitlTableBoxRow Ledger
         combo_values = [
             field_value for item in field_def.combo_values if item.startswith(field_value)]
         if (field_def.definition == COMBO and not field_def.combo_insert_value  # means insert not allowed
                 and not combo_values):
-            return MESSAGE_TEXT['NOTALLOWED'].format(
-                name, field_def.combo_values)
+            return get_message(MESSAGE_TEXT, 'NOTALLOWED', name, field_def.combo_values)
     return ''
 
 
@@ -484,7 +485,7 @@ class BuiltBox(object):
     """
 
     def __init__(
-            self, title=MESSAGE_TITLE, header=MESSAGE_TEXT['ENTRY'], columnspan=2,
+            self, title=MESSAGE_TITLE, header=get_message(MESSAGE_TEXT, 'ENTRY'), columnspan=2,
             button1_text=BUTTON_OK, button2_text=None, button3_text=None,
             button4_text=None, button5_text=None, button6_text=None,
             width=WIDTH_WIDGET, width_canvas=WIDTH_CANVAS, height_canvas=HEIGHT_CANVAS,
@@ -494,7 +495,7 @@ class BuiltBox(object):
         self.mariadb = MariaDB()
         self.button_state = None
         self._box_window_top = Toplevel()
-        if check_main_thread():
+        if is_main_thread():
             self.header = header
             button_counter = 6 - [button1_text, button2_text, button3_text,
                                   button4_text, button5_text, button6_text].count(None)
@@ -553,6 +554,8 @@ class BuiltBox(object):
             # ------------------ Keyboard Events ------------------------------
             self._keyboard()
             self.set_geometry()
+            self._box_window_top.lift()  # Only when opened in the foreground (not permanently)
+            self._box_window_top.focus_force()
             if 'canvas' in locals():
                 canvas.configure(width=self.calculate_width_canvas())
             self._box_window_top.protocol(
@@ -561,7 +564,7 @@ class BuiltBox(object):
             destroy_widget(self._box_window_top)
         else:
             MessageBoxInfo(
-                title=title, message=MESSAGE_TEXT['THREAD'].format(self.window_id))
+                title=title, message=get_message(MESSAGE_TEXT, 'THREAD', self.window_id))
 
     def calculate_width_canvas(self):
         # Get the number of (rows not used and) columns
@@ -756,7 +759,7 @@ class BuiltRadioButtons(BuiltBox):
     """
 
     def __init__(
-            self, header=MESSAGE_TEXT['RADIOBUTTON'], title=MESSAGE_TITLE,
+            self, header=get_message(MESSAGE_TEXT, 'RADIOBUTTON'), title=MESSAGE_TITLE,
             button1_text=BUTTON_SAVE, button2_text=BUTTON_RESTORE,
             button3_text=None, button4_text=None, button5_text=None,
             default_value=None,
@@ -798,7 +801,7 @@ class BuiltRadioButtons(BuiltBox):
         self.button_state = self._button1_text
         self.field = self._radiobutton_value.get()
         if self.field == '':
-            self.footer.set(MESSAGE_TEXT['SELECT'])
+            self.footer.set(get_message(MESSAGE_TEXT, 'SELECT'))
         else:
             self.quit_widget()
 
@@ -829,7 +832,7 @@ class BuiltCheckButton(BuiltBox):
     """
 
     def __init__(
-            self, header=MESSAGE_TEXT['CHECKBOX'], title=MESSAGE_TITLE, width_widget=WIDTH_WIDGET,
+            self, header=get_message(MESSAGE_TEXT, 'CHECKBOX'), title=MESSAGE_TITLE, width_widget=WIDTH_WIDGET,
             button1_text=BUTTON_NEXT, button2_text=None,
             button3_text=None, button4_text=BUTTON_SELECT_ALL,
             button5_text=BUTTON_DELETE_ALL,
@@ -921,7 +924,7 @@ class BuiltEnterBox(BuiltBox):
     Field_Names = namedtuple('Field_Names', ['Feld1', 'Feld2'])
 
     def __init__(self,
-                 title=MESSAGE_TITLE, header=MESSAGE_TEXT['ENTRY'],
+                 title=MESSAGE_TITLE, header=get_message(MESSAGE_TEXT, 'ENTRY'),
                  button1_text=BUTTON_SAVE, button2_text=BUTTON_RESTORE, button3_text=None,
                  button4_text=None, button5_text=None, button6_text=None,
                  width=WIDTH_WIDGET, width_canvas=WIDTH_CANVAS, height_canvas=HEIGHT_CANVAS,
@@ -1297,8 +1300,10 @@ class BuiltSelectBox(BuiltEnterBox):
             from_date = getattr(field_defs, FN_FROM_DATE).widget.get()
             to_date = getattr(field_defs, FN_TO_DATE).widget.get()
             if (from_date > to_date):
-                self.footer.set(MESSAGE_TEXT['DATE'].format(
-                    getattr(field_defs, FN_FROM_DATE).name))
+                self.footer.set(
+                    get_message(
+                        MESSAGE_TEXT, 'DATE', getattr(field_defs, FN_FROM_DATE).name)
+                    )
                 getattr(self._field_defs, FN_TO_DATE).textvar.set(
                     from_date)  # adjusted date returned
 
@@ -1447,7 +1452,7 @@ class BuiltText(object):
     def __init__(self, title=MESSAGE_TITLE, header='', text='', fullscreen=False):
 
         self.window_id = self.__class__.__name__
-        if check_main_thread():
+        if is_main_thread():
             if header == Informations.PRICES_INFORMATIONS:
                 Informations.prices_informations = ''
             elif header == Informations.BANKDATA_INFORMATIONS:
@@ -1495,8 +1500,12 @@ class BuiltText(object):
             self._builttext_window.mainloop()
             destroy_widget(self._builttext_window)
         else:
-            MessageBoxInfo(title=title, message=MESSAGE_TEXT['THREAD'].format(self.window_id
-                                                                              ))
+            MessageBoxInfo(
+                title=title,
+                message=get_message(
+                    MESSAGE_TEXT, 'THREAD', self.window_id
+                    )
+                )
 
     def _wm_deletion_window(self):
 
@@ -1740,11 +1749,9 @@ class BuiltPandasBox(Frame):
     def _get_col_width(self):
 
         self.column_width = self.pandas_table.maxcellwidth / 2
-        result = self.mariadb.select_table(GEOMETRY, DB_column_width, caller=self.window_id)
-        if result:
-            column_width = result[0][0]
-            if column_width:
-                self.column_width = column_width
+        column_width = self.mariadb.select_scalar(GEOMETRY, DB_column_width, caller=self.window_id)
+        if column_width:
+            self.column_width = column_width
         return self.column_width
 
     def _geometry_put(self, window):
@@ -1763,9 +1770,8 @@ class BuiltPandasBox(Frame):
 
     def set_geometry(self):
 
-        result = self.mariadb.select_table(GEOMETRY, DB_geometry, caller=self.window_id)
-        if result:
-            geometry = result[0][0]
+        geometry = self.mariadb.select_scalar(GEOMETRY, DB_geometry, caller=self.window_id)
+        if geometry:
             geometry = geometry.replace('x', ' ')
             geometry = geometry.replace('+', ' ')
             geometry_values = geometry.split()
@@ -2032,8 +2038,12 @@ class BuiltPandasBox(Frame):
         filename = file_dialogue.filename.removesuffix('.xlsx')
         with ExcelWriter(filename + ".xlsx", mode='w') as writer:
             self.dataframe.to_excel(writer, sheet_name=sheet_name[:30])
-        MessageBoxInfo(title=self.title,
-                       message=MESSAGE_TEXT['EXCEL'].format(file_dialogue.filename))
+        MessageBoxInfo(
+            title=self.title,
+            message=get_message(
+                MESSAGE_TEXT, 'EXCEL', file_dialogue.filename
+                )
+            )
 
     def create_combo_list(self, table, field_name, from_date=date.today()-timedelta(weeks=104), date_name=DB_price_date):
         """

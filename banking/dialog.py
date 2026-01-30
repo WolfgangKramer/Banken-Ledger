@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-06-14"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 """
 
@@ -47,9 +47,8 @@ from banking.declarations import (
     CODE_0030, CODE_3010, CODE_3040, CODE_3955, CREDIT,
     DIALOG_ID_UNASSIGNED,
     ERROR, EURO,
-    Informations, INFORMATION, IDENTIFIER,
+    INFORMATION, IDENTIFIER,
     PERCENT,
-    MESSAGE_TEXT,
     KEY_IDENTIFIER_DELIMITER, KEY_SYSTEM_ID,
     KEY_BPD, KEY_UPD, KEY_BANK_NAME, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS, KEY_SUPPORTED_CAMT_MESSAGE,
     KEY_MIN_PIN_LENGTH, KEY_MAX_PIN_LENGTH, KEY_MAX_TAN_LENGTH,
@@ -63,14 +62,15 @@ from banking.declarations import (
     # form declaratives
     WM_DELETE_WINDOW, DEBIT)
 from banking.fints_extension import HIKAZS6, HIKAZS7,  HIWPDS5, HIWPDS6
-from banking.messagebox import (MessageBoxTermination, MessageBoxInfo, MessageBoxAsk)
+from banking.message_handler import (
+    is_main_thread, get_message,
+    Informations, bankdata_informations_append,
+    MESSAGE_TEXT,
+    MessageBoxException, MessageBoxTermination, MessageBoxInfo, MessageBoxAsk)
 from banking.forms import PrintMessageCode, InputPIN
 from banking.message import Messages
-from banking.utils import exception_error
 from banking.utils import (
     Amount, application_store,
-    bankdata_informations_append,
-    check_main_thread,
     dict_get_nested_value, dec2, dec6,
     create_iban,
     date_yymmdd,
@@ -96,7 +96,6 @@ re_total_amountportfolio = re.compile(
     r'^:19A::HOLP\/\/([A-Z]{3})(\d*),{1}(\d*)$')
 logger = logging.getLogger(__name__)
 log_target = logger.info
-
 
 
 class Dialogs(object):
@@ -142,9 +141,12 @@ class Dialogs(object):
                         if bank.iban == seg.iban and seg.extension:
                             formatted_string = json.dumps(
                                 seg.extension, indent=4)
-                            MessageBoxInfo(message=MESSAGE_TEXT['HIUPD_EXTENSION'].format(
-                                bank.bank_name, bank.account_number, bank.account_product_name, bank.iban, formatted_string),
-                                bank=bank, information_storage=Informations.BANKDATA_INFORMATIONS)
+                            MessageBoxInfo(message=get_message(
+                                MESSAGE_TEXT, 'HIUPD_EXTENSION',
+                                bank.bank_name, bank.account_number, bank.account_product_name,
+                                bank.iban, formatted_string
+                                ),
+                                info_storage=Informations.BANKDATA_INFORMATIONS)
                     seg = response.find_segment_first(HNHBK3)
                     if seg:
                         break
@@ -156,8 +158,11 @@ class Dialogs(object):
             if not seg:
                 seg = response.find_segment_first(HITAN6)
                 if not seg:
-                    MessageBoxInfo(message=MESSAGE_TEXT['HITAN_MISSED'].format(
-                        bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
+                    MessageBoxInfo(message=get_message(
+                        MESSAGE_TEXT, 'HITAN_MISSED',
+                        bank.bank_name, bank.account_number, bank.account_product_name
+                        )
+                    )
             bank.task_reference = seg.task_reference
             response, _ = self._get_tan(bank, response)
             if response:
@@ -185,8 +190,13 @@ class Dialogs(object):
                     if message:
                         response, hirms_codes = self._send_msg(bank, message)
                     else:
-                        MessageBoxInfo(message=MESSAGE_TEXT['TAN_CANCEL'].format(
-                            bank.bank_name, bank.account_number), bank=bank, information=ERROR)
+                        MessageBoxInfo(
+                            message=get_message(
+                                MESSAGE_TEXT, 'TAN_CANCEL',
+                                bank.bank_name, bank.account_number
+                                ),
+                            information=ERROR
+                            )
                         return None, []  # input of tan canceled
         return response, hirms_codes
 
@@ -196,8 +206,11 @@ class Dialogs(object):
             if (seg.__name__[2:5] == segment_type and
                     seg.__name__[5:6] == str(bank.transaction_versions[segment_type])):
                 return seg
-        MessageBoxTermination(info=MESSAGE_TEXT['SEGMENT_VERSION'].format(
-            'HI', segment_type, bank.transaction_versions[segment_type]), bank=bank)
+        MessageBoxTermination(info=get_message(
+            MESSAGE_TEXT, 'SEGMENT_VERSION',
+            'HI', segment_type, bank.transaction_versions[segment_type]
+            ),
+            bank=bank)
 
     def _store_bpd_shelve(self, bank, response):
 
@@ -207,14 +220,14 @@ class Dialogs(object):
             if Dialogs.bpd_updated:
                 return
             elif seg.bpd_version <= 1:  # e.g. Consors; if version number not updated by the bank
-                pass            
+                pass
             elif bank.bpd_version == seg.bpd_version:
                 return
             bank.bpd_version = seg.bpd_version
             bank.bank_name = seg.bank_name
             self.mariadb.shelve_put_key(bank.bank_code, [
                 (KEY_BPD, bank.bpd_version), (KEY_BANK_NAME, bank.bank_name)])
-            Dialogs.bpd_updated =True
+            Dialogs.bpd_updated = True
         else:
             return
         seg = response.find_segment_first("HICAZS")
@@ -309,7 +322,7 @@ class Dialogs(object):
                                                           seg.parameter.max_tan_length),
                                                          (KEY_TAN_REQUIRED, tans_required)])
         else:
-            MessageBoxInfo(message=MESSAGE_TEXT['HIPINS1'], bank=bank)
+            MessageBoxInfo(message=get_message(MESSAGE_TEXT, 'HIPINS1'))
             self.mariadb.shelve_put_key(bank.bank_code, [(KEY_MIN_PIN_LENGTH, 3),
                                                          (KEY_MAX_PIN_LENGTH, 20),
                                                          (KEY_MAX_TAN_LENGTH, 10)])
@@ -324,9 +337,13 @@ class Dialogs(object):
                 bank.storage_period = 90
         self.mariadb.shelve_put_key(
             bank.bank_code, (KEY_STORAGE_PERIOD, bank.storage_period))
-        MessageBoxInfo(message=MESSAGE_TEXT["FINTS_UPDATE_BPD_VERSION"].format(
-            bank.bank_name, bank.bpd_version), bank=bank, information=INFORMATION)
-        
+        MessageBoxInfo(
+            message=get_message(
+                MESSAGE_TEXT, 'FINTS_UPDATE_BPD_VERSION',
+                bank.bank_name, bank.bpd_version
+                ),
+            information=INFORMATION
+            )
 
     def _store_sync_shelve(self, bank, response):
 
@@ -334,7 +351,7 @@ class Dialogs(object):
         if seg is not None:
             bank.dialog_id = seg.dialog_id
         else:
-            MessageBoxTermination(info=MESSAGE_TEXT['HNHBK3'], bank=bank)
+            MessageBoxTermination(info=get_message(MESSAGE_TEXT, 'HNHBK3'), bank=bank)
         seg = response.find_segment_first(HISYN4)
         if seg is not None:
             bank.system_id = seg.system_id
@@ -342,7 +359,7 @@ class Dialogs(object):
             self.mariadb.shelve_put_key(
                 bank.bank_code, (KEY_SYSTEM_ID, seg.system_id))
         else:
-            MessageBoxTermination(info=MESSAGE_TEXT['HISYN4'], bank=bank)
+            MessageBoxTermination(info=get_message(MESSAGE_TEXT, 'HISYN4'), bank=bank)
         seg = response.find_segment_first(HISPAS1)
         if seg is not None:
             bank.sepa_formats = seg.parameter.supported_sepa_formats
@@ -357,15 +374,15 @@ class Dialogs(object):
         if seg is not None:
             # update upd if version changed
             if Dialogs.upd_updated:
-                return            
-            if seg.upd_version <= 1: # e.g. Consors; if version number not updated by the bank
+                return
+            if seg.upd_version <= 1:  # e.g. Consors; if version number not updated by the bank
                 pass
             elif bank.upd_version == seg.upd_version:
-                return            
+                return
             bank.upd_version = seg.upd_version
             self.mariadb.shelve_put_key(
                 bank.bank_code, (KEY_UPD, bank.upd_version))
-            Dialogs.upd_updated =True
+            Dialogs.upd_updated = True
         else:
             return
         seg = response.find_segment_first(HIUPD6)
@@ -400,8 +417,13 @@ class Dialogs(object):
                     bank.accounts.append(acc)
             self.mariadb.shelve_put_key(
                 bank.bank_code, (KEY_ACCOUNTS, bank.accounts))
-        MessageBoxInfo(message=MESSAGE_TEXT["FINTS_UPDATE_UPD_VERSION"].format(
-            bank.bank_name, bank.upd_version), bank=bank, information=INFORMATION)            
+        MessageBoxInfo(
+            message=get_message(
+                MESSAGE_TEXT, 'FINTS_UPDATE_UPD_VERSION',
+                bank.bank_name, bank.upd_version
+                ),
+            information=INFORMATION
+            )
 
     def _receive_msg(self, bank, response, hirms_codes):
 
@@ -410,16 +432,26 @@ class Dialogs(object):
             if not seg:
                 seg = response.find_segment_first(HITAN6)
                 if not seg:
-                    MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
-                        bank.bank_name, bank.account_number, bank.account_product_name), bank=bank, information=WARNING)
+                    MessageBoxInfo(
+                        message=get_message(
+                            MESSAGE_TEXT, CODE_0030, bank.bank_name, bank.account_number,
+                            bank.account_product_name
+                            ),
+                        information=WARNING
+                        )
                     return [], hirms_codes
-            if check_main_thread():
+            if is_main_thread():
                 bank.task_reference = seg.task_reference
                 bank.challenge_hhduc = seg.challenge_hhduc  # e.g. Consors: QR_Code contains TAN
                 response, hirms_codes = self._get_tan(bank, response)
             else:
-                MessageBoxInfo(message=MESSAGE_TEXT[CODE_0030].format(
-                    bank.bank_name, bank.account_number, bank.account_product_name), bank=bank, information=WARNING)
+                MessageBoxInfo(
+                    message=get_message(
+                        MESSAGE_TEXT, CODE_0030, bank.bank_name, bank.account_number,
+                        bank.account_product_name
+                        ),
+                    information=WARNING
+                    )
         return response, hirms_codes
 
     def _decoupled_process(self, bank, response, hirms_codes):
@@ -436,7 +468,10 @@ class Dialogs(object):
             # Security clearance is provided via another channel
             for seg in response.find_segments(HITAN7):
                 bank.task_reference = seg.task_reference
-                message_box_ask = MessageBoxAsk(message=MESSAGE_TEXT['HITAN'].format(seg.challenge))
+                message_box_ask = MessageBoxAsk(
+                    message=get_message(
+                        MESSAGE_TEXT, 'HITAN', seg.challenge)
+                )
                 if message_box_ask.result:
                     bank.tan_process = 'S'
                     return True
@@ -458,8 +493,12 @@ class Dialogs(object):
                         bankdata_informations_append(INFORMATION, message)
                 elif response.code[0] == '3':
                     if response.code == '3010':    # no entries found
-                        MessageBoxInfo(message=MESSAGE_TEXT['NO_TURNOVER'].format(
-                            bank.bank_name, bank.account_number, bank.account_product_name), bank=bank)
+                        MessageBoxInfo(
+                            message=get_message(
+                                MESSAGE_TEXT, 'NO_TURNOVER', bank.bank_name,
+                                bank.account_number, bank.account_product_name
+                                )
+                            )
                     if self._show_message in [INFORMATION, WARNING]:
                         bankdata_informations_append(WARNING, message)
                         bank.warning_message = True
@@ -485,13 +524,12 @@ class Dialogs(object):
                           data=base64.b64encode(message.render_bytes()))
         if r.status_code < 200 or r.status_code > 299:
             MessageBoxTermination(
-                info=MESSAGE_TEXT['SEND_ERROR'].format(r.status_code), bank=bank)
+                info=get_message(MESSAGE_TEXT, 'SEND_ERROR', r.status_code), bank=bank)
         try:
             response = FinTSInstituteMessage(
                 segments=base64.b64decode(r.content.decode('latin1')))
         except Exception:
-            exception_error(
-                message=MESSAGE_TEXT['RESPONSE'])
+            MessageBoxException(message=get_message(MESSAGE_TEXT, 'RESPONSE'))
             PrintMessageCode(text=Informations.bankdata_informations)
             if dialog_init:
                 return None,  []
@@ -885,7 +923,7 @@ class Dialogs(object):
                     closing_balance = convert_amount(closing_balance, closing_status)
         # Get statements
         entries_out = []
-        entry_obj = {}        
+        entry_obj = {}
         ntry = rpt.get("Ntry")
         for entry in ensure_list(ntry):
             if opening_balance:
@@ -993,12 +1031,13 @@ class Dialogs(object):
             statements_closing_balance = convert_amount(entry_obj[DB_closing_balance], entry_obj[DB_closing_status])  # calculated closing_balance
             if closing_balance != statements_closing_balance:
                 MessageBoxInfo(
-                    message=MESSAGE_TEXT['BANK_BALANCE_DIFFERENCE'].format(
+                    message=get_message(
+                        MESSAGE_TEXT, 'BANK_BALANCE_DIFFERENCE',
                         bank.account_product_name, bank.account_number, closing_balance,
                         entry_obj[DB_closing_balance], statements_closing_balance,
                         str(dec2.subtract(closing_balance, statements_closing_balance))
                         ),
-                    bank=bank, information=WARNING
+                    information=WARNING
                     )
         return entries_out
 
@@ -1041,7 +1080,7 @@ class Dialogs(object):
             seg = response.find_segment_first(hiwpd)
             if not seg:
                 MessageBoxTermination(
-                    info=MESSAGE_TEXT['HIWPD'].format(hiwpd.__name__), bank=bank)
+                    info=get_message(MESSAGE_TEXT, 'HIWPD', hiwpd.__name__), bank=bank)
                 return holdings  # threading continues
             if type(seg.holdings) is bytes:
                 try:
@@ -1077,18 +1116,24 @@ class Dialogs(object):
                 return statements
             if CODE_0030 not in hirms_codes:
                 if CODE_3040 in hirms_codes:  # further turnovers exist
-                    MessageBoxInfo(message=MESSAGE_TEXT[CODE_3040].format(
-                        bank.bank_name, bank.account_number, bank.account_product_name),
-                        bank=bank, information=WARNING)
+                    MessageBoxInfo(
+                        message=get_message(
+                            MESSAGE_TEXT, CODE_3040, bank.bank_name, bank.account_number,
+                            bank.account_product_name
+                            ),
+                        information=WARNING
+                        )
                 if bank.statement_mt940:
                     hikaz = self._get_segment(bank, 'KAZ')
                     seg = response.find_segment_first(hikaz)
                     if not seg:
-                        MessageBoxInfo(message=MESSAGE_TEXT['HIKAZ'].format(
-                            'HKKAZ', bank.bank_name, bank.account_number, bank.account_product_name
-                            ),
-                             bank=bank, information=ERROR
-                             )
+                        MessageBoxInfo(
+                            message=get_message(
+                                MESSAGE_TEXT, 'HIKAZ', 'HKKAZ', bank.bank_name,
+                                bank.account_number, bank.account_product_name
+                                ),
+                            information=ERROR
+                            )
                         return statements  # threading continues
                     try:
                         statement_booked_str = seg.statement_booked.decode('utf-8')
@@ -1107,10 +1152,11 @@ class Dialogs(object):
                     seg = response.find_segment_first(HICAZ1)
                     if not seg:
                         MessageBoxInfo(
-                            message=MESSAGE_TEXT['HIKAZ'].format(
-                                'HKCAZ', bank.bank_name, bank.account_number, bank.account_product_name
+                            message=get_message(
+                                MESSAGE_TEXT, 'HIKAZ', 'HKCAZ', bank.bank_name,
+                                bank.account_number, bank.account_product_name
                                 ),
-                            bank=bank, information=ERROR
+                            information=ERROR
                             )
                         return statements  # threading continues
                     statements = seg.statement_booked.camt_statements._data[0]
@@ -1139,7 +1185,7 @@ class Dialogs(object):
                 if not seg:
                     seg = response.find_segment_first(HITAN6)
                     if not seg:
-                        MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
+                        MessageBoxTermination(info=get_message(MESSAGE_TEXT, 'HITAN6'), bank=bank)
                 bank.task_reference = seg.task_reference
                 self._get_tan(bank, response)
             self._end_dialog(bank)
@@ -1157,7 +1203,7 @@ class Dialogs(object):
                 if not seg:
                     seg = response.find_segment_first(HITAN6)
                     if not seg:
-                        MessageBoxTermination(info=MESSAGE_TEXT['HITAN6'], bank=bank)
+                        MessageBoxTermination(info=get_message(MESSAGE_TEXT, 'HITAN6'), bank=bank)
                 bank.task_reference = seg.task_reference
                 self._get_tan(bank, response)
             self._end_dialog(bank)

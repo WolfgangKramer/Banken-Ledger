@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-05-27"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 """
 
@@ -11,55 +11,20 @@ import inspect
 import operator
 import re
 import sys
-import traceback
 import requests
 
-from typing import Dict, List
+from typing import Dict, List, Iterator
 from collections import Counter
-from threading import current_thread, main_thread
 from tkinter import Tk, messagebox, TclError
-from inspect import stack
 from datetime import date, timedelta, datetime
 from decimal import Decimal, getcontext, ROUND_HALF_EVEN, DivisionByZero
 
 from banking.declarations import (
-    EURO,
-    Informations,
-    MESSAGE_TEXT, MESSAGE_TITLE,
+    EURO, CREDIT,
+    POPUP_MENU_TEXT, MENU_TEXT,
     WIDTH_TEXT
 )
-
-
-def bankdata_informations_append(information, message):
-
-    message = str(message)
-    Informations.bankdata_informations = ' '.join(
-        [Informations.bankdata_informations, '\n' + information, message])
-
-
-def prices_informations_append(information, message):
-
-    message = str(message)
-    Informations.prices_informations = ' '.join(
-        [Informations.prices_informations, '\n' + information, message])
-
-
-def holding_informations_append(information, message):
-
-    message = str(message)
-    Informations.holding_informations = ' '.join(
-        [Informations.holding_informations, '\n' + information, message])
-
-
-def check_main_thread():
-    """
-    True if main thread is in main loop
-    """
-    # check if its the main thread, Tkinter can be used otherwise avoid T Tk()
-    if current_thread() is main_thread():
-        return True
-    else:
-        return False
+from banking.message_handler import get_message, MESSAGE_TITLE, MESSAGE_TEXT
 
 
 def check_function_exists(package: str, module: str, func: str) -> bool:
@@ -106,6 +71,24 @@ def check_class_exists(package: str, module: str, class_name: str) -> bool:
 
     # Check if class exists in the module
     return hasattr(mod, class_name) and inspect.isclass(getattr(mod, class_name))
+
+
+def get_popup_menu_text(key):
+    """
+    Retrieves menu_text from dictionary POPUP_MENU_TEXT
+    Errors are handled and key is returned as text:
+    - Key not found
+    """
+    return POPUP_MENU_TEXT.get(key, key)
+
+
+def get_menu_text(key):
+    """
+    Retrieves menu_text from dictionary MENU_TEXT
+    Errors are handled and key is returned as text:
+    - Key not found
+    """
+    return MENU_TEXT.get(key, key)
 
 
 def get_signature(obj):
@@ -288,43 +271,7 @@ def http_error_code(server):
         return 999
 
 
-def exception_error(title=MESSAGE_TITLE, message=''):
-    """
-    stack()[1][1]     gets the current module
-    stack()[1][2]     gets the current line
-    stack()[1][3]     gets the current method
-    sys.exc_info()
-                    If no exception is being handled anywhere on the stack, a tuple
-                    containing three None values is returned.
-                    Otherwise, the values returned are (type, value, traceback).
-                    Their meaning is:
-
-                    type     gets the type of the exception being handled
-                             (a subclass of BaseException);
-
-                    value     gets the exception instance (an instance of the exception type);
-
-                    traceback gets a traceback object which encapsulates the call stack at the point
-                              the exception originally occurred.
-    """
-
-    _type, _value, _traceback = sys.exc_info()
-    _traceback = traceback.extract_tb(_traceback)
-    try:
-        _message = (message + '\n\n' + MESSAGE_TEXT['UNEXCEPTED_ERROR'].format(
-            stack()[1][1], stack()[1][2], stack()[1][3], _type, _value.args[0],  _traceback))
-    except Exception:
-        print("_type, _value, _traceback = sys.exc_info()",
-              _type, _value, _traceback)
-        return
-    # check if its not the main thread, avoid Tk() or ..
-    if current_thread() is main_thread():
-        Info(title=title, message=_message)
-    else:
-        print(_message)
-
-
-def type_error(message=MESSAGE_TEXT['STACK']):
+def type_error(message=get_message(MESSAGE_TEXT, 'STACK')):
 
     filename = inspect.stack()[1][1]
     line = inspect.stack()[1][2]
@@ -333,7 +280,7 @@ def type_error(message=MESSAGE_TEXT['STACK']):
                 message.format(method, line, filename)).terminate()
 
 
-def value_error(message=MESSAGE_TEXT['STACK']):
+def value_error(message=get_message(MESSAGE_TEXT, 'STACK')):
 
     filename = inspect.stack()[1][1]
     line = inspect.stack()[1][2]
@@ -461,6 +408,13 @@ def check_iban(iban=None):
         if verification_number != iban[2:4]:
             return False
     return True
+
+
+def signed_balance(amount: Decimal | float, status: str) -> Decimal:
+    """
+    Return signed balance depending on credit/debit status.
+    """
+    return dec2.convert(amount) if status == CREDIT else dec2.convert(-amount)
 
 
 def printer(print_columns=['col1', 'col2', 'col4'], print_line_length=WIDTH_TEXT,
@@ -655,9 +609,22 @@ class Datulate(object):
         if isinstance(x, date):
             return x.strftime(self.date_format)  # returns string
         if isinstance(x, str):
-            # returns date
-            return datetime.strptime(x, self.date_format).date()
+            return datetime.strptime(x, self.date_format).date()  # returns date
         return None
+
+    def convert_to_str(self, x):
+
+        if isinstance(x, date):
+            return x.strftime(self.date_format)  # returns string
+        else:
+            return x  # returns date
+
+    def convert_to_date(self, x):
+
+        if isinstance(x, str):
+            return datetime.strptime(x, self.date_format).date()  # returns date
+        else:
+            return x
 
     def add(self, x, y, ignore_weekend=True):
 
@@ -696,14 +663,47 @@ class Datulate(object):
         return None
 
     def isweekend(self, x):
-
+        """
+        Checks if the date is a Saturday or a Sunday
+        """
         if isinstance(x, str):
             x = self.convert(x)
-        # Check date Saturday or Sunday
         if x.weekday() == 5 or x.weekday() == 6:
             return True
         else:
             return False
+
+    def iter_workdays(self, start: date | str, end: date | str) -> Iterator[date]:
+        """
+        Yields all working days (Mon–Fri) between start and end (inclusive).
+        """
+
+        if isinstance(start, str):
+            start = self.convert(start)
+        if isinstance(end, str):
+            end = self.convert(end)
+        current = start
+        while current <= end:
+            if not self.isweekend(current):
+                yield current
+            current += timedelta(days=1)
+
+    def yyyy_01_01(self, x=None):
+        """
+        Returns January 1st of the year x
+        """
+        if x is None:
+            x = self.today()
+        elif isinstance(x, str):
+            x = self.convert(x)
+        return date(int(x.year), 1, 1)
+
+    def get_year(self, x):
+        """
+        Returns year of date
+        """
+        x = self.convert_to_date(x)
+        return int(x.year)
 
     def day_of_week(self, x):
         """
@@ -752,7 +752,7 @@ class Termination(Info):
 
     def __init__(self, info=''):
 
-        message = MESSAGE_TEXT['TERMINATION'] + '\n\n'
+        message = get_message(MESSAGE_TEXT, 'TERMINATION') + '\n\n'
         if info:
             message = message + info + '\n\n'
         for stack_item in inspect.stack()[2:]:
@@ -764,10 +764,10 @@ class Termination(Info):
                 str(line) + '   METHOD: ' + method
             )
         super().__init__(message=message, title=MESSAGE_TITLE)
-        
+
     def terminate(self, code=1):
-        sys.exit(code)        
- 
+        sys.exit(code)
+
 
 class Amount():
     """Amount object containing currency and amount

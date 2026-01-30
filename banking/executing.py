@@ -1,6 +1,6 @@
-"""
+"""0
 Created on 09.12.2019
-__updated__ = "2025-07-17"
+__updated__ = "2026-01-30"
 Author: Wolfang Kramer
 """
 import sys
@@ -9,6 +9,7 @@ import webbrowser
 from PIL import ImageTk
 
 from time import sleep
+from typing import List, Dict, Optional
 from datetime import date, timedelta, datetime
 from threading import Thread
 from tkinter import Tk, Menu, TclError, GROOVE, ttk, Canvas, StringVar, font
@@ -21,17 +22,16 @@ from banking.declarations import (
     ALPHA_VANTAGE, ALPHA_VANTAGE_DOCUMENTATION,
     Balance,
     BMW_BANK_CODE, BUNDESBANK_BLZ_MERKBLATT, BUNDEBANK_BLZ_DOWNLOAD,
-    CURRENCY_SIGN, CREDIT,
-    DEBIT,
+    CURRENCY_SIGN,
     EDIT_ROW,
     FINTS_SERVER, FINTS_SERVER_ADDRESS,
     START_DATE_PRICES, START_DATE_TRANSACTIONS,
     FN_COMPARATIVE,
     FN_DATE, FN_FROM_DATE, FN_TO_DATE,
     FN_PIECES_CUM, FN_ALL_BANKS,
-    FN_CREDIT, FN_DEBIT, FN_BALANCE,
+    FN_BALANCE,
     FN_PROFIT_LOSS,
-    INFORMATION, Informations,
+    INFORMATION, 
     JSON_KEY_ERROR_MESSAGE, JSON_KEY_META_DATA,
     KEY_ACCOUNTS, KEY_ACC_BANK_CODE, KEY_ACC_OWNER_NAME,
     KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_IBAN,
@@ -39,20 +39,15 @@ from banking.declarations import (
     KEY_ACC_PRODUCT_NAME,
     KEY_BANK_CODE, KEY_BANK_NAME, KEY_DOWNLOAD_ACTIVATED,
     KEY_PIN, KEY_BIC,
-    KEY_SECURITY_FUNCTION,
     KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_STORAGE_PERIOD,
     KEY_USER_ID, KEY_VERSION_TRANSACTION,
-    MENU_TEXT, MESSAGE_TEXT, MESSAGE_TITLE,
     NOT_ASSIGNED, NUMERIC, NO_CURRENCY_SIGN,
     ORIGIN, ORIGIN_PRICES, ORIGIN_INSERTED,
     PERCENT,
     SCRAPER_BANKDATA,
-    SEPA_AMOUNT, SEPA_CREDITOR_BIC,
-    SEPA_CREDITOR_IBAN, SEPA_CREDITOR_NAME, SEPA_EXECUTION_DATE, SEPA_PURPOSE,
-    SEPA_PURPOSE_1, SEPA_PURPOSE_2, SEPA_REFERENCE,
     SHELVE_KEYS,
-    START_DATE_HOLDING,
-    TRANSACTION_DELIVERY, TRANSFER_DATA_SEPA_EXECUTION_DATE,
+    START_DATE_HOLDING, START_DATE_STATEMENTS,
+    TRANSACTION_DELIVERY,
     WEBSITES, WARNING,
     # form declaratives
     BUTTON_APPEND, BUTTON_SAVE,
@@ -89,16 +84,20 @@ from banking.declarations_mariadb import (
     BANKIDENTIFIER, LEDGER_STATEMENT,
     ISIN, PRICES_ISIN_VIEW, PRICES, SERVER, STATEMENT,
     TRANSACTION, TRANSACTION_VIEW,
-    LEDGER, LEDGER_COA, LEDGER_VIEW,
-    SHELVES,
+    LEDGER_COA, LEDGER_VIEW,
+    SHELVES, DB_asset_accounting,
 )
 from banking.formbuilts import (
-    BuiltRadioButtons, BuiltPandasBox,
+    BuiltPandasBox,
     destroy_widget,
     FileDialogue,
     ProgressBar,
 )
-from banking.messagebox import (MessageBoxAsk, MessageBoxInfo)
+from banking.message_handler import (
+    get_message, MESSAGE_TITLE, MESSAGE_TEXT,
+    Informations, holding_informations_append,
+    MessageBoxAsk, MessageBoxInfo,  MessageBoxException
+    )
 from banking.forms import (
     import_prices_run,
     AlphaVantageParameter, AppCustomizing,
@@ -116,19 +115,17 @@ from banking.forms import (
     PandasBoxPrices, PandasBoxLedgerAccountCategory,
     PrintList, PrintMessageCode,
     SelectFields, SelectLedgerAccount, SelectLedgerAccountCategory,
-    SepaCreditBox,
     TechnicalIndicator,
     VersionTransaction, SelectDownloadPrices,
 )
 from banking.mariadb import MariaDB
 from banking.scraper import AlphaVantage, BmwBank
-from banking.sepa import SepaCreditTransfer
-from banking.utils import exception_error
 from banking.utils import (
     application_store,
-    date_days, date_years, dec2,
+    date_days, dec2,
     dict_get_first_key,
-    holding_informations_append,
+    get_menu_text,
+    signed_balance,
 )
 
 
@@ -165,13 +162,14 @@ class BankenLedger(object):
                 self.bg_photo = ImageTk.PhotoImage(file="background.gif")
                 self.canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
             except Exception as e:
-                print('BankenLedger', MESSAGE_TEXT['CONNECT_IMAGE_ERROR'].format(e))
+                print('BankenLedger', get_message(MESSAGE_TEXT, 'CONNECT_IMAGE_ERROR', e))
             if self.database.lower() != PRODUCTIVE_DATABASE_NAME:
                 fill_colour = 'red'
             else:
                 fill_colour = 'lightblue'
+            self.database = self.mariadb.execute("SELECT DATABASE()")[0][0]
             self.canvas.create_text(300, 200, fill=fill_colour, font=(
-                'Arial', 20, 'bold'), text=MESSAGE_TEXT['DATABASE'].format(self.database))
+                'Arial', 20, 'bold'), text=get_message(MESSAGE_TEXT, 'DATABASE', self.database))
             self._def_styles()
             self.bank_owner_account = self._create_bank_owner_account()
             self._create_menu(self.database)
@@ -228,15 +226,15 @@ class BankenLedger(object):
             PrintMessageCode(text=Informations.bankdata_informations)
             Informations.bankdata_informations = ''
         if bank.warning_message:
-            self.footer.set(MESSAGE_TEXT['TASK_WARNING'])
+            self.footer.set(get_message(MESSAGE_TEXT, 'TASK_WARNING'))
         else:
             bank_name = self._bank_name(bank.bank_code)
             if message:
                 self.footer.set(
-                    ' '.join([message, '\n', MESSAGE_TEXT['TASK_DONE']]))
+                    ' '.join([message, '\n', get_message(MESSAGE_TEXT, 'TASK_DONE')]))
             else:
                 self.footer.set(
-                    ' '.join([bank_name, '\n', MESSAGE_TEXT['TASK_DONE']]))
+                    ' '.join([bank_name, '\n', get_message(MESSAGE_TEXT, 'TASK_DONE')]))
 
         bank.warning_message = False
 
@@ -245,15 +243,15 @@ class BankenLedger(object):
         show informations of threads, if exist
         """
         # downloaad prices
-        title = ' '.join([MENU_TEXT['Download'], MENU_TEXT['Prices']])
+        title = ' '.join([get_menu_text("Download"), get_menu_text("Prices")])
         PrintMessageCode(title=title, header=Informations.PRICES_INFORMATIONS,
                          text=Informations.prices_informations)
         # download bankdata
-        title = ' '.join([MENU_TEXT['Download'], MENU_TEXT['All_Banks']])
+        title = ' '.join([get_menu_text("Download"), get_menu_text("All_Banks")])
         PrintMessageCode(title=title, header=Informations.BANKDATA_INFORMATIONS,
                          text=Informations.bankdata_informations)
         # update market_price in holding
-        title = ' '.join([MENU_TEXT['Update'], MENU_TEXT['Holding']])
+        title = ' '.join([get_menu_text("Update"), get_menu_text("Holding")])
         PrintMessageCode(title=title, header=Informations.HOLDING_INFORMATIONS,
                          text=Informations.holding_informations)
 
@@ -277,28 +275,40 @@ class BankenLedger(object):
                     # PIN input outside of Thread
                     bank = self._bank_init(bank_code)
                     if bank.scraper:
-                        self.footer.set(MESSAGE_TEXT['CREDENTIALS_CHECK'].format(
-                            self.bank_names[bank_code]))
+                        self.footer.set(
+                            get_message(
+                                MESSAGE_TEXT, 'CREDENTIALS_CHECK', self.bank_names[bank_code]
+                                )
+                            )
                         if bank.credentials():
                             banks_download.append(bank_code)
                         else:
-                            MessageBoxInfo(MESSAGE_TEXT['CREDENTIALS'].format(
-                                self.bank_names[bank_code]))
+                            MessageBoxInfo(
+                                get_message(
+                                    MESSAGE_TEXT, 'CREDENTIALS', self.bank_names[bank_code]
+                                    )
+                                )
                         bank.logoff()
                     else:
-                        self.footer.set(MESSAGE_TEXT['CREDENTIALS_CHECK'].format(
-                            self.bank_names[bank_code]))
+                        self.footer.set(
+                            get_message(
+                                MESSAGE_TEXT, 'CREDENTIALS_CHECK', self.bank_names[bank_code]
+                                )
+                            )
                         if bank.dialogs._start_dialog(bank):
                             banks_download.append(bank_code)
                         else:
-                            MessageBoxInfo(MESSAGE_TEXT['CREDENTIALS'].format(
-                                self.bank_names[bank_code]))
+                            MessageBoxInfo(
+                                get_message(
+                                    MESSAGE_TEXT, 'CREDENTIALS', self.bank_names[bank_code]
+                                    )
+                                )
             bank.opened_bank_code = None  # triggers bank opening messages
             self.progress.start()
             for bank_code in banks_download:
                 bank = self._bank_init(bank_code)
                 self.footer.set(
-                    MESSAGE_TEXT['DOWNLOAD_RUNNING'].format(bank.bank_name))
+                    get_message(MESSAGE_TEXT, 'DOWNLOAD_RUNNING', bank.bank_name))
                 download_thread = Thread(
                     name=bank.bank_name, target=self.mariadb.all_accounts, args=(bank,))
                 download_thread.start()
@@ -311,7 +321,7 @@ class BankenLedger(object):
                     bank.logoff()
             self.progress.stop()
             self.footer.set(
-                MESSAGE_TEXT['DOWNLOAD_DONE'].format(CANCELED, 10 * '!'))
+                get_message(MESSAGE_TEXT, 'DOWNLOAD_DONE', CANCELED, 10 * '!'))
         else:
             for bank_code in self.mariadb.listbank_codes():
                 if self.mariadb.shelve_get_key(bank_code, KEY_DOWNLOAD_ACTIVATED):
@@ -324,14 +334,14 @@ class BankenLedger(object):
         bank = self._bank_init(bank_code)
         if bank:
             self.footer.set(
-                MESSAGE_TEXT['DOWNLOAD_RUNNING'].format(bank.bank_name))
+                get_message(MESSAGE_TEXT, 'DOWNLOAD_RUNNING', bank.bank_name))
             self.progress.start()
             self.mariadb.all_accounts(bank)
             if bank.scraper:
                 bank.logoff()
             self.progress.stop()
             self.footer.set(
-                MESSAGE_TEXT['DOWNLOAD_DONE'].format(bank.bank_name, 10 * '!'))
+                get_message(MESSAGE_TEXT, 'DOWNLOAD_DONE', bank.bank_name, 10 * '!'))
             self._show_message(bank)
 
     def _all_holdings(self, bank_code):
@@ -340,10 +350,10 @@ class BankenLedger(object):
         bank = self._bank_init(bank_code)
         if bank:
             self.footer.set(
-                MESSAGE_TEXT['DOWNLOAD_RUNNING'].format(bank.bank_name))
+                get_message(MESSAGE_TEXT, 'DOWNLOAD_RUNNING', bank.bank_name))
             self.mariadb.all_holdings(bank)
             self.footer.set(
-                MESSAGE_TEXT['DOWNLOAD_DONE'].format(bank.bank_name, 10 * '!'))
+                get_message(MESSAGE_TEXT, 'DOWNLOAD_DONE', bank.bank_name, 10 * '!'))
             self._show_message(bank)
 
     def _appcustomizing(self):
@@ -358,7 +368,7 @@ class BankenLedger(object):
             if app_data_box.button_state == BUTTON_SAVE:
                 app_data_box.field_dict[DB_row_id] = 1
                 self.mariadb.execute_replace(APPLICATION, app_data_box.field_dict)
-                MessageBoxInfo(message=MESSAGE_TEXT['DATABASE_REFRESH'])
+                MessageBoxInfo(message=get_message(MESSAGE_TEXT, 'DATABASE_REFRESH'))
                 self._wm_deletion_window()
             elif app_data_box.button_state == BUTTON_RESTORE:
                 field_dict = application_store.get(None)
@@ -380,19 +390,19 @@ class BankenLedger(object):
 
     def _alpha_vantage_refresh(self):
 
-        self.footer.set(MESSAGE_TEXT['ALPHA_VANTAGE_REFRESH_RUN'])
+        self.footer.set(get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE_REFRESH_RUN'))
         refresh = self.alpha_vantage.refresh()
         if refresh:
-            self.footer.set(MESSAGE_TEXT['ALPHA_VANTAGE_REFRESH'])
+            self.footer.set(get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE_REFRESH'))
         else:
-            self.footer.set(MESSAGE_TEXT['ALPHA_VANTAGE_ERROR'])
+            self.footer.set(get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE_ERROR'))
 
     def _bank_data_change(self, bank_code):
 
         self._delete_footer()
         bank_name = self._bank_name(bank_code)
-        title = ' '.join([bank_name, MENU_TEXT['Customize'],
-                          MENU_TEXT['Change Login Data']])
+        title = ' '.join([bank_name, get_menu_text("Customize"),
+                          get_menu_text("Change Login Data")])
         login_data = self.mariadb.shelve_get_key(
             bank_code, [KEY_BANK_NAME, KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_SERVER, KEY_IDENTIFIER_DELIMITER, KEY_DOWNLOAD_ACTIVATED])
         bank_data_box = BankDataChange(
@@ -413,8 +423,7 @@ class BankenLedger(object):
                     ]
             self.mariadb.shelve_put_key(bank_code, data)
         except KeyError as key_error:
-            exception_error(
-                message=MESSAGE_TEXT['LOGIN'].format(bank_code, key_error))
+            MessageBoxException(title, get_message(MESSAGE_TEXT, 'LOGIN', bank_code, key_error))
             return
         if bank_code in list(SCRAPER_BANKDATA.keys()):
             self._bank_data_scraper(bank_code)
@@ -427,13 +436,13 @@ class BankenLedger(object):
         bankidentifier = self.mariadb.select_table(
             BANKIDENTIFIER, [DB_code], order=DB_code)
         bank_codes = self.mariadb.select_server_code()
-        title = ' '.join([MENU_TEXT['Customize'], MENU_TEXT['New Bank']])
+        title = ' '.join([get_menu_text("Customize"), get_menu_text("New Bank")])
         if not bankidentifier:
             MessageBoxInfo(
-                title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(BANKIDENTIFIER.upper(), NOT_ASSIGNED))
+                title=title, message=get_message(MESSAGE_TEXT, 'IMPORT_CSV', BANKIDENTIFIER.upper(), NOT_ASSIGNED))
         elif not bank_codes:
             MessageBoxInfo(
-                title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(SERVER.upper(), NOT_ASSIGNED))
+                title=title, message=get_message(MESSAGE_TEXT, 'IMPORT_CSV', SERVER.upper(), NOT_ASSIGNED))
         else:
             bank_data_box = BankDataNew(
                 title, bank_codes=bank_codes)
@@ -455,26 +464,37 @@ class BankenLedger(object):
                         ]
                 self.mariadb.shelve_put_key(bank_code, data)
             except KeyError as key_error:
-                exception_error()
-                MessageBoxInfo(title=title,
-                               message=MESSAGE_TEXT['LOGIN'].format(bank_code, key_error))
+                MessageBoxException(
+                    title,
+                    get_message(
+                        MESSAGE_TEXT, 'LOGIN', bank_code, key_error
+                        )
+                    )
                 return
             bank_name = self.mariadb.shelve_get_key(bank_code, KEY_BANK_NAME)
             if bank_code in list(SCRAPER_BANKDATA.keys()):
                 if bank_code == BMW_BANK_CODE:
                     self._bank_data_scraper(BMW_BANK_CODE)
-                MessageBoxInfo(title=title, message=MESSAGE_TEXT['BANK_DATA_NEW_SCRAPER'].format(
-                    bank_name, bank_code))
+                MessageBoxInfo(
+                    title=title,
+                    message=get_message(
+                        MESSAGE_TEXT, 'BANK_DATA_NEW_SCRAPER', bank_name, bank_code
+                        )
+                    )
             else:
                 self._bank_security_function(bank_code, True)
-                MessageBoxInfo(title=title, message=MESSAGE_TEXT['BANK_DATA_NEW'].format(
-                    bank_name, bank_code))
+                MessageBoxInfo(
+                    title=title,
+                    message=get_message(
+                        MESSAGE_TEXT, 'BANK_DATA_NEW', bank_name, bank_code
+                        )
+                    )
             self._wm_deletion_window()  # to show new bank in menu after restart
 
     def _bank_data_delete(self):
 
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Customize'], MENU_TEXT['Delete Bank']])
+        title = ' '.join([get_menu_text("Customize"), get_menu_text("Delete Bank")])
         deletebank = BankDelete(title)
         if deletebank.button_state == WM_DELETE_WINDOW:
             return
@@ -482,14 +502,18 @@ class BankenLedger(object):
         bank_name = deletebank.field_dict[KEY_BANK_NAME]
         for table in [STATEMENT, LEDGER_STATEMENT, HOLDING, TRANSACTION]:
             if self.mariadb.iban_exists(table, bank_code):
-                MessageBoxInfo(title=title, message=MESSAGE_TEXT['BANK_DELETE_failed'].format(
-                    bank_name, table.upper()))
+                MessageBoxInfo(
+                    title=title,
+                    message=get_message(
+                        MESSAGE_TEXT, 'BANK_DELETE_failed', bank_name, table.upper()
+                        )
+                    )
                 return
         self.mariadb.execute_delete(SHELVES, code=bank_code)
         del self.bank_names[bank_code]
         MessageBoxInfo(
             title=title,
-            message=MESSAGE_TEXT['BANK_DELETED'].format(bank_name, bank_code))
+            message=get_message(MESSAGE_TEXT, 'BANK_DELETED', bank_name, bank_code))
         self.window.destroy()
 
     def _bank_data_scraper(self, bank_code):
@@ -529,15 +553,15 @@ class BankenLedger(object):
         bank = InitBankAnonymous(bank_code)
         bank.dialogs.anonymous(bank)
         bank_name = self._bank_name(bank_code)
-        message = ' '.join([bank_name, MENU_TEXT['Customize'],
-                            MENU_TEXT['Refresh BankParameterData']])
+        message = ' '.join([bank_name, get_menu_text("Customize"),
+                            get_menu_text("Refresh BankParameterData")])
         self._show_message(bank, message=message)
 
     def _bank_show_shelve(self, bank_code):
 
         self._delete_footer()
         shelve_data = self.mariadb.shelve_get_key(bank_code, SHELVE_KEYS)
-        shelve_text = MESSAGE_TEXT['SHELVE'].format(bank_code)
+        shelve_text = get_message(MESSAGE_TEXT, 'SHELVE', bank_code)
         for key in SHELVE_KEYS:
             if shelve_data[key]:
                 if key == KEY_ACCOUNTS:
@@ -577,8 +601,8 @@ class BankenLedger(object):
             else:
                 shelve_text = shelve_text + '{:20} {} \n'.format(key, 'None')
         bank_name = self._bank_name(bank_code)
-        title = ' '.join([bank_name, MENU_TEXT['Customize'],
-                          MENU_TEXT['Show Data']])
+        title = ' '.join([bank_name, get_menu_text("Customize"),
+                          get_menu_text("Show Data")])
         PrintList(title=title, text=shelve_text, fullscreen=True)
 
     def _bank_sync(self, bank_code):
@@ -588,15 +612,15 @@ class BankenLedger(object):
         bank.dialogs.sync(bank)
         bank_name = self._bank_name(bank_code)
         message = ' '.join(
-            [bank_name, MENU_TEXT['Customize'], MENU_TEXT['Synchronize']])
+            [bank_name, get_menu_text("Customize"), get_menu_text("Synchronize")])
         self._show_message(bank, message=message)
 
     def _bank_version_transaction(self, bank_code):
 
         self._delete_footer()
         bank_name = self._bank_name(bank_code)
-        title = ' '.join([bank_name, MENU_TEXT['Customize'],
-                          MENU_TEXT['Change FinTS Transaction Version']])
+        title = ' '.join([bank_name, get_menu_text("Customize"),
+                          get_menu_text("Change FinTS Transaction Version")])
         transaction_versions = self.mariadb.shelve_get_key(
             bank_code, KEY_VERSION_TRANSACTION)
         try:
@@ -610,8 +634,12 @@ class BankenLedger(object):
             data = (KEY_VERSION_TRANSACTION, transaction_versions)
             self.mariadb.shelve_put_key(bank_code, data)
         except KeyError as key_error:
-            MessageBoxInfo(title=title, message=MESSAGE_TEXT['LOGIN'].format(
-                bank_name, key_error))
+            MessageBoxInfo(
+                title=title,
+                message=get_message(
+                    MESSAGE_TEXT, 'LOGIN', bank_name, key_error
+                    )
+                )
 
     def _create_menu(self, MariaDBname):
 
@@ -639,54 +667,52 @@ class BankenLedger(object):
         ledger_menu = Menu(
             menu, tearoff=0, font=menu_font, bg='Lightblue')
         menu.add_cascade(
-            label=MENU_TEXT['Ledger'], menu=ledger_menu)
-        result = self.mariadb.select_table(
-            LEDGER_COA, 'COUNT(*)')  # count rows in LEDGER_COA table
-        if result[0][0] != 0:
+            label=get_menu_text("Ledger"), menu=ledger_menu)
+        if self.mariadb.select_scalar(LEDGER_COA, 'COUNT(*)'):  # count rows in LEDGER_COA table
             ledger_menu.add_command(
-                label=MENU_TEXT['Check Upload'], command=self._ledger_upload_check)
+                label=get_menu_text("Check Upload"), command=self._ledger_upload_check)
             ledger_menu.add_command(
-                label=MENU_TEXT['Check Bank Statement'], command=self._ledger_bank_statement_check)
+                label=get_menu_text("Check Bank Statement"), command=self._ledger_bank_statement_check)
             ledger_menu.add_separator()
             ledger_menu.add_command(
-                label=MENU_TEXT['Balances'], command=self._ledger_balances)
+                label=get_menu_text("Balances"), command=self._ledger_balances)
             ledger_menu.add_command(
-                label=MENU_TEXT['Assets'], command=self._ledger_assets)
+                label=get_menu_text("Assets"), command=self._ledger_assets)
             ledger_menu.add_command(
-                label=MENU_TEXT['Journal'], command=self._ledger_journal)
+                label=get_menu_text("Journal"), command=self._ledger_journal)
             ledger_menu.add_command(
-                label=MENU_TEXT['Account'], command=self._ledger_account)
+                label=get_menu_text("Account"), command=self._ledger_account)
             ledger_menu.add_command(
-                label=MENU_TEXT['Account Category'], command=self._ledger_account_category)
+                label=get_menu_text("Account Category"), command=self._ledger_account_category)
             ledger_menu.add_separator()
         ledger_menu.add_command(
-            label=MENU_TEXT['Chart of Accounts'], command=self._ledger_coa_table)
+            label=get_menu_text("Chart of Accounts"), command=self._ledger_coa_table)
 
     def _create_menu_show(self, menu, bank_owner_account, menu_font):
         """
          SHOW Menu
         """
         show_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=MENU_TEXT['Show'], menu=show_menu)
+        menu.add_cascade(label=get_menu_text("Show"), menu=show_menu)
         site_menu = Menu(show_menu, tearoff=0,
                          font=menu_font, bg='Lightblue')
         show_menu.add_cascade(
-            label=MENU_TEXT["WebSites"], menu=site_menu, underline=0)
+            label=get_menu_text("WebSites"), menu=site_menu, underline=0)
         for website in WEBSITES.keys():
             site_menu.add_command(label=website,
                                   command=lambda x=WEBSITES[website]: self._websites(x))
         show_menu.add_separator()
         if application_store.get(DB_alpha_vantage):
             show_menu.add_command(
-                label=MENU_TEXT['Alpha Vantage'], command=self._show_alpha_vantage)
+                label=get_menu_text("Alpha Vantage"), command=self._show_alpha_vantage)
             show_menu.add_command(
-                label=MENU_TEXT['Alpha Vantage Symbol Search'], command=self._show_alpha_vantage_search_symbol)
+                label=get_menu_text("Alpha Vantage Symbol Search"), command=self._show_alpha_vantage_search_symbol)
         show_menu.add_separator()
         show_menu.add_command(
-            label=MENU_TEXT['Balances'], command=self._show_balances_all_banks)
+            label=get_menu_text("Balances"), command=self._show_balances_all_banks)
         show_menu.add_separator()
         self._create_menu_banks(
-            MENU_TEXT['Show'], bank_owner_account, show_menu, menu_font)
+            get_menu_text("Show"), bank_owner_account, show_menu, menu_font)
 
     def _create_menu_download(self, menu, menu_font):
         """
@@ -694,12 +720,12 @@ class BankenLedger(object):
         """
         download_menu = Menu(
             menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=MENU_TEXT['Download'], menu=download_menu)
+        menu.add_cascade(label=get_menu_text("Download"), menu=download_menu)
         download_menu.add_command(
-            label=MENU_TEXT['All_Banks'], command=self._all_banks)
+            label=get_menu_text("All_Banks"), command=self._all_banks)
         download_menu.add_separator()
         download_menu.add_command(
-            label=MENU_TEXT['Prices'], command=self._import_prices)
+            label=get_menu_text("Prices"), command=self._import_prices)
         download_menu.add_separator()
         for bank_name in self.bank_names.values():
             bank_code = dict_get_first_key(self.bank_names, bank_name)
@@ -712,18 +738,9 @@ class BankenLedger(object):
                     if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
                         download_menu.add_cascade(
                             label=' '.join(
-                                [bank_name, MENU_TEXT['Holding'], acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]]),
+                                [bank_name, get_menu_text("Holding"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]]),
                             command=lambda x=bank_code: self._all_holdings(x))
             download_menu.add_separator()
-
-    def _create_menu_transfer(self, menu, bank_owner_account, menu_font):
-        """
-        TRANSFER Menu
-        """
-        transfer_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=MENU_TEXT['Transfer'], menu=transfer_menu)
-        self._create_menu_banks(
-            MENU_TEXT['Transfer'], bank_owner_account, transfer_menu, menu_font)
 
     def _create_menu_database(self, menu, menu_font, bank_owner_account):
         """
@@ -731,7 +748,7 @@ class BankenLedger(object):
         """
         database_menu = Menu(
             menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=MENU_TEXT['Database'], menu=database_menu)
+        menu.add_cascade(label=get_menu_text("Database"), menu=database_menu)
         bank_names = {}
         for bank_name in self.bank_names.values():
             bank_code = dict_get_first_key(self.bank_names, bank_name)
@@ -744,38 +761,35 @@ class BankenLedger(object):
             all_banks_menu = Menu(
                 database_menu, tearoff=0, font=menu_font, bg='Lightblue')
             database_menu.add_cascade(
-                label=MENU_TEXT['All_Banks'], menu=all_banks_menu, underline=0)
+                label=get_menu_text("All_Banks"), menu=all_banks_menu, underline=0)
             database_menu.add_separator()
             all_banks_menu.add_command(
-                label=MENU_TEXT['Holding Performance'],
+                label=get_menu_text("Holding Performance"),
                 command=(lambda x=FN_ALL_BANKS, y='':
                          self._data_holding_performance(x, y)))
             all_banks_menu.add_command(
-                label=MENU_TEXT['Holding ISIN Comparision'],
+                label=get_menu_text("Holding ISIN Comparision"),
                 command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision(x, '')))
             all_banks_menu.add_command(
-                label=MENU_TEXT['Holding ISIN Comparision'] + '%',
+                label=get_menu_text("Holding ISIN Comparision") + '%',
                 command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision_percent(x, '')))
-            all_banks_menu.add_command(label=MENU_TEXT['Balances'],
-                                       command=self._data_balances)
-
             all_banks_menu.add_command(
-                label=MENU_TEXT['Transaction Detail'],
+                label=get_menu_text("Transaction Detail"),
                 command=(lambda x=FN_ALL_BANKS,
                          y=None: self._data_transaction_detail(x, y)))
             self._create_menu_banks(
-                MENU_TEXT['Database'], bank_owner_account, database_menu, menu_font)
+                get_menu_text("Database"), bank_owner_account, database_menu, menu_font)
         database_menu.add_command(
-            label=MENU_TEXT['ISIN Table'], command=self._data_isin_table)
+            label=get_menu_text("ISIN Table"), command=self._data_isin_table)
         database_menu.add_separator()
         database_menu.add_command(
-            label=MENU_TEXT['Technical Indicators'], command=self._data_technical_indicators)
+            label=get_menu_text("Technical Indicators"), command=self._data_technical_indicators)
         database_menu.add_separator()
         database_menu.add_command(
-            label=MENU_TEXT['Prices ISINs'],
+            label=get_menu_text("Prices ISINs"),
             command=(lambda x=None: self._data_prices(x)))
         database_menu.add_command(
-            label=MENU_TEXT['Prices ISINs'] + '%',
+            label=get_menu_text("Prices ISINs") + '%',
             command=(lambda x=PERCENT: self._data_prices(x)))
 
     def _create_menu_customizing(self, menu, menu_font, MariaDBname):
@@ -783,52 +797,52 @@ class BankenLedger(object):
         CUSTOMIZE Menu
         """
         customize_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=MENU_TEXT['Customize'], menu=customize_menu)
-        customize_menu.add_command(label=MENU_TEXT['Application INI File'],
+        menu.add_cascade(label=get_menu_text("Customize"), menu=customize_menu)
+        customize_menu.add_command(label=get_menu_text("Application INI File"),
                                    command=self._appcustomizing)
         if application_store.get(None):  # Customizing is done
             customize_menu.add_separator()
-            customize_menu.add_command(label=MENU_TEXT['Import Bankidentifier CSV-File'],
+            customize_menu.add_command(label=get_menu_text("Import Bankidentifier CSV-File"),
                                        command=self._import_bankidentifier)
-            customize_menu.add_command(label=MENU_TEXT['Import Server CSV-File'],
+            customize_menu.add_command(label=get_menu_text("Import Server CSV-File"),
                                        command=self._import_server)
             customize_menu.add_separator()
-            customize_menu.add_command(label=MENU_TEXT['Reset Screen Positions'],
+            customize_menu.add_command(label=get_menu_text("Reset Screen Positions"),
                                        command=self._reset)
             if application_store.get(DB_alpha_vantage):
-                customize_menu.add_command(label=MENU_TEXT['Refresh Alpha Vantage'],
+                customize_menu.add_command(label=get_menu_text("Refresh Alpha Vantage"),
                                            command=self._alpha_vantage_refresh)
                 customize_menu.add_separator()
             if application_store.get(None):  # application customizing is done
                 if self.mariadb.select_server:
-                    customize_menu.add_command(label=MENU_TEXT['New Bank'],
+                    customize_menu.add_command(label=get_menu_text("New Bank"),
                                                command=self._bank_data_new)
-                    customize_menu.add_command(label=MENU_TEXT['Delete Bank'],
+                    customize_menu.add_command(label=get_menu_text("Delete Bank"),
                                                command=self._bank_data_delete)
                 else:
-                    MessageBoxInfo(message=MESSAGE_TEXT['PRODUCT_ID'])
+                    MessageBoxInfo(message=get_message(MESSAGE_TEXT, 'PRODUCT_ID'))
             if self.bank_names:
                 for bank_name in self.bank_names.values():
                     bank_code = dict_get_first_key(self.bank_names, bank_name)
                     cust_bank_menu = Menu(customize_menu, tearoff=0,
                                           font=menu_font, bg='Lightblue')
-                    cust_bank_menu.add_command(label=MENU_TEXT['Change Login Data'],
+                    cust_bank_menu.add_command(label=get_menu_text("Change Login Data"),
                                                command=lambda x=bank_code: self._bank_data_change(x))
                     if bank_code not in list(SCRAPER_BANKDATA.keys()):
-                        cust_bank_menu.add_command(label=MENU_TEXT['Change Security Function'],
+                        cust_bank_menu.add_command(label=get_menu_text("Change Security Function"),
                                                    command=lambda
                                                    x=bank_code: self._bank_security_function(x, False))
-                        cust_bank_menu.add_command(label=MENU_TEXT['Synchronize'],
+                        cust_bank_menu.add_command(label=get_menu_text("Synchronize"),
                                                    command=lambda x=bank_code: self._bank_sync(x))
-                        cust_bank_menu.add_command(label=MENU_TEXT['Change FinTS Transaction Version'],
+                        cust_bank_menu.add_command(label=get_menu_text("Change FinTS Transaction Version"),
                                                    command=lambda
                                                    x=bank_code: self._bank_version_transaction(x))
                         """
-                        cust_bank_menu.add_command(label=MENU_TEXT['Refresh BankParameterData'],
+                        cust_bank_menu.add_command(label=get_menu_text("Refresh BankParameterData"),
                                                    command=lambda
                                                    x=bank_code: self._bank_refresh_bpd(x))
-                        """                           
-                    cust_bank_menu.add_command(label=MENU_TEXT['Show Data'],
+                        """
+                    cust_bank_menu.add_command(label=get_menu_text("Show Data"),
                                                command=lambda x=bank_code: self._bank_show_shelve(x))
                     customize_menu.add_separator()
                     customize_menu.add_cascade(
@@ -841,8 +855,8 @@ class BankenLedger(object):
             if bank_code in bank_owner_account.keys():
                 owner_menu = Menu(typ_menu, tearoff=0,
                                   font=menu_font, bg='Lightblue')
-                if menu_text == MENU_TEXT['Show']:
-                    owner_menu.add_command(label=MENU_TEXT['Balances'],
+                if menu_text == get_menu_text("Show"):
+                    owner_menu.add_command(label=get_menu_text("Balances"),
                                            command=lambda x=bank_code, y=bank_name: self._show_balances(x, y))
                 if bank_owner_account:
                     owners_exist = False
@@ -850,13 +864,13 @@ class BankenLedger(object):
                         account_menu = Menu(
                             owner_menu, tearoff=0, font=menu_font, bg='Lightblue')
                         accounts = bank_owner_account[bank_code][owner_name]
-                        if menu_text == MENU_TEXT['Show']:
+                        if menu_text == get_menu_text("Show"):
                             accounts_exist = self._create_menu_show_accounts(
                                 accounts, account_menu, bank_code, bank_name, owner_name=owner_name)
-                        if menu_text == MENU_TEXT['Transfer']:
+                        if menu_text == get_menu_text("Transfer"):
                             accounts_exist = self._create_menu_transfer_accounts(
                                 accounts, account_menu, bank_code, bank_name, owner_name=owner_name)
-                        elif menu_text == MENU_TEXT['Database']:
+                        elif menu_text == get_menu_text("Database"):
                             accounts_exist = self._create_menu_database_accounts(
                                 accounts, account_menu, bank_name, menu_font)
                         if accounts_exist:
@@ -872,13 +886,13 @@ class BankenLedger(object):
                     typ_menu, tearoff=0, font=menu_font, bg='Lightblue')
                 bank_code = dict_get_first_key(self.bank_names, bank_name)
                 accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
-                if menu_text == MENU_TEXT['Show']:
+                if menu_text == get_menu_text("Show"):
                     accounts_exist = self._create_menu_show_accounts(
                         accounts, account_menu, bank_code, bank_name)
-                if menu_text == MENU_TEXT['Transfer']:
+                if menu_text == get_menu_text("Transfer"):
                     accounts_exist = self._create_menu_transfer_accounts(
                         accounts, account_menu, bank_code, bank_name)
-                elif menu_text == MENU_TEXT['Database']:
+                elif menu_text == get_menu_text("Database"):
                     accounts_exist = self._create_menu_database_accounts(
                         accounts, account_menu, bank_name, menu_font)
                 if accounts_exist:
@@ -889,27 +903,27 @@ class BankenLedger(object):
     def _create_menu_show_accounts(self, accounts, account_menu, bank_code, bank_name, owner_name=None):
 
         accounts_exist = True
-        account_menu.add_command(label=MENU_TEXT['Balances'],
+        account_menu.add_command(label=get_menu_text("Balances"),
                                  command=lambda x=bank_code, y=bank_name: self._show_balances(x, y, owner_name=owner_name))
         if accounts:
             for acc in accounts:
                 if 'HKKAZ' in acc[KEY_ACC_ALLOWED_TRANSACTIONS] or 'HKCAZ' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
                     self.kaz_iban.append(acc[KEY_ACC_IBAN])
                     label = ' '.join(
-                        [MENU_TEXT['Statement'], acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]])
+                        [get_menu_text("Statement"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]])
                     account_menu.add_command(
                         label=label,
                         command=lambda x=bank_code, y=acc: self._show_statements(x, y))
                 if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
                     label = ' '.join(
-                        [MENU_TEXT['Holding'], acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]])
+                        [get_menu_text("Holding"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]])
                     account_menu.add_command(
                         label=label,
                         command=lambda x=bank_code, y=acc: self._show_holdings(x, y))
                 if 'HKWDU' in acc[KEY_ACC_ALLOWED_TRANSACTIONS] or \
                         'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
                     label = ' '.join(
-                        [MENU_TEXT['Transactions'], acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER], TRANSACTION.upper()])
+                        [get_menu_text("Transactions"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER], TRANSACTION.upper()])
                     account_menu.add_command(
                         label=label,
                         command=(lambda x=bank_code, y=acc: self._show_transactions(x, y)))
@@ -925,7 +939,7 @@ class BankenLedger(object):
                     label = acc[KEY_ACC_PRODUCT_NAME]
                     if not label:
                         label = acc[KEY_ACC_ACCOUNT_NUMBER]
-                    label = ' '.join([MENU_TEXT['Statement'], label])
+                    label = ' '.join([get_menu_text("Statement"), label])
                     account_menu.add_command(
                         label=label,
                         command=(lambda x=bank_code,
@@ -940,61 +954,61 @@ class BankenLedger(object):
                 if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
                     accounts_exist = True
                     account_menu.add_command(
-                        label=MENU_TEXT['Holding Performance'],
+                        label=get_menu_text("Holding Performance"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]: self._data_holding_performance(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Holding ISIN Comparision'],
+                        label=get_menu_text("Holding ISIN Comparision"),
                         command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Holding ISIN Comparision'] + '%',
+                        label=get_menu_text("Holding ISIN Comparision") + '%',
                         command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision_percent(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Transaction Detail'],
+                        label=get_menu_text("Transaction Detail"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]: self._data_transaction_detail(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Profit of closed Transactions'],
+                        label=get_menu_text("Profit of closed Transactions"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]: self._transactions_profit(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Profit Transactions incl. current Depot Positions'],
+                        label=get_menu_text("Profit Transactions incl. current Depot Positions"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]: self._transactions_profit_all(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Prices ISINs'],
+                        label=get_menu_text("Prices ISINs"),
                         command=(lambda x=None: self._data_prices(x)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Prices ISINs'] + '%',
+                        label=get_menu_text("Prices ISINs") + '%',
                         command=(lambda x=PERCENT: self._data_prices(x)))
 
                     account_menu.add_separator()
                     account_menu.add_command(
-                        label=MENU_TEXT['Transactions Table'],
+                        label=get_menu_text("Transactions Table"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]: self._data_transaction_table(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Holding Table'],
+                        label=get_menu_text("Holding Table"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]: self._data_holding_table(x, y)))
                     account_menu.add_separator()
                     account_menu.add_command(
-                        label=MENU_TEXT['Update Holding Market Price by Closing Price'],
+                        label=get_menu_text("Update Holding Market Price by Closing Price"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]:
                                  self._data_update_holding_prices(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Update Portfolio Total Amount'],
+                        label=get_menu_text("Update Portfolio Total Amount"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]:
                                  self._update_holding_total_amount_portfolio(x, y)))
                     account_menu.add_separator()
                     account_menu.add_command(
-                        label=MENU_TEXT['Import Transactions'],
+                        label=get_menu_text("Import Transactions"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]: self._import_transaction(x, y)))
                     account_menu.add_command(
-                        label=MENU_TEXT['Check Transactions Pieces'],
+                        label=get_menu_text("Check Transactions Pieces"),
                         command=(lambda x=bank_name,
                                  y=acc[KEY_ACC_IBAN]: self._transactions_pieces(x, y)))
         return accounts_exist
@@ -1037,7 +1051,7 @@ class BankenLedger(object):
 
         self._delete_footer()
         _data_holding_performance = None
-        title = ' '.join([bank_name, MENU_TEXT['Holding Performance']])
+        title = ' '.join([bank_name, get_menu_text("Holding Performance")])
         data_dict = {FN_FROM_DATE: date.today() - timedelta(days=360),
                      FN_TO_DATE: date.today()}
         while True:
@@ -1056,7 +1070,7 @@ class BankenLedger(object):
                     iban=iban, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
             if select_holding_total:
                 title_period = ' '.join([title, ' ',
-                                         MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                                         get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
                 while True:
                     table = PandasBoxHoldingPortfolios(
                         title=title_period, dataframe=select_holding_total, mode=NUMERIC)
@@ -1064,12 +1078,12 @@ class BankenLedger(object):
                         break
             else:
                 self.footer.set(
-                    MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
+                    get_message(MESSAGE_TEXT, 'DATA_NO', bank_name, iban))
 
     def _data_holding_isin_comparision(self, bank_name, iban):
 
         self._delete_footer()
-        title = ' '.join([bank_name, MENU_TEXT['Holding ISIN Comparision']])
+        title = ' '.join([bank_name, get_menu_text("Holding ISIN Comparision")])
         from_date = date_days.subtract(date.today(), 360)
         data_dict_period = {
             FN_FROM_DATE: from_date,  FN_TO_DATE: date.today()}
@@ -1115,8 +1129,14 @@ class BankenLedger(object):
                             field_list=db_fields, isin_code=selected_isins, period=period)
                     if selected_holding_data:
                         self.footer.set('')
-                        title_period = ' '.join([title, data_dict_isins[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
-                            period[0], period[1])])
+                        title_period = ' '.join(
+                            [title,
+                             data_dict_isins[FN_COMPARATIVE].upper(),
+                             get_message(
+                                 MESSAGE_TEXT, 'PERIOD', period[0], period[1]
+                                 )
+                             ]
+                            )
                         while True:
                             table = PandasBoxIsinComparision(title=title_period, dataframe=(
                                 data_dict_isins[FN_COMPARATIVE], selected_holding_data),
@@ -1124,12 +1144,12 @@ class BankenLedger(object):
                             if table.button_state == WM_DELETE_WINDOW:
                                 break
                     else:
-                        self.footer.set(MESSAGE_TEXT['FIELDLIST_INTERSECTION_EMPTY'])
+                        self.footer.set(get_message(MESSAGE_TEXT, 'FIELDLIST_INTERSECTION_EMPTY'))
                 else:
-                    self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
+                    self.footer.set(get_message(MESSAGE_TEXT, 'FIELDLIST_MIN', "2"))
             else:
                 self.footer.set(
-                    MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
+                    get_message(MESSAGE_TEXT, 'DATA_NO', bank_name, iban))
 
     def _data_holding_isin_comparision_percent(self, bank_name, iban):
         """
@@ -1137,7 +1157,7 @@ class BankenLedger(object):
         in their maximum common time interval in a given period
         """
         self._delete_footer()
-        title = ' '.join([bank_name, MENU_TEXT['Holding ISIN Comparision %']])
+        title = ' '.join([bank_name, get_menu_text("Holding ISIN Comparision %")])
         from_date = date_days.subtract(date.today(), 360)
         data_dict_period = {
             FN_FROM_DATE: from_date,  FN_TO_DATE: date.today()}
@@ -1173,8 +1193,14 @@ class BankenLedger(object):
                         iban, data_dict_isins[FN_COMPARATIVE], selected_isins, period=period)
                     if data:
                         self.footer.set('')
-                        title_period = ' '.join([title, data_dict_isins[FN_COMPARATIVE].upper(), MESSAGE_TEXT['PERIOD'].format(
-                            from_date, to_date)])
+                        title_period = ' '.join(
+                            [title,
+                             data_dict_isins[FN_COMPARATIVE].upper(),
+                             get_message(
+                                 MESSAGE_TEXT, 'PERIOD', from_date, to_date
+                                 )
+                             ]
+                            )
                         while True:
                             table = PandasBoxIsinComparisionPercent(title=title_period, dataframe=(
                                 data_dict_isins[FN_COMPARATIVE], data),
@@ -1182,19 +1208,19 @@ class BankenLedger(object):
                             if table.button_state == WM_DELETE_WINDOW:
                                 break
                     else:
-                        self.footer.set(MESSAGE_TEXT['FIELDLIST_INTERSECTION_EMPTY'])
+                        self.footer.set(get_message(MESSAGE_TEXT, 'FIELDLIST_INTERSECTION_EMPTY'))
                 else:
-                    self.footer.set(MESSAGE_TEXT['FIELDLIST_MIN'].format("2"))
+                    self.footer.set(get_message(MESSAGE_TEXT, 'FIELDLIST_MIN', "2"))
             else:
                 self.footer.set(
-                    MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
+                    get_message(MESSAGE_TEXT, 'DATA_NO', bank_name, iban))
 
     def _data_isin_table(self):
 
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Database'], MENU_TEXT['ISIN Table']])
+        title = ' '.join([get_menu_text("Database"), get_menu_text("ISIN Table")])
         selected_row = 0
-        message = MESSAGE_TEXT['HELP_PANDASTABLE']
+        message = get_message(MESSAGE_TEXT, 'HELP_PANDASTABLE')
         while True:
             data = self.mariadb.select_table(
                 ISIN, '*', result_dict=True, order=DB_name)
@@ -1214,9 +1240,9 @@ class BankenLedger(object):
 
         self._delete_footer()
         title = ' '.join([bank_name,
-                          MENU_TEXT['Holding Table']])
+                          get_menu_text("Holding Table")])
         data_dict = {FN_FROM_DATE: date.today(), FN_TO_DATE: date.today()}
-        message = MESSAGE_TEXT['HELP_PANDASTABLE']
+        message = get_message(MESSAGE_TEXT, 'HELP_PANDASTABLE')
         while True:
             date_holding_view = InputDateTable(
                 title=title, data_dict=data_dict, table=HOLDING_VIEW)
@@ -1249,7 +1275,7 @@ class BankenLedger(object):
         If not existing: creates holding positions
         """
         title = ' '.join(
-            [bank_name, MENU_TEXT['Update Holding Market Price by Closing Price']])
+            [bank_name, get_menu_text("Update Holding Market Price by Closing Price")])
         while True:
             input_date = InputDate(title=title)
             if input_date.button_state == WM_DELETE_WINDOW:
@@ -1258,34 +1284,56 @@ class BankenLedger(object):
                 date_day = input_date.field_dict[FN_DATE]
             if date_days.isweekend(date_day):
                 MessageBoxInfo(
-                    title=title, message=MESSAGE_TEXT['DATE_NO_WORKDAY'].format(date_day))
+                    title=title, message=get_message(MESSAGE_TEXT, 'DATE_NO_WORKDAY', date_day))
             break
         holdings = self.mariadb.select_table(
             HOLDING_VIEW, '*', result_dict=True, iban=iban, price_date=date_day)
         if not holdings:  # duplicate holding positions
-            period = (START_DATE_HOLDING, date_day)
             message_box_ask = MessageBoxAsk(
-                title=title, message=MESSAGE_TEXT['HOLDING_INSERT'].format(date_day))
+                title=title, message=get_message(MESSAGE_TEXT, 'HOLDING_INSERT', date_day))
             if message_box_ask.result:
-                holdings = self.mariadb.select_table_next(
-                    HOLDING, '*', DB_price_date, '<', date_day,  result_dict=True, date_name=DB_price_date, iban=iban, period=period)
+                price_date = self.mariadb.select_max_price_date(
+                    clause=f"{DB_price_date} < ?", clause_vars=(date_day,)
+                    )
+                holdings = self.mariadb.select_table(
+                    HOLDING, '*', result_dict=True, date_name=DB_price_date,
+                    price_date=price_date,  iban=iban
+                    )
                 for holding_dict in holdings:
                     holding_dict[DB_price_date] = date_day
                     holding_dict[DB_origin] = ORIGIN_INSERTED
                     self.mariadb.execute_insert(
                         HOLDING, holding_dict)
-                    holding_informations_append(INFORMATION, ' '.join(['\n', bank_name, MESSAGE_TEXT['HOLDING_INSERT'].format(
-                        date_day), '\n', holding_dict[DB_ISIN], '\n']))
+
+                    holding_informations_append(
+                        INFORMATION,
+                        ' '.join(
+                            ['\n',
+                             bank_name,
+                             get_message(
+                                 MESSAGE_TEXT, 'HOLDING_INSERT', date_day
+                                 ),
+                             '\n',
+                             holding_dict[DB_ISIN],
+                             '\n']
+                            )
+                        )
             else:
-                MessageBoxInfo(title=title, message=MESSAGE_TEXT['DATA_NO'].format(
-                    HOLDING.upper(), (date_days.convert(START_DATE_HOLDING), date_day)))
+                MessageBoxInfo(
+                    title=title,
+                    message=get_message(
+                        MESSAGE_TEXT, 'DATA_NO',
+                        HOLDING.upper(),
+                        (date_days.convert(START_DATE_HOLDING), date_day)
+                        )
+                    )
                 return
             holdings = self.mariadb.select_table(
                 HOLDING_VIEW, '*', result_dict=True, iban=iban, price_date=date_day)
         if holdings:  # update holding positions
             for holding_dict in holdings:
                 title_download = ' '.join(
-                    [title, MENU_TEXT['Download'], MENU_TEXT['Prices']])
+                    [title, get_menu_text("Download"), get_menu_text("Prices")])
                 result = self._data_update_holding_price(
                     title_download, bank_name, iban, holding_dict)
                 if not result:
@@ -1295,10 +1343,22 @@ class BankenLedger(object):
                         origin_symbol = origin_symbol[0]
                     else:
                         origin_symbol = NOT_ASSIGNED
-                    holding_informations_append(WARNING, MESSAGE_TEXT['PRICES_NO'].format(
-                        ' '.join(['\n', bank_name, HOLDING.upper(), DB_price_date.upper(
-                        ), date_days.convert(holding_dict[DB_price_date])]),
-                        holding_dict[DB_symbol], origin_symbol, holding_dict[DB_ISIN], holding_dict[DB_name]))
+                    holding_informations_append(
+                        WARNING,
+                        get_message(
+                            MESSAGE_TEXT, 'PRICES_NO',
+                            ' '.join(
+                                [
+                                    '\n', bank_name, HOLDING.upper(),
+                                    DB_price_date.upper(),
+                                    date_days.convert(holding_dict[DB_price_date])
+                                    ]
+                                ),
+                            holding_dict[DB_symbol],
+                            origin_symbol,
+                            holding_dict[DB_ISIN],
+                            holding_dict[DB_name])
+                        )
             self.mariadb.update_total_holding_amount(
                 iban=iban, period=(date_day, date_day))
         self._show_informations()
@@ -1312,16 +1372,11 @@ class BankenLedger(object):
             PRICES_ISIN_VIEW, DB_close, result_dict=True, isin_code=holding_dict[DB_ISIN], price_date=holding_dict[DB_price_date])
         if not price:
             # import price data
-            data = self.mariadb.select_table(
-                ISIN, '*', result_dict=True, isin_code=holding_dict[DB_ISIN])
-            message = MESSAGE_TEXT['HELP_PANDASTABLE']
-            isin_table = PandasBoxIsinTable(
-                title, data, message, mode=EDIT_ROW)
-            message = isin_table.message
-            if isin_table.button_state == WM_DELETE_WINDOW:
-                return
-            if isin_table.button_state == BUTTON_PRICES_IMPORT:
-                import_prices_run(title, self.mariadb, [isin_table.selected_row_dict[DB_name]], BUTTON_REPLACE)
+            import_prices_run(title, self.mariadb, [holding_dict[DB_name]], BUTTON_APPEND)
+        price = self.mariadb.select_table(
+            PRICES_ISIN_VIEW, DB_close, result_dict=True, isin_code=holding_dict[DB_ISIN],
+            price_date=holding_dict[DB_price_date]
+            )
         if price:
             # update holding market price
             price_dict = price[0]
@@ -1336,17 +1391,17 @@ class BankenLedger(object):
                                                                DB_price_date.upper(), date_days.convert(holding_dict[DB_price_date]), '\n']))
             return True
         return False
-    
+
     def _data_technical_indicators(self):
-        """      
+        """
         def destroy_withdrawn():
             for widget in root.winfo_children():
                 if isinstance(widget, Toplevel):
                     if not widget.winfo_viewable():  # = withdrawn oder iconified
-                        widget.destroy()        
+                        widget.destroy()
         """
         self._delete_footer()
-        title = MENU_TEXT['Technical Indicators']
+        title = get_menu_text("Technical Indicators")
         names_dict = dict(self.mariadb.select_isin_with_ticker([DB_name, DB_symbol], order=DB_name))
         data_dict = {FN_FROM_DATE: date_days.subtract(date.today(), 360),
                      FN_TO_DATE: date.today()}
@@ -1364,7 +1419,7 @@ class BankenLedger(object):
 
         self._delete_footer()
         title = ' '.join([bank_name,
-                          MENU_TEXT['Transaction Detail']])
+                          get_menu_text("Transaction Detail")])
         data_dict = {}
         if iban:
             data_dict[DB_iban] = iban
@@ -1388,13 +1443,12 @@ class BankenLedger(object):
                 if iban:
                     select_holding_ibans = [iban]
                 else:
-                    select_holding_ibans = self.mariadb.select_holding_fields(
-                        field_list=DB_iban)
-                for iban in select_holding_ibans:
+                    select_holding_ibans = self.mariadb.select_holding_field_values(DB_iban)
+                for iban_ in select_holding_ibans:
                     select_isin_transaction = self._data_transaction_add_portfolio(
-                        iban, data_dict[DB_name], period, select_isin_transaction)
+                        iban_, data_dict[DB_name], period, select_isin_transaction)
                 title_period = ' '.join(
-                    [title, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                    [title, get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
                 while True:
                     table = PandasBoxTransactionDetail(title=title_period, dataframe=(
                         count_transactions, select_isin_transaction), mode=NO_CURRENCY_SIGN)
@@ -1402,7 +1456,7 @@ class BankenLedger(object):
                         break
                     else:
                         self.footer.set(
-                            MESSAGE_TEXT['DATA_NO'].format(bank_name, iban))
+                            get_message(MESSAGE_TEXT, 'DATA_NO', bank_name, iban))
 
     def _data_transaction_add_portfolio(self, iban, name, period, select_isin_transaction):
 
@@ -1422,7 +1476,7 @@ class BankenLedger(object):
 
         self._delete_footer()
         title = ' '.join([bank_name,
-                          MENU_TEXT['Transactions Table']])
+                          get_menu_text("Transactions Table")])
         field_list = TABLE_FIELDS[TRANSACTION_VIEW]
         data_dict = {DB_name: '', DB_ISIN: '',
                      FN_FROM_DATE: START_DATE_TRANSACTIONS,
@@ -1439,7 +1493,7 @@ class BankenLedger(object):
             to_date = data_dict[FN_TO_DATE] = input_isin.field_dict[FN_TO_DATE]
             title_period = ' '.join(
                 [title, name, isin, from_date, '-', to_date])
-            message = MESSAGE_TEXT['HELP_PANDASTABLE']
+            message = get_message(MESSAGE_TEXT, 'HELP_PANDASTABLE')
             while True:
                 data = self.mariadb.select_table(
                     TRANSACTION_VIEW, field_list, result_dict=True, iban=iban, isin_code=isin, period=(from_date, to_date))
@@ -1465,17 +1519,20 @@ class BankenLedger(object):
         dict_[FN_PIECES_CUM] = dict_[FN_PIECES_CUM] + \
             previous_dict[FN_PIECES_CUM]
         if dict_[FN_PIECES_CUM] < 0:
-            MessageBoxInfo(message=MESSAGE_TEXT['TRANSACTION_PIECES_NEGATIVE'].format(
-                dict_[DB_price_date]))
+            MessageBoxInfo(
+                message=get_message(
+                    MESSAGE_TEXT, 'TRANSACTION_PIECES_NEGATIVE', dict_[DB_price_date]
+                    )
+                )
         return dict_
 
     def _data_prices(self, sign):
 
         self._delete_footer()
         if sign:
-            title = MENU_TEXT['Prices ISINs'] + ' %'
+            title = get_menu_text("Prices ISINs") + ' %'
         else:
-            title = MENU_TEXT['Prices ISINs']
+            title = get_menu_text("Prices ISINs")
         data_dict = {FN_FROM_DATE: START_DATE_PRICES,
                      FN_TO_DATE: date_days.convert(date.today())}
         while True:
@@ -1498,7 +1555,7 @@ class BankenLedger(object):
                     import_prices_run(title, self.mariadb, field_names, BUTTON_APPEND)
                     break
                 else:
-                    MessageBoxInfo(title=title, message=MESSAGE_TEXT['SELECT_INCOMPLETE'])
+                    MessageBoxInfo(title=title, message=get_message(MESSAGE_TEXT, 'SELECT_INCOMPLETE'))
             select_data = self.mariadb.select_table(PRICES_ISIN_VIEW, [DB_name, DB_price_date] + selected_fields,
                                                     order=DB_name, result_dict=True,
                                                     isin_code=selected_isins,
@@ -1513,25 +1570,26 @@ class BankenLedger(object):
                     if price_table.button_state == WM_DELETE_WINDOW:
                         break
             else:
-                MessageBoxInfo(title=title, message=MESSAGE_TEXT['DATA_NO'].format(', '.join(selected_isins), ''))
+                MessageBoxInfo(title=title, message=get_message(MESSAGE_TEXT, 'DATA_NO', ', '.join(selected_isins), ''))
 
     def _data_balances(self):
 
         self._delete_footer()
         title = ' '.join(
-            [MENU_TEXT['All_Banks'], MENU_TEXT['Balances']])
+            [get_menu_text("All_Banks"), get_menu_text("Balances")])
         data_dict = {}
         while True:
             input_period = InputPeriod(title=title, data_dict=data_dict)
             if input_period.button_state == WM_DELETE_WINDOW:
                 return input_period.button_state, None, None
-            self.footer.set(MESSAGE_TEXT['TASK_STARTED'].format(title))
+            self.footer.set(get_message(MESSAGE_TEXT, 'TASK_STARTED', title))
             data_dict = input_period.field_dict
             period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
             data_total_amounts = self.mariadb.select_total_amounts(period)
-            title_period = ' '.join([title, MESSAGE_TEXT['PERIOD'].format(
-                data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
-            self.footer.set(MESSAGE_TEXT['TASK_DONE'])
+            title_period = ' '.join(
+                [title, get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])]
+                )
+            self.footer.set(get_message(MESSAGE_TEXT, 'TASK_DONE'))
             if data_total_amounts:
                 while True:
                     table = PandasBoxTotals(
@@ -1540,21 +1598,28 @@ class BankenLedger(object):
                         break
             else:
                 MessageBoxInfo(title=title_period, message=(
-                    MESSAGE_TEXT['DATA_NO'].format('', '')))
+                    get_message(MESSAGE_TEXT, 'DATA_NO', '', '')))
 
     def _import_bankidentifier(self):
 
-        title = MENU_TEXT['Import Bankidentifier CSV-File']
-        MessageBoxInfo(title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(
-            BANKIDENTIFIER.upper(), 'Deutsche Bundesbank \nBankleitzahlendateien ungepackt \nCSV-Format'))
+        title = get_menu_text("Import Bankidentifier CSV-File")
+        MessageBoxInfo(
+            title=title,
+            message=get_message(
+                MESSAGE_TEXT, 'IMPORT_CSV', BANKIDENTIFIER.upper(),
+                'Deutsche Bundesbank \nBankleitzahlendateien ungepackt \nCSV-Format'
+                )
+            )
         webbrowser.open(BUNDESBANK_BLZ_MERKBLATT)
         webbrowser.open(BUNDEBANK_BLZ_DOWNLOAD)
         file_dialogue = FileDialogue(title=title)
         if file_dialogue.filename not in ['', None]:
             self.mariadb.import_bankidentifier(
                 file_dialogue.filename)
-            MessageBoxInfo(title=title,  message=MESSAGE_TEXT['LOAD_DATA'].format(
-                file_dialogue.filename))
+            MessageBoxInfo(
+                title=title,
+                message=get_message(MESSAGE_TEXT, 'LOAD_DATA', file_dialogue.filename)
+                )
             data = self.mariadb.select_table(
                 BANKIDENTIFIER, field_list=TABLE_FIELDS[BANKIDENTIFIER],  result_dict=True)
             dataframe = DataFrame(data)
@@ -1563,7 +1628,7 @@ class BankenLedger(object):
     def _import_prices(self, isin_code=None):
 
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Download'], MENU_TEXT['Prices']])
+        title = ' '.join([get_menu_text("Download"), get_menu_text("Prices")])
         select_isin_ticker = self.mariadb.select_isin_with_ticker(
             [DB_name], order=DB_name)
         if select_isin_ticker:
@@ -1578,26 +1643,30 @@ class BankenLedger(object):
                 state = select_isins.button_state
                 field_list = select_isins.field_list
                 if application_store.get(DB_threading):
-                    download_prices = Thread(name=MENU_TEXT['Prices'], target=import_prices_run,
+                    download_prices = Thread(name=get_menu_text("Prices"), target=import_prices_run,
                                              args=(title, self.mariadb, field_list, state))
                     download_prices.start()
                 else:
                     import_prices_run(title, self.mariadb, field_list, state)
         else:
-            self.footer.set(MESSAGE_TEXT['SYMBOL_MISSING_ALL'].format(title))
+            self.footer.set(get_message(MESSAGE_TEXT, 'SYMBOL_MISSING_ALL', title))
 
     def _import_server(self):
 
-        title = MENU_TEXT['Import Server CSV-File']
-        MessageBoxInfo(title=title, message=MESSAGE_TEXT['IMPORT_CSV'].format(
-            SERVER.upper(), 'FinTS Download') + FINTS_SERVER)
+        title = get_menu_text("Import Server CSV-File")
+        MessageBoxInfo(
+            title=title,
+            message=get_message(MESSAGE_TEXT, 'IMPORT_CSV', SERVER.upper(), 'FinTS Download') + FINTS_SERVER
+            )
         self._websites(FINTS_SERVER_ADDRESS)
         file_dialogue = FileDialogue(title=title)
         if file_dialogue.filename not in ['', None]:
             self.mariadb.import_server(
                 file_dialogue.filename)
-            MessageBoxInfo(title=title, message=MESSAGE_TEXT['LOAD_DATA'].format(
-                file_dialogue.filename))
+            MessageBoxInfo(
+                title=title,
+                message=get_message(MESSAGE_TEXT, 'LOAD_DATA', file_dialogue.filename)
+                )
             data = self.mariadb.select_table(
                 SERVER, field_list=TABLE_FIELDS[SERVER],  result_dict=True)
             dataframe = DataFrame(data)
@@ -1610,7 +1679,7 @@ class BankenLedger(object):
         price_date: YYYY-MM-DD
         decimals: decimal_point
         """
-        title = MENU_TEXT['Import Transactions']
+        title = get_menu_text("Import Transactions")
         _text = ("\n\nStructure of CSV_File: \n"
                  "\nColumns: \n price_date, ISIN, name, pieces, price\n"
                  "\n         PriceDate Format: YYYY-MM-DD"
@@ -1619,102 +1688,28 @@ class BankenLedger(object):
                  "\nHeader_line will be ignored"
                  )
         MessageBoxInfo(title=title, message=' '.join(
-            [bank_name, MESSAGE_TEXT['IMPORT_CSV'].format(TRANSACTION.upper(), NOT_ASSIGNED), _text]))
+            [bank_name, get_message(MESSAGE_TEXT, 'IMPORT_CSV', TRANSACTION.upper(), NOT_ASSIGNED), _text]))
         file_dialogue = FileDialogue(title=title)
         if file_dialogue.filename not in ['', None]:
             self.mariadb.import_transaction(iban, file_dialogue.filename)
-            MessageBoxInfo(title=title, message=MESSAGE_TEXT['LOAD_DATA'].format(
-                file_dialogue.filename))
+            MessageBoxInfo(
+                title=title,
+                message=get_message(MESSAGE_TEXT, 'LOAD_DATA', file_dialogue.filename)
+                )
             data = self.mariadb.select_table(
                 TRANSACTION, field_list=TABLE_FIELDS[TRANSACTION],  result_dict=True)
             dataframe = DataFrame(data)
             BuiltPandasBox(title=title, dataframe=dataframe)
 
-    def _sepa_credit_transfer(self, bank_code, account):
-
-        self._delete_footer()
-        bank = self._bank_init(bank_code)
-        label = account[KEY_ACC_PRODUCT_NAME]
-        if not label:
-            label = account[KEY_ACC_ACCOUNT_NUMBER]
-        bank_name = self._bank_name(bank_code)
-        title = ' '.join(
-            [MENU_TEXT['Transfer'], bank_name, label])
-        bank.account_number = account[KEY_ACC_ACCOUNT_NUMBER]
-        bank.iban = account[KEY_ACC_IBAN]
-        bank.subaccount_number = account[KEY_ACC_SUBACCOUNT_NUMBER]
-        bank.owner_name = account[KEY_ACC_OWNER_NAME]
-        sepa_credit_box = SepaCreditBox(
-            bank, account, title=title)
-        if sepa_credit_box.button_state == WM_DELETE_WINDOW:
-            return
-        transfer_data = {}
-        account_data = self.mariadb.dictaccount(bank_code,
-                                                bank.account_number)
-        transfer_data[SEPA_CREDITOR_NAME] = sepa_credit_box.field_dict[SEPA_CREDITOR_NAME]
-        transfer_data[SEPA_CREDITOR_IBAN] = sepa_credit_box.field_dict[SEPA_CREDITOR_IBAN].upper()
-        transfer_data[SEPA_CREDITOR_BIC] = sepa_credit_box.field_dict[SEPA_CREDITOR_BIC].upper()
-        transfer_data[SEPA_AMOUNT] = sepa_credit_box.field_dict[SEPA_AMOUNT].replace(
-            ',', '.')
-        transfer_data[SEPA_PURPOSE] = sepa_credit_box.field_dict[
-            SEPA_PURPOSE_1] + ' ' + sepa_credit_box.field_dict[SEPA_PURPOSE_2]
-        transfer_data[SEPA_REFERENCE] = sepa_credit_box.field_dict[SEPA_REFERENCE]
-        if 'HKCSE' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
-            if sepa_credit_box.field_dict[SEPA_EXECUTION_DATE] == str(date.today()):
-                transfer_data[SEPA_EXECUTION_DATE] = TRANSFER_DATA_SEPA_EXECUTION_DATE
-            else:
-                transfer_data[SEPA_EXECUTION_DATE] = sepa_credit_box.field_dict[SEPA_EXECUTION_DATE]
-        else:
-            transfer_data[SEPA_EXECUTION_DATE] = TRANSFER_DATA_SEPA_EXECUTION_DATE
-        SepaCreditTransfer(bank, account_data, transfer_data)
-        if transfer_data[SEPA_EXECUTION_DATE] == TRANSFER_DATA_SEPA_EXECUTION_DATE:
-            bank.dialogs.transfer(bank)
-        else:
-            bank.dialogs.date_transfer(bank)
-        self._show_message(bank)
-
-    def _bank_security_function(self, bank_code, new):
-
-        self._delete_footer()
-        bank = InitBankAnonymous(bank_code)
-        bank.dialogs.anonymous(bank)
-        security_function_dict = {}
-        default_value = None
-        for twostep in bank.twostep_parameters:
-            security_function, security_function_name = twostep
-            security_function_dict[security_function] = security_function_name
-            if (self.mariadb.shelve_get_key(bank_code, KEY_SECURITY_FUNCTION) and self.mariadb.shelve_get_key(
-                    bank_code, KEY_SECURITY_FUNCTION)[0:3] == security_function[0:3]):
-                default_value = security_function
-        bank_name = self._bank_name(bank.bank_code)
-        title = ' '.join([bank_name, MENU_TEXT['Customize'],
-                          MENU_TEXT['Change Security Function']])
-        if new:
-            security_function_box = BuiltRadioButtons(
-                title=title,
-                header=MESSAGE_TEXT['TWOSTEP'], default_value=default_value,
-                button2_text=None, radiobutton_dict=security_function_dict)
-        else:
-            security_function_box = BuiltRadioButtons(
-                title=title,
-                header=MESSAGE_TEXT['TWOSTEP'], default_value=default_value,
-                radiobutton_dict=security_function_dict)
-        if security_function_box.button_state == WM_DELETE_WINDOW:
-            return
-        if security_function_box.button_state == BUTTON_SAVE:
-            data = (KEY_SECURITY_FUNCTION, security_function_box.field[0:3])
-            self.mariadb.shelve_put_key(bank_code, data)
-        self.footer.set(MESSAGE_TEXT['SYNC_START'].format(bank_name))
-
     def _reset(self):
 
         self.mariadb.execute_delete(GEOMETRY)
-        self.footer.set(MESSAGE_TEXT['TASK_DONE'])
+        self.footer.set(get_message(MESSAGE_TEXT, 'TASK_DONE'))
 
     def _show_alpha_vantage(self):
 
         self._delete_footer()
-        title = MENU_TEXT['Alpha Vantage']
+        title = get_menu_text("Alpha Vantage")
         alpha_vantage_symbols = self.mariadb.select_dict(
             ISIN, DB_name, DB_symbol, origin_symbol=ALPHA_VANTAGE)
         alpha_vantage_names = list(alpha_vantage_symbols.keys())
@@ -1740,7 +1735,7 @@ class BankenLedger(object):
                         alpha_vantage_names)
                     if parameters.button_state == WM_DELETE_WINDOW:
                         break
-                    elif parameters.button_state == MENU_TEXT['ISIN Table']:
+                    elif parameters.button_state == get_menu_text("ISIN Table"):
                         self._isin_table()
                         return
                     elif parameters.button_state == BUTTON_ALPHA_VANTAGE:
@@ -1758,8 +1753,7 @@ class BankenLedger(object):
                         try:
                             data_json = requests.get(url).json()
                         except Exception:
-                            exception_error(
-                                message=MESSAGE_TEXT['ALPHA_VANTAGE_ERROR'])
+                            MessageBoxException(title, get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE_ERROR'))
                             break
                         key_list = list(data_json.keys())
                         if JSON_KEY_META_DATA in data_json.keys():
@@ -1771,11 +1765,20 @@ class BankenLedger(object):
                                 dataframe = DataFrame(
                                     data_json[key_list[1]]).T
                         elif JSON_KEY_ERROR_MESSAGE in data_json.keys():
-                            MessageBoxInfo(title=title_function, message=MESSAGE_TEXT[
-                                'ALPHA_VANTAGE_ERROR_MSG'].format(data_json[JSON_KEY_ERROR_MESSAGE], url))
+                            MessageBoxInfo(
+                                title=title_function,
+                                message=get_message(
+                                    MESSAGE_TEXT, 'ALPHA_VANTAGE_ERROR_MSG',
+                                    data_json[JSON_KEY_ERROR_MESSAGE], url
+                                    )
+                                )
                         elif data_json == {}:
-                            MessageBoxInfo(title=title_function, message=MESSAGE_TEXT[
-                                'ALPHA_VANTAGE_NO_DATA'].format(url))
+                            MessageBoxInfo(
+                                title=title_function,
+                                message=get_message(
+                                    MESSAGE_TEXT, 'ALPHA_VANTAGE_NO_DATA', url
+                                    )
+                                )
                         else:
                             self._websites(url)
                         break
@@ -1790,14 +1793,14 @@ class BankenLedger(object):
     def _show_alpha_vantage_search_symbol(self):
 
         function = 'SYMBOL_SEARCH'
-        title = MENU_TEXT['Alpha Vantage Symbol Search']
+        title = get_menu_text("Alpha Vantage Symbol Search")
         while True:
             parameters = AlphaVantageParameter(
                 title, function, application_store.get(DB_alpha_vantage),
                 self.alpha_vantage.parameter_dict[function], [], [])
             if parameters.button_state == WM_DELETE_WINDOW:
                 break
-            elif parameters.button_state == MENU_TEXT['ISIN Table']:
+            elif parameters.button_state == get_menu_text("ISIN Table"):
                 self._data_isin_table()
             elif parameters.button_state == BUTTON_ALPHA_VANTAGE:
                 self._websites(ALPHA_VANTAGE_DOCUMENTATION)
@@ -1811,22 +1814,27 @@ class BankenLedger(object):
                 try:
                     data_json = requests.get(url).json()
                 except Exception:
-                    exception_error(
-                        message=MESSAGE_TEXT['ALPHA_VANTAGE_ERROR'])
+                    MessageBoxException(title, get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE_ERROR'))
                     break
                 if JSON_KEY_ERROR_MESSAGE in data_json.keys():
-                    MessageBoxInfo(title=title, message=MESSAGE_TEXT[
-                        'ALPHA_VANTAGE_ERROR_MSG'].format(data_json[JSON_KEY_ERROR_MESSAGE], url))
+                    MessageBoxInfo(
+                        title=title,
+                        message=get_message(
+                            MESSAGE_TEXT, 'ALPHA_VANTAGE_ERROR_MSG', data_json[JSON_KEY_ERROR_MESSAGE], url
+                            )
+                        )
                 elif data_json == {}:
-                    MessageBoxInfo(title=title, message=MESSAGE_TEXT[
-                        'ALPHA_VANTAGE_NO_DATA'].format(url))
+                    MessageBoxInfo(
+                        title=title,
+                        message=get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE_NO_DATA', url)
+                        )
                 else:
                     self._websites(url)
 
     def _show_balances_all_banks(self):
 
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Show'], MENU_TEXT['Balances']])
+        title = ' '.join([get_menu_text("Show"), get_menu_text("Balances")])
         message = title
         total_df = []
         if self.bank_names != {}:
@@ -1854,12 +1862,12 @@ class BankenLedger(object):
                     title=' '.join([title, date_days.convert(max_entry_date)]), dataframe=total_df, mode=CURRENCY_SIGN, bank_names=self.mariadb.dictbank_names())
             else:
                 self.footer.set(
-                    ' '.join([message, MESSAGE_TEXT['DATA_NO'].format('', '')]))
+                    ' '.join([message, get_message(MESSAGE_TEXT, 'DATA_NO', '', '')]))
 
     def _show_balances(self, bank_code, bank_name, owner_name=None):
 
         self._delete_footer()
-        title = ' '.join([bank_name, MENU_TEXT['Show'], MENU_TEXT['Balances']])
+        title = ' '.join([bank_name, get_menu_text("Show"), get_menu_text("Balances")])
         bank_balances = self._show_balances_get(
             bank_code, owner_name=owner_name)
         if bank_balances:
@@ -1873,7 +1881,7 @@ class BankenLedger(object):
                               DB_closing_balance, DB_opening_balance], mode=CURRENCY_SIGN,
                               cellwidth_resizeable=False)
         else:
-            self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, ''))
+            self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', title, ''))
 
     def _show_balances_get(self, bank_code, owner_name=None):
 
@@ -1885,8 +1893,8 @@ class BankenLedger(object):
         if accounts:
             for acc in accounts:
                 iban = acc[KEY_ACC_IBAN]
-                max_entry_date = self.mariadb.select_max_column_value(
-                    STATEMENT, DB_entry_date, iban=iban)
+                max_entry_date = self.mariadb.select_scalar(
+                    STATEMENT, f"MAX({DB_entry_date})", iban=iban)
                 if max_entry_date:
                     fields = [DB_counter,
                               DB_closing_status, DB_closing_balance, DB_closing_currency, DB_closing_entry_date,
@@ -1929,10 +1937,10 @@ class BankenLedger(object):
 
                 else:
                     # HOLDING Account
-                    all_max_price_date = self.mariadb.select_max_column_value(
-                        HOLDING, DB_price_date)
-                    max_price_date = self.mariadb.select_max_column_value(
-                        HOLDING, DB_price_date, iban=iban)
+                    all_max_price_date = self.mariadb.select_scalar(
+                        HOLDING, f"MAX({DB_price_date})")
+                    max_price_date = self.mariadb.select_scalar(
+                        HOLDING, f"MAX({DB_price_date})", iban=iban)
                     price_date = date_days.subtract(date.today(), 1)
                     if date_days.isweekend(price_date):
                         price_date = date_days.subtract(price_date, 1)
@@ -1947,8 +1955,8 @@ class BankenLedger(object):
                             # HOLDING previous entry
                             clause = ' ' + DB_price_date + ' < ' + \
                                 '"' + max_price_date.strftime("%Y-%m-%d") + '"'
-                            max_price_date_previous = self.mariadb.select_max_column_value(
-                                HOLDING, DB_price_date, iban=iban, clause=clause)
+                            max_price_date_previous = self.mariadb.select_scalar(
+                                HOLDING, f"MAX({DB_price_date})", iban=iban, clause=clause)
                             balance_previous = self.mariadb.select_table(
                                 HOLDING, fields, result_dict=True, iban=iban, price_date=max_price_date_previous)
                             if balance_previous:
@@ -2000,7 +2008,7 @@ class BankenLedger(object):
         iban = account[KEY_ACC_IBAN]
         bank_name = self._bank_name(bank_code)
         selection_name = ' '.join(
-            [MENU_TEXT['Show'], bank_name, MENU_TEXT['Statement']])
+            [get_menu_text("Show"), bank_name, get_menu_text("Statement")])
         label = account[KEY_ACC_PRODUCT_NAME]
         if not label:
             label = account[KEY_ACC_ACCOUNT_NUMBER]
@@ -2021,7 +2029,7 @@ class BankenLedger(object):
                 data_dict[DB_opening_status] = 1
             selected_check_button = list(
                 filter(lambda x: data_dict[x] == 1, list(data_dict.keys())))
-            message = MESSAGE_TEXT['HELP_PANDASTABLE']
+            message = get_message(MESSAGE_TEXT, 'HELP_PANDASTABLE')
             period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
             data = self.mariadb.select_table(
                 STATEMENT, selected_check_button, result_dict=True,
@@ -2036,7 +2044,7 @@ class BankenLedger(object):
                         break
             else:
                 self.footer.set(
-                    MESSAGE_TEXT['DATA_NO'].format(title_period, selected_check_button))
+                    get_message(MESSAGE_TEXT, 'DATA_NO', title_period, selected_check_button))
                 break
 
     def _show_transactions(self, bank_code, account):
@@ -2047,11 +2055,11 @@ class BankenLedger(object):
         if not label:
             label = account[KEY_ACC_ACCOUNT_NUMBER]
         bank_name = self._bank_name(bank_code)
-        title = ' '.join([MENU_TEXT['Show'], bank_name,
-                          MENU_TEXT['Transactions'], label])
+        title = ' '.join([get_menu_text("Show"), bank_name,
+                          get_menu_text("Transactions"), label])
         data_dict = {FN_FROM_DATE: date_days.subtract(
             date.today(), 360), FN_TO_DATE: date.today()}
-        message = MESSAGE_TEXT['HELP_PANDASTABLE']
+        message = get_message(MESSAGE_TEXT, 'HELP_PANDASTABLE')
         while True:
             date_transaction_view = InputDateTable(
                 title=title, data_dict=data_dict, table=TRANSACTION_VIEW)
@@ -2074,7 +2082,7 @@ class BankenLedger(object):
                         break
             else:
                 self.footer.set(
-                    MESSAGE_TEXT['DATA_NO'].format(title_period, selected_check_button))
+                    get_message(MESSAGE_TEXT, 'DATA_NO', title_period, selected_check_button))
                 break
 
     def _show_holdings(self, bank_code, account):
@@ -2086,7 +2094,7 @@ class BankenLedger(object):
             label = account[KEY_ACC_ACCOUNT_NUMBER]
         bank_name = self._bank_name(bank_code)
         title = ' '.join(
-            [MENU_TEXT['Show'], bank_name, MENU_TEXT['Holding'] + '%', label])
+            [get_menu_text("Show"), bank_name, get_menu_text("Holding") + '%', label])
         data_dict = {FN_FROM_DATE: date_days.convert(date.today() - timedelta(days=1)),
                      FN_TO_DATE: date_days.convert(date.today())}
         self.mariadb.selection_put(title, data_dict)    # start with current day
@@ -2103,7 +2111,7 @@ class BankenLedger(object):
             data_to_date = self.mariadb.select_holding_data(
                 iban=iban, price_date=to_date)
             title_period = ' '.join(
-                [title, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                [title, get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
             while True:
                 table = PandasBoxHoldingPercent(title=title_period, dataframe=(
                     data_to_date, data_from_date), mode=CURRENCY_SIGN,
@@ -2114,7 +2122,7 @@ class BankenLedger(object):
     def _transactions_pieces(self, bank_name, iban):
 
         self._delete_footer()
-        title = ' '.join([bank_name, MENU_TEXT['Check Transactions Pieces']])
+        title = ' '.join([bank_name, get_menu_text("Check Transactions Pieces")])
         data_dict = {FN_FROM_DATE: START_DATE_TRANSACTIONS,
                      FN_TO_DATE: date.today()}
         while True:
@@ -2127,7 +2135,7 @@ class BankenLedger(object):
             if result:
                 dataframe = DataFrame(list(result), columns=['ORIGIN',
                                                              DB_ISIN, DB_name, DB_pieces])
-                title = title + MESSAGE_TEXT['TRANSACTION_PIECES_PORTFOLIO']
+                title = title + get_message(MESSAGE_TEXT, 'TRANSACTION_PIECES_PORTFOLIO')
                 while True:
                     table = BuiltPandasBox(
                         dataframe=dataframe, title=title, cellwidth_resizeable=False)
@@ -2135,13 +2143,13 @@ class BankenLedger(object):
                         break
             else:
                 MessageBoxInfo(title=title,
-                               message=MESSAGE_TEXT['TRANSACTION_CHECK'].format('NO '))
+                               message=get_message(MESSAGE_TEXT, 'TRANSACTION_CHECK', 'NO '))
 
     def _transactions_profit(self, bank_name, iban):
 
         self._delete_footer()
         title = ' '.join(
-            [bank_name, MENU_TEXT['Profit of closed Transactions']])
+            [bank_name, get_menu_text("Profit of closed Transactions")])
         data_dict = {FN_FROM_DATE: START_DATE_TRANSACTIONS,
                      FN_TO_DATE: date.today()}
         while True:
@@ -2159,7 +2167,7 @@ class BankenLedger(object):
             iban=iban, period=(from_date, to_date))
         if result:
             title_period = ' '.join(
-                [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
+                [title, get_message(MESSAGE_TEXT, 'PERIOD', from_date, to_date)])
             while True:
                 table = PandasBoxTransactionProfit(
                     title=title_period, dataframe=list(result), mode=NO_CURRENCY_SIGN,
@@ -2169,13 +2177,13 @@ class BankenLedger(object):
 
         else:
             MessageBoxInfo(title=title,
-                           message=MESSAGE_TEXT['TRANSACTION_CLOSED_EMPTY'].format(from_date, to_date))
+                           message=get_message(MESSAGE_TEXT, 'TRANSACTION_CLOSED_EMPTY', from_date, to_date))
 
     def _transactions_profit_all(self, bank_name, iban):
 
         self._delete_footer()
         title = ' '.join(
-            [bank_name, MENU_TEXT['Profit Transactions incl. current Depot Positions']])
+            [bank_name, get_menu_text("Profit Transactions incl. current Depot Positions")])
         data_dict = {FN_FROM_DATE: START_DATE_TRANSACTIONS,
                      FN_TO_DATE: date.today()}
         while True:
@@ -2187,7 +2195,7 @@ class BankenLedger(object):
                 iban=iban, period=(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
             if result:
                 title_period = ' '.join(
-                    [title, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                    [title, get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
                 while True:
                     table = PandasBoxTransactionProfit(
                         title=title_period, dataframe=list(result), mode=NO_CURRENCY_SIGN,
@@ -2195,8 +2203,12 @@ class BankenLedger(object):
                     if table.button_state == WM_DELETE_WINDOW:
                         break
             else:
-                MessageBoxInfo(title=title,
-                               message=MESSAGE_TEXT['TRANSACTION_NO'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]))
+                MessageBoxInfo(
+                    title=title,
+                    message=get_message(
+                        MESSAGE_TEXT, 'TRANSACTION_NO', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE]
+                        )
+                    )
                 self._transactions_profit_closed(
                     bank_name, iban, data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
 
@@ -2205,7 +2217,7 @@ class BankenLedger(object):
         Update Table holding total_amount_portfolio
         """
         title = ' '.join(
-            [bank_name, iban, MENU_TEXT['Update Portfolio Total Amount']])
+            [bank_name, iban, get_menu_text("Update Portfolio Total Amount")])
         data_dict = {}
         data_dict[FN_FROM_DATE] = date.today()
         data_dict[FN_TO_DATE] = date.today()
@@ -2213,12 +2225,13 @@ class BankenLedger(object):
             input_period = InputPeriod(title=title, data_dict=data_dict)
             if input_period.button_state == WM_DELETE_WINDOW:
                 return
-            data_dict = input_period.feld_dict
+            data_dict = input_period.field_dict
             period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
             self.mariadb.update_total_holding_amount(iban=iban, period=period)
             self.footer.set(' '.join(
-                [MESSAGE_TEXT['TASK_DONE'],  "\n", MENU_TEXT['Update Portfolio Total Amount'],
-                 "\n", bank_name, iban,   MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                [get_message(MESSAGE_TEXT, 'TASK_DONE'),  "\n", get_message(MESSAGE_TEXT, 'Update Portfolio Total Amount'),
+                 "\n", bank_name, iban,   get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])]
+                )
             )
 
     def _websites(self, site):
@@ -2232,138 +2245,231 @@ class BankenLedger(object):
     def _ledger_balances(self):
         """
         Show ledger balances
-            date referred to entry_date field in Ledger
+            date referred to entry_date field in Ledgerr
         """
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Ledger'],
-                         MENU_TEXT['Balances']])
-        data_dict = {FN_FROM_DATE: date(
-            date.today().year, 1, 1), FN_TO_DATE: date(date.today().year, 12, 31)}
-        input_period = InputPeriod(title=title, data_dict=data_dict)
-        if input_period.button_state == WM_DELETE_WINDOW:
-            return
-        data_dict = input_period.field_dict
-        ledger_coa = self.mariadb.select_table(
-            LEDGER_COA, [DB_account, DB_name, DB_iban, DB_portfolio], order=DB_account, result_dict=True)
-        data = self._ledger_balance_table(
-            data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE], ledger_coa)
-        if data:
-            title = ' '.join(
-                [title, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
-            BuiltPandasBox(title=title, dataframe=DataFrame(
-                data), mode=NO_CURRENCY_SIGN, cellwidth_resizeable=False)
-        else:
-            self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, ''))
+        title = ' '.join([get_menu_text("Ledger"),
+                         get_menu_text("Balances")])
+        accounts = self.mariadb.select_table(
+            LEDGER_COA, [DB_account, DB_name, DB_iban, DB_portfolio, DB_asset_accounting],
+            order=DB_account, result_dict=True
+            )
+        data_dict = self.mariadb.selection_get(title)
+        if not data_dict:
+            data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
+                datetime.now().year, 12, 31)}
+        while True:
+            input_period = InputPeriod(title=title, data_dict=data_dict)
+            if input_period.button_state == WM_DELETE_WINDOW:
+                return
+            data_dict = input_period.field_dict
+            if input_period:
+                from_date = input_period.field_dict[FN_FROM_DATE]
+                to_date = input_period.field_dict[FN_TO_DATE]
+                data_dict = input_period.field_dict
+                data = self._ledger_balance_account(to_date, accounts, from_date=from_date)
+                if data:
+                    title = ' '.join([title, get_message(MESSAGE_TEXT, 'PERIOD', from_date, to_date)])
+                    BuiltPandasBox(
+                        title=title, dataframe=DataFrame(data, columns=[DB_account, DB_name, FN_BALANCE]),
+                        mode=NO_CURRENCY_SIGN, cellwidth_resizeable=False
+                        )
+            else:
+                self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', title, ''))
 
     def _ledger_assets(self):
         """
-        Show ledger assets
+        Show ledger assets of period
             date referred to entry_date field in Ledger
         """
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Ledger'],
-                         MENU_TEXT['Assets']])
-        ledger_coa = self.mariadb.select_table(
-            LEDGER_COA, [DB_account, DB_name, DB_iban, DB_portfolio], order=DB_account, result_dict=True, asset_accounting=True)
-        from_date = date(datetime.now().year, 1, 1)
-        to_date = date(datetime.now().year, 12, 31)
-        data = self._ledger_balance_table(from_date, to_date, ledger_coa)
-        if data:
+        title = ' '.join([get_menu_text("Ledger"),
+                         get_menu_text("Assets")])
+        asset_accounts = self.mariadb.select_table(
+            LEDGER_COA, [DB_account, DB_name, DB_iban, DB_portfolio, DB_asset_accounting],
+            order=DB_account, result_dict=True, asset_accounting=True
+            )
+        data_dict = {FN_FROM_DATE: date_days.today(), FN_TO_DATE: date_days.today()}
+        input_period = InputPeriod(title=title, data_dict=data_dict)
+        if input_period.button_state == WM_DELETE_WINDOW:
+            return
+        if input_period:
+            from_date = input_period.field_dict[FN_FROM_DATE]
+            to_date = input_period.field_dict[FN_TO_DATE]
+            data = []
+            data_counter = 0
+            for asset_day in date_days.iter_workdays(from_date, to_date):
+                asset_day_data = self._ledger_balance_account(asset_day, asset_accounts)
+                if asset_day_data:
+                    data = [*data, *asset_day_data]
+                    data_counter += 1
             title = ' '.join(
-                [title, MESSAGE_TEXT['PERIOD'].format(from_date, to_date)])
-            BuiltPandasBox(title=title, dataframe=DataFrame(data, columns=[DB_account, DB_name, FN_BALANCE]),
-                           dataframe_sum=[FN_BALANCE], mode=NO_CURRENCY_SIGN, cellwidth_resizeable=False)
+                [title, get_message(MESSAGE_TEXT, 'PERIOD', from_date, to_date)])
+            if data_counter == 1:
+                BuiltPandasBox(title=title, dataframe=DataFrame(data, columns=[DB_account, DB_name, FN_BALANCE]),
+                               dataframe_sum=[FN_BALANCE], mode=NO_CURRENCY_SIGN, cellwidth_resizeable=False
+                               )
+            elif data_counter > 1:
+                PandasBoxTotals(title, data)
         else:
-            self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, ''))
+            self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', title, ''))
 
-    def _ledger_balance_table(self, from_date, to_date, ledger_coa):
+    def _ledger_balance_account(
+        self,
+        to_date: str,
+        asset_accounts: List[Dict[str, any]],
+        *,
+        from_date: str | None = None,
+    ) -> Optional[List[Dict[str, any]]]:
+        """
+        Calculate balances for a list of asset accounts.
 
-        data = []
-        max_price_date_all_iban = self.mariadb.select_max_column_value(
-            HOLDING, DB_price_date, period=(from_date, to_date))
-        for ledger_coa_dict in ledger_coa:
-            account = ledger_coa_dict[DB_account]
-            _name = ledger_coa_dict[DB_name]
-            iban = ledger_coa_dict[DB_iban]
-            portfolio = ledger_coa_dict[DB_portfolio]
-            credit = 0
-            debit = 0
-            if portfolio:
-                balance, price_date = self._ledger_balance_holding(
-                    ledger_coa_dict, iban)
-                if price_date != max_price_date_all_iban:
-                    # this holding is empty:
-                    balance = 0
-                credit = ''
-                debit = ''
+        Priority:
+            1. Portfolio balance (returns 0 if no entries)
+            2. Statement balance (with Ledger fallback)
+            3. Ledger balance (for accounts without IBAN or as fallback)
+
+        Parameters:
+            to_date (yyyy-mm-dd): The date for which balances are calculated.
+            asset_accounts (List[Dict[str, any]]): List of account dictionaries. Each dict
+                must contain at least the following keys:
+                    - DB_account: account identifier
+                    - DB_name: account name
+                    - DB_iban: IBAN (can be NOT_ASSIGNED)
+                    - DB_portfolio: True if it's a portfolio account, else False
+            from_date (yyyy-mm-dd): The date from which balances are calculated.
+
+        Returns:
+            Optional[List[Dict[str, any]]]: A list of dictionaries, each containing:
+                - DB_account: account identifier
+                - DB_name: account name
+                - FN_BALANCE: calculated balance (float)
+            Returns None if a critical error occurs (e.g., missing opening balance or ledger).
+        """
+        data: List[Dict[str, any]] = []
+        if from_date is None:
+            from_date = date(date_days.get_year(to_date), 1, 1)
+        period = (from_date, to_date)
+        # Get the latest price date for all holdings
+        max_price_date_all_iban = self.mariadb.select_last_row(
+            HOLDING,
+            DB_price_date,
+            order=DB_price_date,
+            clause=f"{DB_price_date} <= ?",
+            clause_vars=(to_date,)
+            )
+        # Get the opening balance account
+        opening_balance_account = self.mariadb.select_scalar(
+            LEDGER_COA,
+            DB_account,
+            opening_balance_account=True  # check box value in table LEDGER_COA
+        )
+        if not opening_balance_account:
+            MessageBoxInfo(
+                message=get_message(MESSAGE_TEXT, 'OPENING_ACCOUNT_MISSED')
+            )
+            return None
+
+        # Helper function: Ledger fallback for missing statement balances
+        def ledger_fallback(
+                account_dict: Dict[str, any],
+                period: tuple
+                ) -> Optional[float]:
+            """
+            Retrieve ledger balance for a given account.
+
+            Parameters:
+                account_dict (Dict[str, any]): Account dictionary containing at least DB_name
+                period (tuple): Balance period
+
+            Returns:
+                Optional[float]: Signed ledger balance, or None if not found.
+            """
+            balance = self.mariadb.select_ledger_balance(
+                account_dict,
+                opening_balance_account,
+                period
+            )
+            if balance:
+                # signed_balance(value, status)
+                return balance
             else:
-                if iban != NOT_ASSIGNED:
-                    # get opening balance of asset current year
-                    order = [DB_entry_date, DB_counter]
-                    field_list = [DB_opening_balance, DB_opening_status]
-                    period = (from_date, to_date)
-                    balance_dict = self.mariadb.select_table_first(
-                        STATEMENT, field_list, date_name=DB_entry_date, order=order, result_dict=True, iban=iban, period=period)
-                    if balance_dict and balance_dict[DB_opening_status] == CREDIT:
-                        credit = balance_dict[DB_opening_balance]
-                    elif balance_dict and balance_dict[DB_opening_status] == DEBIT:
-                        debit = balance_dict[DB_opening_balance]
-                    else:
-                        # get closing balance of asset last year
-                        # necessary if there is no account turnover in the current year
-                        order = [DB_entry_date, DB_counter]
-                        field_list = [DB_closing_balance, DB_closing_status]
-                        period = (date_years.subtract(from_date, 1),
-                                  date_years.subtract(to_date, 1))
-                        balance_dict = self.mariadb.select_table_last(
-                            STATEMENT, field_list, date_name=DB_entry_date, order=order, result_dict=True, iban=iban, period=period)
-                        if balance_dict and balance_dict[DB_closing_status] == CREDIT:
-                            credit = balance_dict[DB_closing_balance]
-                        elif balance_dict and balance_dict[DB_closing_status] == DEBIT:
-                            debit = balance_dict[DB_closing_balance]
-                period = (from_date, to_date)
-                credit_sum = self.mariadb.select_table_sum(
-                    LEDGER, DB_amount, date_name=DB_entry_date, period=period, credit_account=account)
-                if credit_sum:
-                    credit = credit + credit_sum
-                debit_sum = self.mariadb.select_table_sum(
-                    LEDGER, DB_amount, date_name=DB_entry_date, period=period, debit_account=account)
-                if debit_sum:
-                    debit = debit_sum + debit
-                balance = credit-debit
-            account_dict = dict(zip([DB_account, DB_name, FN_CREDIT, FN_DEBIT, FN_BALANCE],
-                                    [account, _name, credit, debit, balance]))
-            if credit or debit or balance or portfolio:
-                data.append(account_dict)
-        return data
+                if account_dict[DB_asset_accounting]:
+                    MessageBoxInfo(
+                        message=get_message(
+                            MESSAGE_TEXT,
+                            'OPENING_LEDGER_MISSED',
+                            (None, to_date),
+                            account_dict[DB_name]
+                        )
+                    )
+                return 0
 
-    def _ledger_balance_holding(self, ledger_coa_dict, iban):
-        """
-        Return latest total_amount_portfolio, otherwise return 0
-        """
-        max_price_date = self.mariadb.select_max_column_value(
-            HOLDING, DB_price_date, iban=iban)
-        if max_price_date:
-            result = self.mariadb.select_table(
-                HOLDING, [DB_total_amount_portfolio, DB_price_date], iban=iban, price_date=max_price_date)
-            if result:
-                # HOLDING Account contains only 1 record per day (total_amount_portfolio, price_date)
-                return result[0]
-        return 0
+        # Iterate over all asset accounts
+        for asset_account_dict in asset_accounts:
+            account = asset_account_dict[DB_account]
+            name = asset_account_dict[DB_name]
+            iban = asset_account_dict[DB_iban]
+            portfolio = asset_account_dict[DB_portfolio]
+            balance: Optional[float] = None
+
+            # 1️⃣ Portfolio account: return 0 if no entries, no fallback
+            if portfolio:
+                if max_price_date_all_iban:
+                    balance = self.mariadb.select_scalar(
+                        HOLDING,
+                        [DB_total_amount_portfolio],
+                        iban=iban,
+                        price_date=max_price_date_all_iban,
+                        default=0
+                    )
+
+            # 2️⃣ IBAN account: try statement balance, fallback to ledger
+            elif iban != NOT_ASSIGNED:
+                result = self.mariadb.select_last_row(
+                    STATEMENT,
+                    [DB_closing_balance, DB_closing_status],
+                    order=[DB_entry_date, DB_counter],
+                    date_name=DB_entry_date,
+                    result_dict=True,
+                    iban=iban,
+                    period=(START_DATE_STATEMENTS, to_date),
+                )
+
+                if result:
+                    balance = signed_balance(
+                        result[DB_closing_balance],
+                        result[DB_closing_status]
+                    )
+                else:
+                    balance = ledger_fallback(asset_account_dict, period)
+            # 3️⃣ Account without IBAN: Ledger only
+            else:
+                balance = ledger_fallback(asset_account_dict, period)
+            # Append calculated balance
+            if balance:
+                data.append({
+                    DB_account: account,
+                    DB_name: name,
+                    DB_date: to_date,
+                    FN_BALANCE: balance
+                })
+
+        return data
 
     def _ledger_upload_check(self):
         """
         Check (last upload ledger)
         """
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Ledger'],
-                         MENU_TEXT['Check Upload']])
+        title = ' '.join([get_menu_text("Ledger"),
+                         get_menu_text("Check Upload")])
 
         field_list = TABLE_FIELDS[LEDGER_VIEW]
         from_date = date(datetime.now().year - 1, 1, 1)
         to_date = date(datetime.now().year, 12, 31)
         period = (from_date, to_date)
-        message = MESSAGE_TEXT['HELP_CHECK_UPLOAD']
+        message = get_message(MESSAGE_TEXT, 'HELP_CHECK_UPLOAD')
         while True:
             data = self.mariadb.select_table(
                 LEDGER_VIEW, field_list, result_dict=True,
@@ -2375,17 +2481,19 @@ class BankenLedger(object):
                 if table.button_state == WM_DELETE_WINDOW:
                     break
             else:
-                period = MESSAGE_TEXT['PERIOD'].format(
-                    date_days.convert(from_date), date_days.convert(to_date))
-                self.footer.set(MESSAGE_TEXT['DATA_NO'].format(title, period))
+                period = get_message(
+                    MESSAGE_TEXT, 'PERIOD',
+                    date_days.convert(from_date), date_days.convert(to_date)
+                    )
+                self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', title, period))
                 break
 
     def _ledger_bank_statement_check(self):
         """
         Check (Bank Statement of an account)
         """
-        title = ' '.join([MENU_TEXT['Ledger'],
-                         MENU_TEXT['Check Bank Statement']])
+        title = ' '.join([get_menu_text("Ledger"),
+                         get_menu_text("Check Bank Statement")])
         self._ledger_account(title=title, iban_clause=True)
 
     def _ledger_account_category(self):
@@ -2393,8 +2501,8 @@ class BankenLedger(object):
         Account grouped by category with sum Rows
         """
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Ledger'],
-                         MENU_TEXT['Account Category']])
+        title = ' '.join([get_menu_text("Ledger"),
+                         get_menu_text("Account Category")])
         data_dict = self.mariadb.selection_get(title)
         if not data_dict:
             data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
@@ -2412,7 +2520,7 @@ class BankenLedger(object):
                           DB_currency, DB_category, DB_credit_account, DB_debit_account, DB_applicant_name]
             while True:
                 title_period = '  '.join(
-                    [title, account, account_name, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                    [title, account, account_name, get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
                 data = self.mariadb.select_ledger_account(
                     field_list, account, result_dict=True, date_name=DB_entry_date, period=period)
                 if data:
@@ -2422,15 +2530,15 @@ class BankenLedger(object):
                         break
                 else:
                     self.footer.set(
-                        MESSAGE_TEXT['DATA_NO'].format(' ', title_period))
+                        get_message(MESSAGE_TEXT, 'DATA_NO', ' ', title_period))
                     break
 
     def _ledger_account(self, title=None, iban_clause=False):
 
         self._delete_footer()
         if title is None:
-            title = ' '.join([MENU_TEXT['Ledger'],
-                             MENU_TEXT['Account']])
+            title = ' '.join([get_menu_text("Ledger"),
+                             get_menu_text("Account")])
         data_dict = self.mariadb.selection_get(title)
         if not data_dict:
             data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1),
@@ -2448,11 +2556,11 @@ class BankenLedger(object):
             field_list = list(filter(lambda x: data_dict[x] == 1, list(
                 data_dict.keys())))  # filter selected check_buttons
             selected_row = 0
-            message = MESSAGE_TEXT['HELP_PANDASTABLE']
+            message = get_message(MESSAGE_TEXT, 'HELP_PANDASTABLE')
             while True:
                 title_period = '  '.join(
-                    [title, account, account_name, MESSAGE_TEXT['PERIOD'].format(data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
-                if title.startswith(' '.join([MENU_TEXT['Ledger'], MENU_TEXT['Check Bank Statement']])):
+                    [title, account, account_name, get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                if title.startswith(' '.join([get_menu_text("Ledger"), get_menu_text("Check Bank Statement")])):
                     # caller is _ledger_statement_check
                     data = self.mariadb.select_ledger_account(
                         field_list, account, result_dict=True, date_name=DB_entry_date, period=period, bank_statement_checked=False)
@@ -2469,20 +2577,20 @@ class BankenLedger(object):
                         break
                 else:
                     self.footer.set(
-                        MESSAGE_TEXT['DATA_NO'].format(' ', title_period))
+                        get_message(MESSAGE_TEXT, 'DATA_NO', ' ', title_period))
                     break
 
     def _ledger_journal(self):
 
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Ledger'],
-                         MENU_TEXT['Journal']])
+        title = ' '.join([get_menu_text("Ledger"),
+                         get_menu_text("Journal")])
         field_list = TABLE_FIELDS[LEDGER_VIEW]
         data_dict = self.mariadb.selection_get(title)
         if not data_dict:
             data_dict = {FN_FROM_DATE: date(datetime.now().year, 1, 1), FN_TO_DATE: date(
                 datetime.now().year, 12, 31)}
-        message = MESSAGE_TEXT['HELP_PANDASTABLE']
+        message = get_message(MESSAGE_TEXT, 'HELP_PANDASTABLE')
         while True:
             input_period = InputPeriod(title=title, data_dict=data_dict)
             if input_period.button_state == WM_DELETE_WINDOW:
@@ -2505,16 +2613,16 @@ class BankenLedger(object):
                         break
                 else:
                     self.footer.set(
-                        MESSAGE_TEXT['DATA_NO'].format(' ', title_period))
+                        get_message(MESSAGE_TEXT, 'DATA_NO', ' ', title_period))
                     break
 
     def _ledger_coa_table(self):
 
         self._delete_footer()
-        title = ' '.join([MENU_TEXT['Ledger'],
-                         MENU_TEXT['Chart of Accounts']])
+        title = ' '.join([get_menu_text("Ledger"),
+                         get_menu_text("Chart of Accounts")])
         field_list = TABLE_FIELDS[LEDGER_COA]
-        message = MESSAGE_TEXT['HELP_PANDASTABLE']
+        message = get_message(MESSAGE_TEXT, 'HELP_PANDASTABLE')
         selected_row = 0
         while True:
             data = self.mariadb.select_table(

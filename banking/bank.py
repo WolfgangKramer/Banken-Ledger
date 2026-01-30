@@ -1,6 +1,6 @@
 """
 Created on 18.11.2019
-__updated__ = "2025-07-07"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 """
 
@@ -13,7 +13,7 @@ from banking.mariadb import MariaDB
 from banking.declarations import (
     CUSTOMER_ID_ANONYMOUS,
     DIALOG_ID_UNASSIGNED,
-    HTTP_CODE_OK, MESSAGE_TEXT,
+    HTTP_CODE_OK,
     KEY_USER_ID, KEY_PIN, KEY_BIC, KEY_BANK_NAME, KEY_VERSION_TRANSACTION,
     KEY_SERVER, KEY_SECURITY_FUNCTION, KEY_SEPA_FORMATS, KEY_SYSTEM_ID,
     KEY_BPD, KEY_UPD, KEY_STORAGE_PERIOD, KEY_TWOSTEP, KEY_ACCOUNTS, KEY_SUPPORTED_CAMT_MESSAGE,
@@ -23,7 +23,11 @@ from banking.declarations import (
 )
 from banking.declarations_mariadb import DB_product_id
 from banking.dialog import Dialogs
-from banking.messagebox import MessageBoxError, MessageBoxInfo
+from banking.message_handler import (
+    get_message,
+    MESSAGE_TEXT,
+    MessageBoxError, MessageBoxInfo
+    )
 from banking.forms import InputPIN
 
 from banking.utils import application_store, http_error_code
@@ -51,17 +55,17 @@ class InitBank(object):
             self.accounts = shelve_file[KEY_ACCOUNTS]
         except KeyError as key_error:
             MessageBoxError(
-                message=MESSAGE_TEXT['LOGIN'].format(self.bank_code, key_error))
+                message=get_message(MESSAGE_TEXT, 'LOGIN', self.bank_code, key_error))
             return None  # thread checking
         http_code = http_error_code(self.server)
         if http_code not in HTTP_CODE_OK:
-            MessageBoxError(message=MESSAGE_TEXT['HTTP'].format(http_code,
-                                                                self.bank_code, self.server))
+            MessageBoxError(message=get_message(MESSAGE_TEXT, 'HTTP', http_code,
+                                                self.bank_code, self.server))
             webbrowser.open(self.server)
             return None  # thread checking
         if bank_code in list(SCRAPER_BANKDATA.keys()):
             MessageBoxError(
-                message=MESSAGE_TEXT['LOGIN_SCRAPER'].format('', self.bank_code))
+                message=get_message(MESSAGE_TEXT, 'LOGIN_SCRAPER', '', self.bank_code))
             return None  # thread checking
         else:
             self.dialogs = Dialogs()
@@ -69,14 +73,14 @@ class InitBank(object):
                 self.security_function = shelve_file[KEY_SECURITY_FUNCTION]
             except KeyError as key_error:
                 MessageBoxError(
-                    message=MESSAGE_TEXT['LOGIN'].format(self.bank_code, key_error))
+                    message=get_message(MESSAGE_TEXT, 'LOGIN', self.bank_code, key_error))
                 return None  # thread checking
             # Checking / Installing FINTS server connection
             # register product:
             # https://www.hbci-zka.de/register/prod_register.htm
             self.product_id = application_store.get(DB_product_id)
             if self.product_id == '':
-                MessageBoxInfo(message=MESSAGE_TEXT['PRODUCT_ID'])
+                MessageBoxInfo(message=get_message(MESSAGE_TEXT, 'PRODUCT_ID'))
                 self.product_id = PRODUCT_ID
             # Getting Sychronisation Data
             try:
@@ -92,7 +96,7 @@ class InitBank(object):
                         break
                 if not self.sepa_descriptor:
                     MessageBoxError(
-                        message=MESSAGE_TEXT['PAIN'].format(self.bank_code))
+                        message=get_message(MESSAGE_TEXT, 'PAIN', self.bank_code))
                     return None  # thread checking
                 self.security_identifier = shelve_file[KEY_SYSTEM_ID]
                 self.bpd_version = shelve_file[KEY_BPD]
@@ -103,7 +107,7 @@ class InitBank(object):
                 self.upd_version = shelve_file[KEY_UPD]
             except KeyError:
                 MessageBoxError(
-                    message=MESSAGE_TEXT['SYNC'].format(self.bank_code))
+                    message=get_message(MESSAGE_TEXT, 'SYNC', self.bank_code))
                 return None  # thread checking
             # Setting Dialog Variables
             self.message_number = 1
@@ -154,7 +158,7 @@ class InitBankSync(object):
             self.bpd_version = shelve_file[KEY_BPD]
         except KeyError as key_error:
             MessageBoxError(
-                message=MESSAGE_TEXT['LOGIN'].format(self.bank_code, key_error))
+                message=get_message(MESSAGE_TEXT, 'LOGIN', self.bank_code, key_error))
             return None  # thread checking
         if bank_code not in PNS.keys():
             try:
@@ -162,18 +166,18 @@ class InitBankSync(object):
                 PNS[bank_code] = inputpin.pin
             except TypeError:
                 MessageBoxError(
-                    message=MESSAGE_TEXT['PIN'].format('', self.bank_code))
+                    message=get_message(MESSAGE_TEXT, 'PIN', '', self.bank_code))
                 return None  # thread checking
         # register product: https://www.hbci-zka.de/register/prod_register.htm
         self.product_id = application_store.get(DB_product_id)
         if self.product_id == '':
-            MessageBoxInfo(message=MESSAGE_TEXT['PRODUCT_ID'])
+            MessageBoxInfo(message=get_message(MESSAGE_TEXT, 'PRODUCT_ID'))
             self.product_id = PRODUCT_ID
         # Checking / Installing FINTS server connection
         http_code = http_error_code(self.server)
         if http_code not in HTTP_CODE_OK:
-            MessageBoxError(message=MESSAGE_TEXT['HTTP'].format(http_code,
-                                                                self.bank_code, self.server))
+            MessageBoxError(message=get_message(MESSAGE_TEXT, 'HTTP', http_code,
+                                                self.bank_code, self.server))
             webbrowser.open(self.server)
             return None  # thread checking
         # Init Sychronization Data
@@ -219,18 +223,18 @@ class InitBankAnonymous(object):
         self.server = mariadb.shelve_get_key(bank_code, KEY_SERVER)
         if self.server in [None, '']:
             MessageBoxError(
-                message=MESSAGE_TEXT['LOGIN'].format(self.bank_code, KEY_SERVER))
+                message=get_message(MESSAGE_TEXT, 'LOGIN', self.bank_code, KEY_SERVER))
             return None  # thread checking
         # register product: https://www.hbci-zka.de/register/prod_register.htm
         self.product_id = application_store.get(DB_product_id)
         if self.product_id in [None, '']:
-            MessageBoxInfo(message=MESSAGE_TEXT['PRODUCT_ID'])
+            MessageBoxInfo(message=get_message(MESSAGE_TEXT, 'PRODUCT_ID'))
             self.product_id = PRODUCT_ID
         # Checking / Installing FINTS server connection
         http_code = http_error_code(self.server)
         if http_code not in HTTP_CODE_OK:
-            MessageBoxError(message=MESSAGE_TEXT['HTTP'].format(http_code,
-                                                                self.bank_code, self.server))
+            MessageBoxError(message=get_message(MESSAGE_TEXT, 'HTTP', http_code,
+                                                self.bank_code, self.server))
             webbrowser.open(self.server)
             return None  # thread checking
         # Init Sychronization Data

@@ -1,6 +1,6 @@
 """
 Created on 12.04.2021
-__updated__ = "2025-05-25"
+__updated__ = "2026-01-30"
 @author: Wolfgang Kramer
 
     Modified code of:
@@ -25,13 +25,14 @@ from pandastable.plotting import addFigure
 from pandastable.headers import createSubMenu
 from pandastable.dialogs import applyStyle
 from banking.declarations import (
-    ToolbarSwitch, POPUP_MENU_TEXT, MESSAGE_TITLE,
+    ToolbarSwitch, POPUP_MENU_TEXT,
     EDIT_ROW, CURRENCY_SIGN, NUMERIC, NO_CURRENCY_SIGN, TechnicalIndicatorData,
     WM_DELETE_WINDOW,
 )
 from banking.declarations_mariadb import (
     DB_close,
     )
+from banking.message_handler import MESSAGE_TITLE
 
 BUTTON_NEW = 'NEW'
 BUTTON_DELETE = 'DELETE'

@@ -24,13 +24,13 @@ bankarchive/
 |			...
 |   			|-- utils.py
 |		|-- background.gif
-|		|-- Banking.py
+|		|-- app.py
 </pre>
 # Install Requirements
 pip install -r requirements.txt  
 # Create BAT file Banking.bat
 > cd C:\BANKEN\src  
-> py Banking.py
+> py app.py
 # Customizing
 1. Customize Application INI File
 2. Import Bankidentifier Data (Bankleitzahlendateien ungepackt) or use TableContent.zip

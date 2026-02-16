@@ -1,9 +1,9 @@
 """
 Created on 18.11.2019
-__updated__ = "2026-01-30"
+__updated__ = "2026-02-08"
 @author: Wolfgang Kramer
 """
-
+from __future__ import annotations
 
 import functools
 import importlib
@@ -370,9 +370,9 @@ def create_iban(bank_code=None, account_number=None):
 
     # Eine deutsche IBAN wird wie folgt aus Kontonummer und Bankleitzahl berechnet:
     #
-    #        Bilde aus Bankleitzahl, Kontonummer und Laenderkennung eine Zahl.
+    #        Bilde aus Bankleitzahl, Kontonummer und Laendrkennung eine Zahl.
     #        Am Anfang der Zahl steht die Bankleitzahl.
-    #        Die Kontonummer wird, falls sie weniger als zehn Stellen hat, mit fuehrenden Nullen
+    #        Die Kontonummer wird, falls sie weniger als zehn Stellen hat, mit fuehrendn Nullen
     #        auf zehn Stellen erweitert.
     #        Falls eine der zahlreichen Sonderregeln fuer die gegebene Bankverbindung gilt, koennte
     #        es auch noetig sein, die Kontonummer auf eine andere Art auf 10 Stellen zu erweitern
@@ -386,7 +386,7 @@ def create_iban(bank_code=None, account_number=None):
     #         Fuer die Kontonummer 123456789 und die Bankleitzahl 50010517 ergibt sich die Zahl
     #         0105170123456789131400.
     #         Der Rest der Division dieser 24stelligen Zahl durch 97 wird von 98 abgezogen.
-    #         Sollte das eine einstellige Zahl ergeben, wird sie um eine fuehrende Null erweitert.
+    #         Sollte das eine einstellige Zahl ergeben, wird sie um eine fuehrend Null erweitert.
     #         Das Resultat sind zwei Pruefziffern.
     verification_number = (
         str(98 - int(bank_code + str(account_number.zfill(10)) + '131400') % 97).zfill(2)
@@ -564,7 +564,7 @@ class Calculate(object):
 
     def percent(self, x, y):
         """
-        returns percentage of x basis y
+        returns percenday_e of x basis y
         e.g. x=39 y=46 returns 84.78
              x=46 y=39 returns 117.95
         """

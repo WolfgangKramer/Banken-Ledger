@@ -22,13 +22,14 @@ from tkinter import filedialog, Menu
 from fints.formals import CreditDebit2
 from pandas import DataFrame, to_numeric, concat, to_datetime, set_option
 from pandastable import TableModel
+from banking.trading_calendar import xetra_cls, xetra_bday
 
 from banking.mariadb import MariaDB
 from banking.declarations_mariadb import (
     TABLE_FIELDS,
     APPLICATION, APPLICATION_VIEW, BANKIDENTIFIER, TRANSACTION_VIEW, STATEMENT, HOLDING_VIEW, HOLDING, TRANSACTION, LEDGER_COA,
     LEDGER, LEDGER_VIEW, ISIN, PRICES, PRICES_ISIN_VIEW, SERVER, LEDGER_DELETE,
-    LEDGER_STATEMENT,
+    LEDGER_STATEMENT, LEDGER_DAILY_BALANCE,
     DATABASE_FIELDS_PROPERTIES, TABLE_FIELDS_PROPERTIES,
     DB_adjclose,
     DB_open, DB_high, DB_low, DB_close, DB_volume,
@@ -58,9 +59,10 @@ from banking.declarations import (
     ALPHA_VANTAGE_OPTIONAL_COMBO,
     BUTTON_INDICATOR,
     CURRENCIES, CREDIT,
+    COST_METHOD, FN_COST_METHOD,
     DEBIT,
     ERROR, EURO, EDIT_ROW,
-    FN_COMPARATIVE,
+    FN_ACCOUNT_NUMBER, FN_COMPARATIVE,
     FN_DATE, FN_PROFIT_LOSS, FN_TOTAL_PERCENT, FN_PERIOD_PERCENT, FN_DAILY_PERCENT,
     FN_FROM_DATE, FN_TO_DATE,
     FN_SHARE,  FN_INDEX, FN_TOTAL,
@@ -88,7 +90,7 @@ from banking.declarations import (
     TIME_SERIES_WEEKLY,
     TIME_SERIES_MONTHLY, TIME_SERIES_WEEKLY_ADJUSTED,
     ToolbarSwitch, TIME_SERIES_DAILY,
-    TRANSACTION_TYPES, TRANSACTION_RECEIPT, TRANSACTION_DELIVERY,
+    TRANSACTION_TYPES, TRANSACTION_DELIVERY,
     VALIDITY_DEFAULT, WARNING, KEY_ACC_ACCOUNT_NUMBER, NOT_ASSIGNED, YAHOO,
     WWW_YAHOO,
 
@@ -98,13 +100,13 @@ from banking.declarations import (
     BUTTON_SAVE, BUTTON_NEW, BUTTON_APPEND, BUTTON_REPLACE, BUTTON_NEXT, BUTTON_UPDATE,
     BUTTON_DELETE, BUTTON_STANDARD, BUTTON_SAVE_STANDARD, BUTTON_SELECT_ALL,
     BUTTON_PRICES_IMPORT,
-    COLOR_HOLDING, COLOR_NOT_ASSIGNED, COLOR_ERROR,
+    COLOR_NOT_ASSIGNED, COLOR_ERROR,
     ENTRY,
     FORMAT_FIXED,
     NUMERIC,
     STANDARD,
     TYP_ALPHANUMERIC,
-    WM_DELETE_WINDOW, FORMAT_VARIABLE,
+    WM_DELETE_WINDOW, FORMAT_VARIABLE, COST_FIFO, FN_ALL_BANKS, FN_BANK_NAME,
     )
 from banking.formbuilts import (
     BuiltTableRowBox, BuiltPandasBox, BuiltCheckButton, BuiltEnterBox, BuiltText, BuiltSelectBox,
@@ -420,7 +422,6 @@ class SelectLedgerAccountCategory(BuiltSelectBox):
     """
     Selection: Ledger Account, Period
     Column Fields are not selectable
-
     """
 
     def create_field_defs_list(self):
@@ -476,15 +477,36 @@ class SelectLedgerAccount(BuiltSelectBox):
         # separator line
         self.separator = [DB_account, FN_TO_DATE]
         # check_buttons
-        for field_name in TABLE_FIELDS_PROPERTIES[LEDGER].keys():
+        for field_name in TABLE_FIELDS_PROPERTIES[LEDGER_VIEW].keys():
             field_defs_list.append(
-                self.create_check_field(field_name, TABLE_FIELDS_PROPERTIES[LEDGER][field_name].comment))
+                self.create_check_field(field_name, TABLE_FIELDS_PROPERTIES[LEDGER_VIEW][field_name].comment))
         # initialize empty data_dict
         if not self.data_dict:
             self.data_dict[FN_FROM_DATE] = date(datetime.now().year, 1, 1)
             self.data_dict[FN_TO_DATE] = date(datetime.now().year, 12, 31)
         return field_defs_list
 
+class SelectLedgerDailyBalanceAccounts(BuiltSelectBox):
+    """
+    Selection: Accounts in table ledger_daily_balance
+    """
+
+    def create_field_defs_list(self):
+
+        field_defs_list = []
+        # Accounts
+        result = self.mariadb.select_table_distinct(LEDGER_DAILY_BALANCE, DB_account)
+        accounts = tuple(account for (account,) in result)
+        if accounts:
+            accounts_dict = self.mariadb.select_dict(LEDGER_COA, DB_account, DB_name, **{DB_account: accounts})
+        else:
+            self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', LEDGER_DAILY_BALANCE.upper()))
+
+        # check_buttons
+        for account, account_name in accounts_dict.items():
+            field_defs_list.append(
+                self.create_check_field(FN_ACCOUNT_NUMBER + account, account_name))
+        return field_defs_list
 
 class InputPeriod(BuiltSelectBox):
     """
@@ -687,10 +709,10 @@ class InputDateTransactions(BuiltSelectBox):
         # Isin name
         if DB_iban not in self.data_dict.keys():
             transaction_isin = self.mariadb.select_dict(
-                TRANSACTION_VIEW, DB_name, DB_ISIN, )
+                TRANSACTION_VIEW, DB_name, DB_ISIN, order=DB_name)
         else:
             transaction_isin = self.mariadb.select_dict(
-                TRANSACTION_VIEW, DB_name, DB_ISIN, iban=self.data_dict[DB_iban])
+                TRANSACTION_VIEW, DB_name, DB_ISIN, iban=self.data_dict[DB_iban], order=DB_name)
         if transaction_isin == {}:
             MessageBoxInfo(
                 title=self.title,
@@ -718,7 +740,20 @@ class InputDateTransactions(BuiltSelectBox):
             self.data_dict[FN_FROM_DATE] = START_DATE_TRANSACTIONS
         if FN_TO_DATE not in self.data_dict.keys():
             self.data_dict[FN_TO_DATE] = date.today() + timedelta(days=360)
+        field_defs_list.append(self.create_combo_field(
+            FN_COST_METHOD, 8, TYP_ALPHANUMERIC, COST_METHOD))
+        # initialize empty data_dict
+        if combo_values and FN_COST_METHOD not in self.data_dict.keys():
+            self.data_dict[FN_COST_METHOD] = COST_FIFO
         return field_defs_list
+
+    def field_dict_adjust(self):
+
+        self.data_dict[FN_FROM_DATE], self.data_dict[FN_TO_DATE] = xetra_cls.adjust_period(
+            self.data_dict[FN_FROM_DATE],
+            self.data_dict[FN_TO_DATE],
+            xetra_bday
+            )
 
 
 class InputISIN(BuiltSelectBox):
@@ -749,7 +784,6 @@ class InputISIN(BuiltSelectBox):
         # to_date
         field_defs_list.append(self.create_date_field(FN_TO_DATE))
         # initialize empty data_dict
-
         if combo_values and DB_name not in self.data_dict.keys():
             self.data_dict[DB_name] = combo_values[0]
         if DB_ISIN not in self.data_dict.keys():
@@ -803,7 +837,7 @@ class InputPIN(BuiltEnterBox):
                 header=get_message(MESSAGE_TEXT, 'PIN_INPUT', bank_name, bank_code), title=title,
                 button1_text=BUTTON_OK, button2_text=None, button3_text=None,
                 field_defs=[FieldDefinition(name=KEY_PIN, length=pin_max_length,
-                                            min_length=pin_min_length)]
+                                            min_length=pin_min_length)], grab=True
             )
             if self.button_state == WM_DELETE_WINDOW:
                 break
@@ -2940,29 +2974,36 @@ class PandasBoxTransactionDetail(BuiltPandasBox):
 
     def create_dataframe(self):
 
-        self.count_transactions, data = self.dataframe
         self.dataframe = DataFrame(
-            data,
+            self.dataframe,
             columns=[DB_price_date, DB_counter, DB_transaction_type,
-                     DB_price, DB_pieces, DB_posted_amount])
+                     DB_price, DB_pieces, FN_PIECES_CUM, DB_posted_amount, FN_PROFIT_LOSS, DB_iban])
+        """
         deliveries = self.dataframe[DB_transaction_type] == TRANSACTION_RECEIPT
         # Replace values where the condition is False.
         self.dataframe[DB_pieces] = self.dataframe[DB_pieces].where(deliveries, -self.dataframe[DB_pieces])
-        self.dataframe[FN_PIECES_CUM] = self.dataframe[DB_pieces].cumsum()
 
         receipts = self.dataframe[DB_transaction_type] == TRANSACTION_DELIVERY
         self.dataframe[DB_posted_amount] = self.dataframe[DB_posted_amount].where(receipts, -self.dataframe[DB_posted_amount])
-        self.dataframe[FN_PROFIT_CUM] = self.dataframe[DB_posted_amount].cumsum()
+        """
+        self.dataframe[FN_PROFIT_CUM] = self.dataframe[FN_PROFIT_LOSS].cumsum()
         closed_postion = self.dataframe[FN_PIECES_CUM] == 0
         self.dataframe[FN_PROFIT_CUM] = self.dataframe[FN_PROFIT_CUM].where(closed_postion, other=0)
-        self.dataframe.drop(
-            columns=[DB_counter], inplace=True)
+        print
+        if self.title.startswith(FN_ALL_BANKS):
+            account_names = self.mariadb.select_dict(LEDGER_COA, DB_iban, DB_name, clause=f"{DB_iban} <> '{NOT_ASSIGNED}'")
+            self.dataframe[FN_BANK_NAME] = self.dataframe[DB_iban].apply(lambda x: account_names[x])
+        self.dataframe.drop(columns=[DB_counter, DB_iban], inplace=True)
 
     def set_row_format(self):
 
-        if self.count_transactions < self.dataframe.shape[0]:
-            self.pandas_table.setRowColors(
-                self.count_transactions, COLOR_HOLDING, 'all')
+        for i, row in self.pandas_table.model.df.iterrows():
+            if row[DB_transaction_type] == 'CLOSE':
+                self.pandas_table.setRowColors(
+                    rows=[i], clr='lightblue', cols='all')
+            elif row[FN_PIECES_CUM] == 0:
+                self.pandas_table.setRowColors(
+                    rows=[i], clr='yellow', cols='all')
 
 
 class PandasBoxTransactionTableShow (BuiltPandasBox):

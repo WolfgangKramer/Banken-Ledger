@@ -1,6 +1,6 @@
 """0
 Created on 09.12.2019
-__updated__ = "2026-01-30"
+__updated__ = "2026-02-16"
 Author: Wolfang Kramer
 """
 import sys
@@ -26,12 +26,12 @@ from banking.declarations import (
     EDIT_ROW,
     FINTS_SERVER, FINTS_SERVER_ADDRESS,
     START_DATE_PRICES, START_DATE_TRANSACTIONS,
-    FN_COMPARATIVE,
+    FN_ACCOUNT_NUMBER, FN_COMPARATIVE,
     FN_DATE, FN_FROM_DATE, FN_TO_DATE,
     FN_PIECES_CUM, FN_ALL_BANKS,
     FN_BALANCE,
     FN_PROFIT_LOSS,
-    INFORMATION, 
+    INFORMATION,
     JSON_KEY_ERROR_MESSAGE, JSON_KEY_META_DATA,
     KEY_ACCOUNTS, KEY_ACC_BANK_CODE, KEY_ACC_OWNER_NAME,
     KEY_ACC_SUBACCOUNT_NUMBER, KEY_ACC_ALLOWED_TRANSACTIONS, KEY_ACC_IBAN,
@@ -49,12 +49,12 @@ from banking.declarations import (
     START_DATE_HOLDING, START_DATE_STATEMENTS,
     TRANSACTION_DELIVERY,
     WEBSITES, WARNING,
-    # form declaratives
     BUTTON_APPEND, BUTTON_SAVE,
     BUTTON_PRICES_IMPORT, BUTTON_REPLACE, BUTTON_RESTORE,
     BUTTON_ALPHA_VANTAGE,
+    START_DIALOG_FAILED,
     TYP_DECIMAL,
-    WM_DELETE_WINDOW,
+    WM_DELETE_WINDOW, FN_COST_METHOD,
 )
 from banking.declarations_mariadb import (
     PRODUCTIVE_DATABASE_NAME,
@@ -85,7 +85,7 @@ from banking.declarations_mariadb import (
     ISIN, PRICES_ISIN_VIEW, PRICES, SERVER, STATEMENT,
     TRANSACTION, TRANSACTION_VIEW,
     LEDGER_COA, LEDGER_VIEW,
-    SHELVES, DB_asset_accounting,
+    SHELVES, DB_asset_accounting, LEDGER_DAILY_BALANCE, DB_balance,
 )
 from banking.formbuilts import (
     BuiltPandasBox,
@@ -96,7 +96,7 @@ from banking.formbuilts import (
 from banking.message_handler import (
     get_message, MESSAGE_TITLE, MESSAGE_TEXT,
     Informations, holding_informations_append,
-    MessageBoxAsk, MessageBoxInfo,  MessageBoxException
+    MessageBoxAsk, MessageBoxInfo,  MessageBoxException,
     )
 from banking.forms import (
     import_prices_run,
@@ -115,6 +115,7 @@ from banking.forms import (
     PandasBoxPrices, PandasBoxLedgerAccountCategory,
     PrintList, PrintMessageCode,
     SelectFields, SelectLedgerAccount, SelectLedgerAccountCategory,
+    SelectLedgerDailyBalanceAccounts,
     TechnicalIndicator,
     VersionTransaction, SelectDownloadPrices,
 )
@@ -295,7 +296,7 @@ class BankenLedger(object):
                                 MESSAGE_TEXT, 'CREDENTIALS_CHECK', self.bank_names[bank_code]
                                 )
                             )
-                        if bank.dialogs._start_dialog(bank):
+                        if bank.dialogs._start_dialog(bank) not in START_DIALOG_FAILED:
                             banks_download.append(bank_code)
                         else:
                             MessageBoxInfo(
@@ -685,6 +686,8 @@ class BankenLedger(object):
             ledger_menu.add_command(
                 label=get_menu_text("Account Category"), command=self._ledger_account_category)
             ledger_menu.add_separator()
+        ledger_menu.add_command(
+            label=get_menu_text("Reset Ledger_daily_balance"), command=self._ledger_daily_balance)            
         ledger_menu.add_command(
             label=get_menu_text("Chart of Accounts"), command=self._ledger_coa_table)
 
@@ -1292,8 +1295,11 @@ class BankenLedger(object):
             message_box_ask = MessageBoxAsk(
                 title=title, message=get_message(MESSAGE_TEXT, 'HOLDING_INSERT', date_day))
             if message_box_ask.result:
-                price_date = self.mariadb.select_max_price_date(
-                    clause=f"{DB_price_date} < ?", clause_vars=(date_day,)
+                price_date = self.mariadb.select_scalar(
+                    HOLDING,
+                    f"MAX({DB_price_date})",
+                    clause=f"{DB_price_date} < ?",
+                    clause_vars=(date_day,)
                     )
                 holdings = self.mariadb.select_table(
                     HOLDING, '*', result_dict=True, date_name=DB_price_date,
@@ -1357,7 +1363,8 @@ class BankenLedger(object):
                             holding_dict[DB_symbol],
                             origin_symbol,
                             holding_dict[DB_ISIN],
-                            holding_dict[DB_name])
+                            holding_dict[DB_name]
+                            )
                         )
             self.mariadb.update_total_holding_amount(
                 iban=iban, period=(date_day, date_day))
@@ -1402,7 +1409,15 @@ class BankenLedger(object):
         """
         self._delete_footer()
         title = get_menu_text("Technical Indicators")
-        names_dict = dict(self.mariadb.select_isin_with_ticker([DB_name, DB_symbol], order=DB_name))
+        names_dict = self.mariadb.select_dict(
+            ISIN,
+            DB_name,
+            DB_symbol,
+            clause=f"{DB_symbol} <> ?",
+            clause_vars=('NA',),
+            order=DB_name
+            )
+        # names_dict = dict(self.mariadb.select_isin_with_ticker([DB_name, DB_symbol], order=DB_name))
         data_dict = {FN_FROM_DATE: date_days.subtract(date.today(), 360),
                      FN_TO_DATE: date.today()}
         while True:
@@ -1420,38 +1435,36 @@ class BankenLedger(object):
         self._delete_footer()
         title = ' '.join([bank_name,
                           get_menu_text("Transaction Detail")])
-        data_dict = {}
-        if iban:
-            data_dict[DB_iban] = iban
+        data_dict = {}  # If empty, then the last input will be used.
         while True:
             date_transations = InputDateTransactions(
                 title=title, data_dict=data_dict, upper=[DB_name])
             if date_transations.button_state == WM_DELETE_WINDOW:
                 return
             data_dict = date_transations.field_dict
+            if FN_FROM_DATE not in data_dict:  # when the menu is accessed multiple times
+                break
             title_period = ' '.join(
                 [title, data_dict[FN_FROM_DATE], '-', data_dict[FN_TO_DATE]])
             period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
-            if iban in data_dict.keys():
-                select_isin_transaction = self.mariadb.select_transactions_data(
-                    iban=data_dict[DB_iban], name=data_dict[DB_name], period=period)
+            isin_code = self.mariadb.select_scalar(ISIN, DB_ISIN, name=data_dict[DB_name])
+            if iban:
+                select_isin_transaction = self.mariadb.get_transaction_overview(
+                    isin_code, period, iban, data_dict[FN_COST_METHOD])
             else:
-                select_isin_transaction = self.mariadb.select_transactions_data(
-                    name=data_dict[DB_name], period=period)
+                select_holding_ibans = self.mariadb.select_table_distinct(TRANSACTION, DB_iban, period=period)
+                select_isin_transaction = []
+                for iban in select_holding_ibans:
+                    iban = iban[0]
+                    result = self.mariadb.get_transaction_overview(
+                        isin_code, period, iban, data_dict[FN_COST_METHOD])
+                    select_isin_transaction.extend(result)
             if select_isin_transaction:
-                count_transactions = len(select_isin_transaction)
-                if iban:
-                    select_holding_ibans = [iban]
-                else:
-                    select_holding_ibans = self.mariadb.select_holding_field_values(DB_iban)
-                for iban_ in select_holding_ibans:
-                    select_isin_transaction = self._data_transaction_add_portfolio(
-                        iban_, data_dict[DB_name], period, select_isin_transaction)
-                title_period = ' '.join(
-                    [title, get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
+                title_period = '   '.join(
+                    [title, data_dict[DB_name], get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])])
                 while True:
-                    table = PandasBoxTransactionDetail(title=title_period, dataframe=(
-                        count_transactions, select_isin_transaction), mode=NO_CURRENCY_SIGN)
+
+                    table = PandasBoxTransactionDetail(title=title_period, dataframe=select_isin_transaction, mode=NO_CURRENCY_SIGN)
                     if table.button_state == WM_DELETE_WINDOW:
                         break
                     else:
@@ -1572,34 +1585,6 @@ class BankenLedger(object):
             else:
                 MessageBoxInfo(title=title, message=get_message(MESSAGE_TEXT, 'DATA_NO', ', '.join(selected_isins), ''))
 
-    def _data_balances(self):
-
-        self._delete_footer()
-        title = ' '.join(
-            [get_menu_text("All_Banks"), get_menu_text("Balances")])
-        data_dict = {}
-        while True:
-            input_period = InputPeriod(title=title, data_dict=data_dict)
-            if input_period.button_state == WM_DELETE_WINDOW:
-                return input_period.button_state, None, None
-            self.footer.set(get_message(MESSAGE_TEXT, 'TASK_STARTED', title))
-            data_dict = input_period.field_dict
-            period = (data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])
-            data_total_amounts = self.mariadb.select_total_amounts(period)
-            title_period = ' '.join(
-                [title, get_message(MESSAGE_TEXT, 'PERIOD', data_dict[FN_FROM_DATE], data_dict[FN_TO_DATE])]
-                )
-            self.footer.set(get_message(MESSAGE_TEXT, 'TASK_DONE'))
-            if data_total_amounts:
-                while True:
-                    table = PandasBoxTotals(
-                        title_period, data_total_amounts)
-                    if table.button_state == WM_DELETE_WINDOW:
-                        break
-            else:
-                MessageBoxInfo(title=title_period, message=(
-                    get_message(MESSAGE_TEXT, 'DATA_NO', '', '')))
-
     def _import_bankidentifier(self):
 
         title = get_menu_text("Import Bankidentifier CSV-File")
@@ -1711,7 +1696,7 @@ class BankenLedger(object):
         self._delete_footer()
         title = get_menu_text("Alpha Vantage")
         alpha_vantage_symbols = self.mariadb.select_dict(
-            ISIN, DB_name, DB_symbol, origin_symbol=ALPHA_VANTAGE)
+            ISIN, DB_name, DB_symbol, origin_symbol=ALPHA_VANTAGE, order=DB_name)
         alpha_vantage_names = list(alpha_vantage_symbols.keys())
         function_list = self.mariadb.alpha_vantage_get(DB_alpha_vantage_function)
         parameter_dict = self.mariadb.alpha_vantage_get(DB_alpha_vantage_parameter)
@@ -2245,7 +2230,7 @@ class BankenLedger(object):
     def _ledger_balances(self):
         """
         Show ledger balances
-            date referred to entry_date field in Ledgerr
+            date referred to entry_date field in Ledger
         """
         self._delete_footer()
         title = ' '.join([get_menu_text("Ledger"),
@@ -2303,14 +2288,24 @@ class BankenLedger(object):
                 if asset_day_data:
                     data = [*data, *asset_day_data]
                     data_counter += 1
+            self._show_informations()
             title = ' '.join(
                 [title, get_message(MESSAGE_TEXT, 'PERIOD', from_date, to_date)])
-            if data_counter == 1:
-                BuiltPandasBox(title=title, dataframe=DataFrame(data, columns=[DB_account, DB_name, FN_BALANCE]),
-                               dataframe_sum=[FN_BALANCE], mode=NO_CURRENCY_SIGN, cellwidth_resizeable=False
-                               )
+            if data_counter == 0:
+                self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', title, ''))
+            elif data_counter == 1:
+                BuiltPandasBox(
+                    title=title,
+                    dataframe=DataFrame(data, columns=[DB_account, DB_name, FN_BALANCE]),
+                    dataframe_sum=[FN_BALANCE],
+                    mode=NO_CURRENCY_SIGN,
+                    cellwidth_resizeable=False
+                    )
             elif data_counter > 1:
-                PandasBoxTotals(title, data)
+                while True:
+                    table = PandasBoxTotals(title, data)
+                    if table.button_state == WM_DELETE_WINDOW:
+                        break
         else:
             self.footer.set(get_message(MESSAGE_TEXT, 'DATA_NO', title, ''))
 
@@ -2401,7 +2396,8 @@ class BankenLedger(object):
                             'OPENING_LEDGER_MISSED',
                             (None, to_date),
                             account_dict[DB_name]
-                        )
+                        ),
+                        info_storage=Informations.BANKDATA_INFORMATIONS,
                     )
                 return 0
 
@@ -2413,8 +2409,17 @@ class BankenLedger(object):
             portfolio = asset_account_dict[DB_portfolio]
             balance: Optional[float] = None
 
+            balance = self.mariadb.select_scalar(
+                LEDGER_DAILY_BALANCE,
+                DB_balance,
+                account=account,
+                entry_date=to_date
+            )
+            if balance:  # use calculated balance
+                pass
+
             # 1️⃣ Portfolio account: return 0 if no entries, no fallback
-            if portfolio:
+            elif portfolio:
                 if max_price_date_all_iban:
                     balance = self.mariadb.select_scalar(
                         HOLDING,
@@ -2448,6 +2453,11 @@ class BankenLedger(object):
                 balance = ledger_fallback(asset_account_dict, period)
             # Append calculated balance
             if balance:
+                if self.mariadb.select_scalar(LEDGER_COA, DB_asset_accounting, account=account):
+                    self.mariadb.execute_replace(
+                        LEDGER_DAILY_BALANCE,
+                        {DB_account: account, DB_entry_date: to_date, DB_balance: balance}
+                        )
                 data.append({
                     DB_account: account,
                     DB_name: name,
@@ -2633,3 +2643,22 @@ class BankenLedger(object):
             selected_row = ledger_coa_table.selected_row
             if ledger_coa_table.button_state == WM_DELETE_WINDOW:
                 return
+
+    def _ledger_daily_balance(self):
+
+        self._delete_footer()
+        title = ' '.join([get_menu_text("Ledger"),
+                         get_menu_text("Reset Ledger_daily_balance")])
+
+        accounts = SelectLedgerDailyBalanceAccounts(title=title)
+        if accounts.field_dict:
+            accounts_to_delete = list(
+                key.removeprefix(FN_ACCOUNT_NUMBER) for key, value in accounts.field_dict.items() if value == 1
+                )
+            self.mariadb.execute_delete(
+                LEDGER_DAILY_BALANCE,
+                **{DB_account: accounts_to_delete}
+                )
+        else:
+            self.footer.set(
+                get_message(MESSAGE_TEXT, 'DATA_NO', LEDGER_DAILY_BALANCE.upper(), ''))

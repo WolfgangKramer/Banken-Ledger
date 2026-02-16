@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2025-07-08"
+__updated__ = "2026-02-10"
 @author: Wolfgang Kramer
 """
 from collections import namedtuple
@@ -54,6 +54,7 @@ PRICES_ISIN_VIEW = 'prices_isin_view'
 LEDGER = 'ledger'
 LEDGER_DELETE = 'ledger_delete'
 LEDGER_COA = 'ledger_coa'
+LEDGER_DAILY_BALANCE = 'ledger_daily_balance'
 LEDGER_VIEW = 'ledger_view'
 LEDGER_STATEMENT = 'ledger_statement'
 LEDGER_UNCHECKED_VIEW = 'ledger_unchecked_view'
@@ -218,6 +219,18 @@ CREATE_LEDGER_COA = "CREATE TABLE IF NOT EXISTS  `ledger_coa` (\
  COMMENT='The chart of accounts (COA) is a comprehensive listing, categorized by account type, of every account used in an accounting system.\r\nUnlike a trial balance that only includes active or balanced accounts at the end of a period,\r\nthe COA encompasses all accounts in the system, providing a simple list of account numbers and names'\
  COLLATE='latin1_swedish_ci'\
  ENGINE=InnoDB\
+;"
+
+CREATE_LEDGER_DAILY_BALANCE = "CREATE TABLE IF NOT EXISTS  `ledger_daily_balance` (\
+    `account` CHAR(4) NOT NULL DEFAULT 'NA' COMMENT 'Account Number(4 digits)' COLLATE 'latin1_swedish_ci',\
+    `entry_date` DATE NOT NULL COMMENT 'Entry date',\
+    `balance` DECIMAL(14,2) NOT NULL DEFAULT '0.00' COMMENT 'Amount',\
+    PRIMARY KEY (`account`, `entry_date`) USING BTREE\
+)\
+ COMMENT='The table stores the daily balance for the account.'\
+ COLLATE='latin1_swedish_ci'\
+ ENGINE=InnoDB\
+ ROW_FORMAT=DYNAMIC\
 ;"
 
 CREATE_LEDGER_DELETE = "CREATE TABLE IF NOT EXISTS `ledger_delete` (\
@@ -432,6 +445,7 @@ CREATE_TABLES = [CREATE_APPLICATION,
 
                  CREATE_LEDGER,
                  CREATE_LEDGER_COA,
+                 CREATE_LEDGER_DAILY_BALANCE,
                  CREATE_LEDGER_DELETE,
                  CREATE_LEDGER_STATEMENT,
                  CREATE_LEDGER_VIEW,
@@ -615,3 +629,5 @@ DB_c_counter = 'c_counter'
 DB_d_iban = 'd_iban'
 DB_d_entry_date = 'd_entry_date'
 DB_d_counter = 'd_counter'
+
+DB_balance = 'balance'

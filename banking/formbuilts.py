@@ -1,6 +1,6 @@
 """
 Created on 28.01.2020
-__updated__ = "2026-01-30"
+__updated__ = "2026-02-16"
 @author: Wolfgang Kramer
 """
 
@@ -539,8 +539,7 @@ class BuiltBox(object):
             else:
                 # -------------------- window of entry  widgets -------------------------
                 self._box_window = self._box_window_top
-            if grab:
-                self._box_window_top.grab_set()
+
             self._box_window_top.title(title)
             # --------- entry ----------------------------------------------
             self.create_fields()
@@ -548,14 +547,14 @@ class BuiltBox(object):
             if scrollable:
                 self._row = 3  # reset foot row after scrollable frame with widgets
             # ------------------ Message -------------------------------
+
             self._create_footer()
             # ------------------ Buttons -------------------------------
             self._create_buttons()
             # ------------------ Keyboard Events ------------------------------
             self._keyboard()
             self.set_geometry()
-            self._box_window_top.lift()  # Only when opened in the foreground (not permanently)
-            self._box_window_top.focus_force()
+            self._activate_window()
             if 'canvas' in locals():
                 canvas.configure(width=self.calculate_width_canvas())
             self._box_window_top.protocol(
@@ -565,6 +564,85 @@ class BuiltBox(object):
         else:
             MessageBoxInfo(
                 title=title, message=get_message(MESSAGE_TEXT, 'THREAD', self.window_id))
+
+    def _activate_window(self):
+        """
+        Activates this dialog window in a fully modal and
+        Windows-safe way.
+
+        - Makes window transient to its parent
+        - Applies grab_set() for modality
+        - Brings window to foreground
+        - Assigns keyboard focus safely
+        - Restores parent focus when closed
+        """
+
+        win = self._box_window_top
+        parent = win.master
+
+        win.update_idletasks()
+
+        # If there is a parent window, make dialog transient
+        if parent and parent.winfo_exists():
+            win.transient(parent)
+
+        # Apply modal grab
+        win.grab_set()
+
+        # Ensure visibility and foreground
+        win.deiconify()
+        win.lift()
+
+        # Temporary topmost (important for Windows)
+        win.attributes("-topmost", True)
+        win.after(80, lambda: win.attributes("-topmost", False))
+
+        win.focus_force()
+
+        # Focus first input widget
+        self._focus_first_input()
+
+        # Ensure parent regains focus when dialog closes
+        win.protocol(WM_DELETE_WINDOW, self._safe_close)
+
+    def _focus_first_input(self):
+        """
+        Sets focus to the first Entry or Combobox widget
+        in the dialog.
+        """
+
+        win = self._box_window_top
+
+        def set_focus():
+            for child in win.winfo_children():
+                if child.winfo_class() in ("TEntry", "Entry", "TCombobox"):
+                    child.focus_set()
+                    return
+
+        win.after(120, set_focus)
+
+    def _safe_close(self):
+        """
+        Releases grab safely and restores parent focus.
+        """
+
+        win = self._box_window_top
+        parent = win.master
+
+        try:
+            win.grab_release()
+        except Exception:
+            pass
+
+        self._geometry_put(win)
+        self.button_state = WM_DELETE_WINDOW
+
+        win.destroy()
+
+        # Restore parent focus
+        if parent and parent.winfo_exists():
+            parent.lift()
+            parent.focus_force()
 
     def calculate_width_canvas(self):
         # Get the number of (rows not used and) columns
@@ -669,6 +747,40 @@ class BuiltBox(object):
         pass
 
     def _wm_deletion_window(self):
+        """
+        Safe window close handling with proper grab management.
+        """
+
+        win = self._box_window_top
+        current_grab = win.grab_current()
+        # Case 1: Another window holds the grab
+        if current_grab and current_grab is not win:
+            top = current_grab.winfo_toplevel()
+
+            if top.winfo_exists():
+                top.deiconify()
+                top.lift()
+                top.attributes("-topmost", True)
+                top.after(80, lambda: top.attributes("-topmost", False))
+                top.focus_force()
+                top.bell()
+
+            return  # prevent closing
+        # Case 2: This window holds the grab
+        if current_grab is win:
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+        # Normal close
+        self._geometry_put(win)
+        self.button_state = WM_DELETE_WINDOW
+        if win.winfo_exists():
+            win.update_idletasks()
+
+        self.quit_widget()
+
+    def __wm_deletion_window(self):
 
         self._geometry_put(self._box_window_top)
         self.button_state = WM_DELETE_WINDOW
@@ -1044,13 +1156,13 @@ class BuiltEnterBox(BuiltBox):
                                sticky=(W, E), pady=5)
                 self._row += 1
             field_def.widget = widget_entry
-        self._field_defs[0].widget.focus_set()
 
     def button_1_button1(self, event):
 
         self.button_state = self._button1_text
         self.validation()
         if not self.footer.get():
+            self.field_dict_adjust()
             self.quit_widget()
 
     def button_1_button2(self, event):
@@ -1084,11 +1196,18 @@ class BuiltEnterBox(BuiltBox):
             else:
                 self.field_dict[field_def.name] = field_def.widget.get()
         self.validation_all_addon(self._field_defs)
+
         for field_def in self._field_defs:
             if field_def.upper:
                 if field_def.name in self.field_dict:
                     self.field_dict[field_def.name] = self.field_dict[field_def.name].upper(
                     )
+
+    def field_dict_adjust(self):
+        """
+        modify self.field_dict
+        """
+        pass
 
     def validation_addon(self, field_def):
         """
@@ -1278,6 +1397,7 @@ class BuiltSelectBox(BuiltEnterBox):
         if not self.footer.get():
             if self.selection_name:
                 self.mariadb.selection_put(self.selection_name, self.field_dict)
+            self.field_dict_adjust()
             self.quit_widget()
 
     def button_1_button3(self, event):

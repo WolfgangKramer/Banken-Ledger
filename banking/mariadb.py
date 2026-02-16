@@ -1,14 +1,15 @@
 """
 Created on 26.11.2019
-__updated__ = "2026-01-30"
+__updated__ = "2026-02-15"
 @author: Wolfgang Kramer
 """
 import sqlalchemy
 import json
 import re
 
-from collections.abc import Sequence
+
 from decimal import Decimal
+from collections.abc import Sequence
 from pandas import DataFrame
 from inspect import stack
 from typing import NamedTuple, Iterable, List, Tuple, Any, Dict, Optional, Union
@@ -23,17 +24,20 @@ from banking.declarations_mariadb import (
     DB_iban, DB_entry_date, DB_ledger, DB_name, DB_counter, DB_price_date, DB_ISIN,
     DB_purpose_wo_identifier, DB_purpose, DB_row_id, DB_total_amount, DB_acquisition_amount,
     DB_status, DB_symbol, PRODUCTIVE_DATABASE_NAME, APPLICATION, BANKIDENTIFIER,
+    DB_balance, LEDGER_DAILY_BALANCE,
     CREATE_TABLES, HOLDING, ISIN, PRICES, LEDGER, LEDGER_VIEW, LEDGER_COA, LEDGER_STATEMENT,
     SELECTION, SERVER, STATEMENT, SHELVES, TRANSACTION, TRANSACTION_VIEW, DB_credit_account,
-    DB_debit_account, DB_bank_reference, DB_closing_balance, DB_closing_status
+    DB_debit_account, DB_bank_reference, DB_closing_balance, DB_closing_status,
+    DB_close
     )
 from banking.declarations import (
     KEY_ACC_OWNER_NAME, KEY_ACC_ALLOWED_TRANSACTIONS, INFORMATION,
     CREDIT, DEBIT, HoldingAcquisition, ERROR, FN_PROFIT_LOSS,
+    COST_LIFO, COST_FIFO, COST_AVERAGE,
     KEY_ACCOUNTS, KEY_ACC_IBAN, KEY_ACC_ACCOUNT_NUMBER,
     KEY_ACC_PRODUCT_NAME, KEY_BANK_NAME, NOT_ASSIGNED,
     ORIGIN, PERCENT, SCRAPER_BANKDATA, START_DATE_STATEMENTS, TRANSACTION_RECEIPT,
-    TRANSACTION_DELIVERY, WARNING
+    TRANSACTION_DELIVERY, WARNING, START_DIALOG_FAILED
     )
 from banking.declarations import TYP_ALPHANUMERIC, TYP_DECIMAL, TYP_DATE, WM_DELETE_WINDOW
 from banking.message_handler import (
@@ -51,6 +55,7 @@ from banking.declarations_mariadb import (
     HOLDING_VIEW, DB_closing_entry_date,
     DB_asset_accounting
     )
+from banking.trading_calendar import xetra_cls, xetra_bday
 
 NAMED_PARAM_RE = re.compile(r":([a-zA-Z_][a-zA-Z0-9_]*)")
 
@@ -167,7 +172,7 @@ class MariaDBExecutor:
         sql = self._prepare_sql(sql, compress)
 
         try:
-            # print(sql, vars_)
+            print(sql, vars_)
             self._execute(sql, vars_)
 
             if self._is_select(sql):
@@ -1081,7 +1086,9 @@ class MariaDBTables:
         key_name: str,
         value_name: str,
         *,
-        order=DB_name,
+        order: str | None = None,
+        clause: str | None = None,
+        clause_vars: tuple = (),
         **kwargs
     ) -> dict:
         """
@@ -1111,6 +1118,8 @@ class MariaDBTables:
             table=table,
             fields=[key_name, value_name],
             order=order,
+            clause=clause,
+            clause_vars=clause_vars,
             **kwargs
         )
 
@@ -1159,6 +1168,7 @@ class MariaDBTables:
         expression: str,
         *,
         clause: str | None = None,
+        clause_vars: tuple = (),
         date_name: str | None = None,
         default=None,
         **kwargs
@@ -1171,6 +1181,7 @@ class MariaDBTables:
             table=table,
             expression=expression,
             clause=clause,
+            clause_vars=clause_vars,
             date_name=date_name,
             default=default,
             **kwargs
@@ -1344,12 +1355,24 @@ class MariaDBTables:
         sql_statement = sql_statement[:-2]
         self.executor.execute(sql_statement, vars_=vars_)
 
-    def execute_delete(self, table: str, **kwargs) -> None:
+    def execute_delete(
+        self,
+        table: str,
+        *,
+        clause: str | None = None,
+        clause_vars: Sequence[Any] = (),
+        **kwargs
+    ) -> None:
         """Delete rows from a table."""
-        sql = f"DELETE FROM {table} "
-        where_sql, vars_ = self._where_clause(**kwargs)
-        sql += where_sql
-        self.executor.execute(sql, vars_=vars_)
+        where_sql, vars_ = self._where_clause(
+            clause=clause,
+            clause_vars=clause_vars,
+            **kwargs
+        )
+
+        sql = f"DELETE FROM {table} {where_sql}"
+
+        self.executor.execute(sql, vars_)
 
 
 class MariaDBLedger:
@@ -1612,6 +1635,7 @@ class MariaDBLedger:
         Determine the balance of a ledger account for a given period.
 
         Priority order:
+        0. Use table LEDGER_DAILY_BALANCE
         1. Use the latest opening balance booking involving the opening balance account
            before or at period end.
         2. If no opening balance booking exists:
@@ -1636,6 +1660,10 @@ class MariaDBLedger:
 
         from_date, to_date = period
         account = account_dict[DB_account]
+
+        balance = self.select_table(LEDGER_DAILY_BALANCE, DB_balance, account=account, entry_date=to_date)
+        if balance:
+            return balance
 
         # Resolve IBAN (if available)
         iban = self.select_scalar(
@@ -1822,13 +1850,6 @@ class MariaDBLedger:
 
 
 class MariaDBHolding:
-
-    def select_max_price_date(self, **kwargs):
-        return self.select_scalar(
-            HOLDING,
-            f"MAX({DB_price_date})",
-            **kwargs
-            )
 
     def select_isin_with_ticker(
         self,
@@ -2260,12 +2281,15 @@ class MariaDBStatements:
         rows = self._select(
             table=STATEMENT,
             fields=[DB_iban, DB_entry_date, DB_counter, DB_status],
-            clause=clause,
             order=DB_entry_date,
+            date_name=DB_entry_date,
             sort='DESC',
             limit=1,
             result_dict=True,
-            clause_vars=clause_vars
+            iban=iban,
+            clause=clause,
+            clause_vars=clause_vars,
+            **kwargs
         )
 
         if not rows:
@@ -2300,174 +2324,301 @@ class MariaDBStatements:
         return account
 
     # ------------------------------------------------------------------
-    # Consolidated total balances
-    # ------------------------------------------------------------------
-
-    def select_total_amounts(self, period: tuple) -> list:
-        """
-        Return total balances for the given period.
-
-        Combines:
-        - HOLDING portfolio balances
-        - STATEMENT closing balances
-        - LEDGER balances for asset accounts without statements/holdings
-
-        Parameters
-        ----------
-        period : tuple
-            (from_date, to_date)
-
-        Returns
-        -------
-        list
-            [(iban/account, date, status, saldo), ...]
-        """
-        from_date, to_date = period
-
-        # ------------------------------------------------------------
-        # 1. Holding + Statement balances inside period
-        # ------------------------------------------------------------
-        total_amounts = self.select_cte(
-            sql="""
-                WITH total_amounts AS (
-                    SELECT
-                        iban,
-                        price_date AS date,
-                        ? AS status,
-                        total_amount_portfolio AS saldo
-                    FROM holding
-                    WHERE price_date > ?
-                      AND price_date <= ?
-
-                    UNION ALL
-
-                    SELECT
-                        s.iban,
-                        s.entry_date AS date,
-                        s.closing_status AS status,
-                        s.closing_balance AS saldo
-                    FROM statement s
-                    JOIN (
-                        SELECT
-                            iban,
-                            entry_date,
-                            MAX(counter) AS counter
-                        FROM statement
-                        WHERE entry_date > ?
-                          AND entry_date <= ?
-                        GROUP BY iban, entry_date
-                    ) t
-                    USING (iban, entry_date, counter)
-                )
-                SELECT iban, date, status, saldo
-                FROM total_amounts
-            """,
-            vars_=(CREDIT, from_date, to_date, from_date, to_date),
-            fields=("iban", "date", "status", "saldo")
-        )
-
-        total_amounts = self._remove_obsolete_iban_rows(total_amounts)
-
-        # ------------------------------------------------------------
-        # 2. Last statement balances before period
-        # ------------------------------------------------------------
-        total_amounts += self.select_cte(
-            sql="""
-                WITH last_statement AS (
-                    SELECT
-                        iban,
-                        MAX(entry_date) AS entry_date
-                    FROM statement
-                    WHERE entry_date < ?
-                    GROUP BY iban
-                )
-                SELECT
-                    s.iban,
-                    ? AS date,
-                    s.closing_status AS status,
-                    s.closing_balance AS saldo
-                FROM statement s
-                JOIN last_statement l
-                  ON s.iban = l.iban
-                 AND s.entry_date = l.entry_date
-            """,
-            vars_=(from_date, from_date),
-            fields=("iban", "date", "status", "saldo")
-        )
-
-        # ------------------------------------------------------------
-        # 3. Last holding balances before period
-        # ------------------------------------------------------------
-        total_amounts += self.select_cte(
-            sql="""
-                WITH last_holding AS (
-                    SELECT
-                        iban,
-                        MAX(price_date) AS price_date
-                    FROM holding
-                    WHERE price_date <= ?
-                    GROUP BY iban
-                )
-                SELECT
-                    h.iban,
-                    ? AS date,
-                    ? AS status,
-                    h.total_amount_portfolio AS saldo
-                FROM holding h
-                JOIN last_holding l
-                  ON h.iban = l.iban
-                 AND h.price_date = l.price_date
-            """,
-            vars_=(from_date, from_date, CREDIT),
-            fields=("iban", "date", "status", "saldo")
-        )
-
-        # ------------------------------------------------------------
-        # 4. Ledger-only asset accounts
-        # ------------------------------------------------------------
-        opening_balance_account = self.select_scalar(
-            LEDGER_COA,
-            DB_account,
-            opening_balance_account=True
-        )
-
-        if not opening_balance_account:
-            MessageBoxInfo(
-                message=get_message(MESSAGE_TEXT, 'OPENING_ACCOUNT_MISSED')
-            )
-            return total_amounts
-
-        asset_accounts = self.select_table(
-            LEDGER_COA,
-            [DB_account, DB_name, DB_asset_accounting],
-            asset_accounting=True,
-            result_dict=True,
-            order=DB_account,
-            download=False
-        )
-
-        for account_dict in asset_accounts:
-            ledger_rows = self.select_ledger_balance(
-                account_dict,
-                opening_balance_account,
-                period
-            )
-            if ledger_rows:
-                total_amounts += ledger_rows
-            else:
-                MessageBoxInfo(
-                    message=get_message(
-                        MESSAGE_TEXT,
-                        'OPENING_LEDGER_MISSED',
-                        period,
-                        account_dict[DB_name]
-                    )
-                )
-
-        return total_amounts
 
 
 class MariaDBTransactions:
+
+    def get_transaction_overview(
+        self,
+        isin_code: str,
+        period: tuple,
+        iban: str | None = None,
+        cost_method: str = COST_FIFO
+    ) -> list[list]:
+        """
+        Determine opening stock, transactions, profit/loss per sale
+        and ending stock for a given ISIN and period.
+
+        Supported cost methods:
+            COST_FIFO    = "FIFO"
+            COST_LIFO    = "LIFO"
+            COST_AVERAGE = "AVERAGE"
+        """
+
+        # ------------------------------------------------------------
+        # Helper functions
+        # ------------------------------------------------------------
+
+        def total_pieces(cost_basis):
+            return sum(lot["pieces"] for lot in cost_basis)
+
+        # -------------------- BUY --------------------
+
+        def buy_lot(cost_basis, buy_pieces, posted_amount):
+            """Add a new lot (used for FIFO and LIFO)."""
+            buy_pieces = Decimal(buy_pieces)
+            posted_amount = Decimal(posted_amount)
+
+            price = abs(posted_amount) / buy_pieces
+
+            cost_basis.append({
+                "pieces": buy_pieces,
+                "price": price
+            })
+
+            return buy_pieces
+
+        def buy_average(state, buy_pieces, posted_amount):
+            """Update average cost basis."""
+            buy_pieces = Decimal(buy_pieces)
+            posted_amount = Decimal(posted_amount)
+
+            buy_value = abs(posted_amount)
+
+            total_cost = state["pieces"] * state["avg_price"] + buy_value
+            state["pieces"] += buy_pieces
+            state["avg_price"] = total_cost / state["pieces"]
+
+            return buy_pieces
+
+        # -------------------- SELL --------------------
+
+        def sell_lot(cost_basis, sell_pieces, market_price, lifo=False):
+            """Sell using FIFO or LIFO."""
+            sell_pieces = Decimal(sell_pieces)
+            market_price = Decimal(market_price)
+
+            remaining = sell_pieces
+            cost_sum = Decimal("0.00")
+
+            while remaining > 0 and cost_basis:
+                lot = cost_basis[-1] if lifo else cost_basis[0]
+
+                take = min(lot["pieces"], remaining)
+                cost_sum += take * lot["price"]
+
+                lot["pieces"] -= take
+                remaining -= take
+
+                if lot["pieces"] == 0:
+                    cost_basis.pop(-1 if lifo else 0)
+
+            if remaining > 0:
+                raise ValueError("Not enough pieces to sell")
+
+            proceeds = sell_pieces * market_price
+            profit_loss = proceeds - cost_sum
+
+            return -sell_pieces, proceeds, profit_loss
+
+        def sell_average(state, sell_pieces, market_price):
+            """Sell using average cost."""
+            sell_pieces = Decimal(sell_pieces)
+            market_price = Decimal(market_price)
+
+            cost = sell_pieces * state["avg_price"]
+            proceeds = sell_pieces * market_price
+
+            state["pieces"] -= sell_pieces
+            if state["pieces"] == 0:
+                state["avg_price"] = Decimal("0.00")
+
+            profit_loss = proceeds - cost
+            return -sell_pieces, proceeds, profit_loss
+
+        # -------------------- REBUILD --------------------
+
+        def rebuild_cost_state(isin_code, iban, until_date):
+            """
+            Rebuild cost basis state from historical transactions.
+            """
+            rows = self.select_rows(
+                table=TRANSACTION,
+                fields=("transaction_type", "pieces", "posted_amount", "price"),
+                isin_code=isin_code,
+                iban=iban,
+                clause="price_date < ?",
+                clause_vars=(until_date,),
+                order=[("price_date", "ASC"), ("counter", "ASC")]
+            )
+
+            if cost_method == COST_AVERAGE:
+                state = {"pieces": Decimal("0.00"), "avg_price": Decimal("0.00")}
+
+                for t_type, pieces, amount, price in rows:
+                    if t_type != TRANSACTION_DELIVERY:
+                        buy_average(state, pieces, amount)
+                    else:
+                        sell_average(state, pieces, price)
+
+                return state
+
+            else:
+                cost_basis = []
+                for t_type, pieces, amount, price in rows:
+                    if t_type != TRANSACTION_DELIVERY:
+                        buy_lot(cost_basis, pieces, amount)
+                    else:
+                        sell_lot(cost_basis, pieces, price, lifo=(cost_method == COST_LIFO))
+                return cost_basis
+
+        # ------------------------------------------------------------
+        # Start of method
+        # ------------------------------------------------------------
+
+        from_date, to_date = period
+        from_date, to_date = xetra_cls.adjust_period(from_date, to_date, xetra_bday)
+
+        result: list[list] = []
+
+        try:
+            # --------------------------------------------------------
+            # 1. Opening stock
+            # --------------------------------------------------------
+
+            cost_state = rebuild_cost_state(isin_code, iban, from_date)
+
+            if cost_method == COST_AVERAGE:
+                current_pieces = cost_state["pieces"]
+            else:
+                current_pieces = total_pieces(cost_state)
+
+            if current_pieces > 0:
+                market_price = self.get_close_price(isin_code, from_date)
+
+                result.append([
+                    from_date,
+                    0,
+                    "OPEN",
+                    Decimal(market_price),
+                    Decimal("0.00"),
+                    current_pieces,
+                    current_pieces * market_price,
+                    Decimal("0.00"),
+                    iban
+                ])
+
+            # --------------------------------------------------------
+            # 2. Load transactions
+            # --------------------------------------------------------
+
+            transactions = self.select_rows(
+                table=TRANSACTION,
+                fields=(
+                    "price_date",
+                    "counter",
+                    "transaction_type",
+                    "price",
+                    "pieces",
+                    "posted_amount"
+                ),
+                order=[("price_date", "ASC"), ("counter", "ASC")],
+                isin_code=isin_code,
+                iban=iban,
+                period=period
+            )
+
+            # --------------------------------------------------------
+            # 3. Process transactions
+            # --------------------------------------------------------
+
+            for price_date, counter, t_type, price, pieces, posted_amount in transactions:
+
+                if t_type != TRANSACTION_DELIVERY:
+                    # BUY
+                    if cost_method == COST_AVERAGE:
+                        tx_pieces = buy_average(cost_state, pieces, posted_amount)
+                    else:
+                        tx_pieces = buy_lot(cost_state, pieces, posted_amount)
+
+                    profit_loss = Decimal("0.00")
+                    posted_amount = abs(Decimal(posted_amount))
+
+                else:
+                    # SELL
+                    if cost_method == COST_AVERAGE:
+                        tx_pieces, posted_amount, profit_loss = sell_average(
+                            cost_state, pieces, price
+                        )
+                    else:
+                        tx_pieces, posted_amount, profit_loss = sell_lot(
+                            cost_state,
+                            pieces,
+                            price,
+                            lifo=(cost_method == COST_LIFO)
+                        )
+
+                if cost_method == COST_AVERAGE:
+                    current_pieces = cost_state["pieces"]
+                else:
+                    current_pieces = total_pieces(cost_state)
+
+                result.append([
+                    price_date,
+                    counter,
+                    t_type,
+                    price,
+                    tx_pieces,
+                    current_pieces,
+                    posted_amount,
+                    profit_loss,
+                    iban
+                ])
+
+            # --------------------------------------------------------
+            # 4. Virtual CLOSE
+            # --------------------------------------------------------
+
+            if current_pieces > 0:
+                end_price = self.get_close_price(isin_code, to_date)
+
+                if cost_method == COST_AVERAGE:
+                    tx_pieces, posted_amount, profit_loss = sell_average(
+                        cost_state, current_pieces, end_price
+                    )
+                else:
+                    tx_pieces, posted_amount, profit_loss = sell_lot(
+                        cost_state,
+                        current_pieces,
+                        end_price,
+                        lifo=(cost_method == COST_LIFO)
+                    )
+
+                if cost_method == COST_AVERAGE:
+                    current_pieces = cost_state["pieces"]
+                else:
+                    current_pieces = total_pieces(cost_state)
+
+                result.append([
+                    to_date,
+                    9999,
+                    "CLOSE",
+                    Decimal(end_price),
+                    tx_pieces,
+                    current_pieces,
+                    posted_amount,
+                    profit_loss,
+                    iban
+                ])
+
+            return result
+
+        except Exception as exc:
+            MessageBoxError(
+                title="TRANSACTION ERROR",
+                info_storage=Informations.BANKDATA_INFORMATIONS,
+                message=get_message(
+                    MESSAGE_TEXT,
+                    "UNEXCEPTED_ERROR",
+                    __file__,
+                    0,
+                    "get_transaction_overview",
+                    type(exc).__name__,
+                    exc,
+                    ""
+                )
+            )
+            return []
 
     def select_transactions_data(
         self,
@@ -2502,48 +2653,6 @@ class MariaDBTransactions:
             vars_=vars_,
             fields=fields,
         )
-
-    def transaction_pieces(
-        self,
-        **kwargs
-    ) -> List[Tuple[str, str, Decimal]]:
-        """
-        Returns net transaction balance in pieces for each ISIN.
-
-        Combines RECEIPT (+) and DELIVERY (-) transactions.
-
-        Parameters
-        ----------
-        **kwargs
-            Filters forwarded to `_where_clause()`.
-
-        Returns
-        -------
-        list[tuple]
-            List of tuples: (isin_code, name, net pieces)
-        """
-        where_sql, vars_ = self._where_clause(**kwargs)
-
-        sql = f"""
-            WITH t AS (
-                SELECT isin_code, name, SUM(pieces) AS pieces
-                FROM {TRANSACTION_VIEW} {where_sql} AND transaction_type = '{TRANSACTION_RECEIPT}'
-                GROUP BY isin_code, name
-                UNION ALL
-                SELECT isin_code, name, -SUM(pieces) AS pieces
-                FROM {TRANSACTION_VIEW} {where_sql} AND transaction_type = '{TRANSACTION_DELIVERY}'
-                GROUP BY isin_code, name
-            )
-            SELECT isin_code, name, SUM(pieces) AS pieces
-            FROM t
-            GROUP BY isin_code, name
-            HAVING SUM(pieces) != 0
-        """
-        return self.select_cte(
-            sql=sql,
-            vars_=(vars_ + vars_),
-            fields=['isin_code', 'name', 'pieces']
-            )
 
     def _transaction_base_cte(self, where_sql: str) -> str:
         return f"""
@@ -2683,6 +2792,24 @@ class MariaDBPrices:
                 first_dates.append(str(first_date)[:10])
 
         return max(first_dates) if first_dates else None
+
+    def get_close_price(self, isin_code, price_date):
+
+        symbol = self.select_scalar(ISIN, DB_symbol, isin_code=isin_code)
+        close = self.select_scalar(PRICES, DB_close, symbol=symbol)
+        if close:
+            return Decimal(close)
+        else:
+            message = get_message(
+                MESSAGE_TEXT, 'PRICES_NO',
+                ' '.join([DB_price_date.upper(), price_date]),
+                symbol,
+                '',
+                isin_code,
+                ''
+                )
+            MessageBoxInfo(message=message)
+            return Decimal("0.00")
 
 
 class MariaDBShelves:
@@ -3072,7 +3199,7 @@ class MariaDBServices:
                 else:
                     if 'HKWPD' in account[KEY_ACC_ALLOWED_TRANSACTIONS]:
                         bankdata_informations_append(INFORMATION, information)
-                        if self._holdings(bank) is None:
+                        if self._holdings(bank) in START_DIALOG_FAILED:
                             bankdata_informations_append(
                                 WARNING,
                                 get_message(
@@ -3084,7 +3211,7 @@ class MariaDBServices:
                             return
                     if bank.statement_mt940 or bank.statement_camt:
                         bankdata_informations_append(INFORMATION, information)
-                        if self._statements(bank) is None:
+                        if self._statements(bank) in START_DIALOG_FAILED:
                             bankdata_informations_append(
                                 WARNING,
                                 get_message(
@@ -3130,7 +3257,7 @@ class MariaDBServices:
                         bank.iban
                         )
                     )
-                if self._holdings(bank) is None:
+                if self._holdings(bank) in START_DIALOG_FAILED:
                     bankdata_informations_append(
                         WARNING,
                         get_message(
@@ -3179,9 +3306,9 @@ class MariaDBServices:
         # Download holdings from bank
         # ------------------------------------------------------------------
         holdings: List[Dict[str, Any]] = bank.dialogs.holdings(bank)
-        if not holdings:
+        if holdings in START_DIALOG_FAILED:
             self.executor.execute("ROLLBACK;")
-            return []
+            return holdings
 
         # ------------------------------------------------------------------
         # Determine and normalize price date (weekend adjustment)
@@ -3338,8 +3465,8 @@ class MariaDBServices:
 
         statements = bank.download_statements() if bank.scraper else bank.dialogs.statements(bank)
 
-        if not statements:
-            return []
+        if statements in START_DIALOG_FAILED or statements == []:
+            return statements
 
         entry_date = None
         for statement in statements:
@@ -3368,6 +3495,170 @@ class MariaDBServices:
             transfer_statement_to_ledger(self, bank)
 
         return statements
+
+    def select_total_amounts(self, period: tuple) -> list:
+        """
+        Return total balances for the given period.
+
+        Combines:
+        - HOLDING portfolio balances
+        - STATEMENT closing balances
+        - LEDGER balances for asset accounts without statements/holdings
+
+        Parameters
+        ----------
+        period : tuple
+            (from_date, to_date)
+
+        Returns
+        -------
+        list
+            [(iban/account, date, status, saldo), ...]
+        """
+        from_date, to_date = period
+
+        # ------------------------------------------------------------
+        # 1. Holding + Statement balances inside period
+        # ------------------------------------------------------------
+        total_amounts = self.select_cte(
+            sql="""
+                WITH total_amounts AS (
+                    SELECT
+                        iban,
+                        price_date AS date,
+                        ? AS status,
+                        total_amount_portfolio AS saldo
+                    FROM holding
+                    WHERE price_date > ?
+                      AND price_date <= ?
+
+                    UNION ALL
+
+                    SELECT
+                        s.iban,
+                        s.entry_date AS date,
+                        s.closing_status AS status,
+                        s.closing_balance AS saldo
+                    FROM statement s
+                    JOIN (
+                        SELECT
+                            iban,
+                            entry_date,
+                            MAX(counter) AS counter
+                        FROM statement
+                        WHERE entry_date > ?
+                          AND entry_date <= ?
+                        GROUP BY iban, entry_date
+                    ) t
+                    USING (iban, entry_date, counter)
+                )
+                SELECT iban, date, status, saldo
+                FROM total_amounts
+            """,
+            vars_=(CREDIT, from_date, to_date, from_date, to_date),
+            fields=("iban", "date", "status", "saldo")
+        )
+
+        total_amounts = self._remove_obsolete_iban_rows(total_amounts)
+
+        # ------------------------------------------------------------
+        # 2. Last statement balances before period
+        # ------------------------------------------------------------
+        total_amounts += self.select_cte(
+            sql="""
+                WITH last_statement AS (
+                    SELECT
+                        iban,
+                        MAX(entry_date) AS entry_date
+                    FROM statement
+                    WHERE entry_date < ?
+                    GROUP BY iban
+                )
+                SELECT
+                    s.iban,
+                    ? AS date,
+                    s.closing_status AS status,
+                    s.closing_balance AS saldo
+                FROM statement s
+                JOIN last_statement l
+                  ON s.iban = l.iban
+                 AND s.entry_date = l.entry_date
+            """,
+            vars_=(from_date, from_date),
+            fields=("iban", "date", "status", "saldo")
+        )
+
+        # ------------------------------------------------------------
+        # 3. Last holding balances before period
+        # ------------------------------------------------------------
+        total_amounts += self.select_cte(
+            sql="""
+                WITH last_holding AS (
+                    SELECT
+                        iban,
+                        MAX(price_date) AS price_date
+                    FROM holding
+                    WHERE price_date <= ?
+                    GROUP BY iban
+                )
+                SELECT
+                    h.iban,
+                    ? AS date,
+                    ? AS status,
+                    h.total_amount_portfolio AS saldo
+                FROM holding h
+                JOIN last_holding l
+                  ON h.iban = l.iban
+                 AND h.price_date = l.price_date
+            """,
+            vars_=(from_date, from_date, CREDIT),
+            fields=("iban", "date", "status", "saldo")
+        )
+
+        # ------------------------------------------------------------
+        # 4. Ledger-only asset accounts
+        # ------------------------------------------------------------
+        opening_balance_account = self.select_scalar(
+            LEDGER_COA,
+            DB_account,
+            opening_balance_account=True
+        )
+
+        if not opening_balance_account:
+            MessageBoxInfo(
+                message=get_message(MESSAGE_TEXT, 'OPENING_ACCOUNT_MISSED')
+            )
+            return total_amounts
+
+        asset_accounts = self.select_table(
+            LEDGER_COA,
+            [DB_account, DB_name, DB_asset_accounting],
+            asset_accounting=True,
+            result_dict=True,
+            order=DB_account,
+            download=False
+        )
+
+        for account_dict in asset_accounts:
+            ledger_rows = self.select_ledger_balance(
+                account_dict,
+                opening_balance_account,
+                period
+            )
+            if ledger_rows:
+                total_amounts += ledger_rows
+            else:
+                MessageBoxInfo(
+                    message=get_message(
+                        MESSAGE_TEXT,
+                        'OPENING_LEDGER_MISSED',
+                        period,
+                        account_dict[DB_name]
+                    ),
+                    info_storage=Informations.BANKDATA_INFORMATIONS,
+                )
+
+        return total_amounts
 
 
 class MariaDBImporter:

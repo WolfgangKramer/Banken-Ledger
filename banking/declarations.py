@@ -2,7 +2,7 @@
 # -*- coding: latin-1 -*-
 """
 Created on 09.12.2019
-__updated__ = "2026-01-30"
+__updated__ = "2026-02-15"
 @author: Wolfgang Kramer
 """
 
@@ -121,6 +121,7 @@ MENU_TEXT = {
     'Refresh Alpha Vantage': 'Create Alpha Vantage Query Selection',
     'Refresh BankParameterData': 'Refresh BankParameterData',
     'Reset Screen Positions': 'Reset Screen Positions',
+    'Reset Ledger_daily_balance': 'Reset Ledger_daily_balance',
     'Show Data': 'Show Data',
     'Statement': 'Statement',
     'Synchronize': 'Synchronize',
@@ -273,8 +274,6 @@ TYPES = [FAMT, UNIT]
 TRANSACTION_RECEIPT = 'RECE'
 TRANSACTION_DELIVERY = 'DELI'
 TRANSACTION_TYPES = [TRANSACTION_RECEIPT, TRANSACTION_DELIVERY]
-SEPA_TRANSFER_APPLCANT_NAMES = ['ÜBERWEISUNG', 'überweisung', 'EURO-ÜBERWEISUNG',
-                                'EURO-Überweisung', 'EU-ÜBERWEISUNG', 'Online-Überweisung', ]
 """
 --------------- ISIN field values -------------
 """
@@ -373,7 +372,6 @@ HEIGHT_CANVAS = 800
 PANDAS_NAME_SHOW = 'SHOW'
 PANDAS_NAME_ROW = 'ROW'
 
-WM_DELETE_WINDOW = 'WM_DELETE_WINDOW'
 LIGHTBLUE = 'LIGHTBLUE'
 UNDEFINED = 'UNDEFINED'
 FONTSIZE = 8
@@ -382,6 +380,9 @@ MAX_FIELD_LENGTH = 65
 """
 -------------------------- Forms -----------------------------------------------
 """
+WM_DELETE_WINDOW = 'WM_DELETE_WINDOW'
+START_DIALOG_FAILED = [None, WM_DELETE_WINDOW]
+
 WIDTH_TEXT = 170
 HEIGHT_TEXT = 60
 HEADER = 'HEADER'
@@ -391,7 +392,13 @@ ERROR = 'ERROR       '
 LIGHTBLUE = 'LIGHTBLUE'
 SHOW_MESSAGE = [INFORMATION, WARNING, ERROR]
 FN_ACCOUNT_NAME = 'ACCOUNT_NAME'
+FN_ACCOUNT_NUMBER = 'ACCOUNT_NUMBER_'
 FN_COMPARATIVE = 'COMPARATIVE_VALUE'
+COST_FIFO    = "FIFO"
+COST_LIFO    = "LIFO"
+COST_AVERAGE = "AVERAGE"
+COST_METHOD = [COST_FIFO, COST_LIFO, COST_AVERAGE]
+FN_COST_METHOD = 'COST_METHOD'
 FN_DATE = 'DATE'
 FN_TO_DATE = 'TO_DATE'
 FN_FROM_DATE = 'FROM_DATE'
@@ -399,7 +406,6 @@ FN_BANK_NAME = 'BANK_NAME'
 FN_FIELD_NAME = 'Field_Name'
 FN_PROCUDURE_NAME = 'Procedure_Name'
 FN_PERCENTAGE = 'Percentage'
-FN_Y_AXE = 'Y_AXE'
 FN_DATA_MODE = 'DATA_MODE'
 FN_SHARE = 'SHARE'
 FN_INDEX = 'INDEX'
@@ -423,20 +429,6 @@ FN_COLUMNS_EURO = [FN_TOTAL, FN_PROFIT,
                    FN_BALANCE, FN_CREDIT, FN_DEBIT]
 FN_COLUMNS_PERCENT = [FN_TOTAL_PERCENT,
                       FN_PERIOD_PERCENT, FN_DAILY_PERCENT]
-Y_AXE_PROFIT = 'profit'
-Y_AXE = ['market_price', 'acquisition_price', 'pieces',
-         'total_amount', 'acquisition_amount', Y_AXE_PROFIT]
-SEPA_CREDITOR_NAME = 'Creditor_Name'
-SEPA_CREDITOR_IBAN = 'Creditor_IBAN'
-SEPA_CREDITOR_BIC = 'Creditor_BIC'
-SEPA_CREDITOR_BANK_NAME = 'Creditor_Bank_Name'
-SEPA_CREDITOR_BANK_LOCATION = 'CREDITOR_Bank_Location'
-SEPA_AMOUNT = 'Amount'
-SEPA_PURPOSE = 'Purpose'
-SEPA_PURPOSE_1 = 'Purpose_1'
-SEPA_PURPOSE_2 = 'Purpose_2'
-SEPA_REFERENCE = 'Reference'
-SEPA_EXECUTION_DATE = 'Execution_Date'
 NOTPROVIDED = 'NOTPROVIDED'
 """
 -------------------------- BuilPandasBox param mode

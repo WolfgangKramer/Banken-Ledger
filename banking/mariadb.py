@@ -172,7 +172,7 @@ class MariaDBExecutor:
         sql = self._prepare_sql(sql, compress)
 
         try:
-            print(sql, vars_)
+            # print(sql, vars_)
             self._execute(sql, vars_)
 
             if self._is_select(sql):
@@ -3858,3 +3858,4 @@ class MariaDB(
 
         super().__init__(user=user, password=password, database=database)
         self._initialized = True
+

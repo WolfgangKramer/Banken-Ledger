@@ -554,7 +554,8 @@ class BuiltBox(object):
             # ------------------ Keyboard Events ------------------------------
             self._keyboard()
             self.set_geometry()
-            self._activate_window()
+            if grab:
+                self._activate_window()
             if 'canvas' in locals():
                 canvas.configure(width=self.calculate_width_canvas())
             self._box_window_top.protocol(
@@ -2182,3 +2183,4 @@ class BuiltPandasBox(Frame):
         while None in combo_list:
             combo_list.remove(None)
         return {field_name: sorted(combo_list)}
+

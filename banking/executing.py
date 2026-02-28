@@ -1,6 +1,6 @@
 """0
 Created on 09.12.2019
-__updated__ = "2026-02-16"
+__updated__ = "2026-02-28"
 Author: Wolfang Kramer
 """
 import sys
@@ -8,6 +8,7 @@ import requests
 import webbrowser
 from PIL import ImageTk
 
+from collections import defaultdict
 from time import sleep
 from typing import List, Dict, Optional
 from datetime import date, timedelta, datetime
@@ -16,6 +17,7 @@ from tkinter import Tk, Menu, TclError, GROOVE, ttk, Canvas, StringVar, font
 from tkinter.ttk import Label
 from fints.types import ValueList
 from pandas import DataFrame
+
 
 from banking.bank import InitBank, InitBankSync, InitBankAnonymous
 from banking.declarations import (
@@ -130,7 +132,7 @@ from banking.utils import (
 )
 
 
-class BankenLedger(object):
+class BankenLedger():
     """
     Start of Application
     Execution of Application Customizing
@@ -172,8 +174,8 @@ class BankenLedger(object):
             self.canvas.create_text(300, 200, fill=fill_colour, font=(
                 'Arial', 20, 'bold'), text=get_message(MESSAGE_TEXT, 'DATABASE', self.database))
             self._def_styles()
-            self.bank_owner_account = self._create_bank_owner_account()
-            self._create_menu(self.database)
+            self.create_menu(self.database, self.window)
+            self.window.config(menu=self.menu, borderwidth=10, relief=GROOVE)
             self.footer = StringVar()
             self.message_widget = Label(self.window,
                                         textvariable=self.footer, foreground='RED', justify='center')
@@ -397,6 +399,420 @@ class BankenLedger(object):
             self.footer.set(get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE_REFRESH'))
         else:
             self.footer.set(get_message(MESSAGE_TEXT, 'ALPHA_VANTAGE_ERROR'))
+
+    def create_menu(self, MariaDBname, window):
+
+        self.mariadb = MariaDB()
+        menu_font = font.Font(family='Arial', size=11)
+        self.menu = Menu(window)
+        window.config(menu=self.menu, borderwidth=10, relief=GROOVE)
+        self.bank_names = self.mariadb.dictbank_names()        
+        bank_owner_account = self._create_bank_owner_account()
+        if application_store.get(DB_ledger):
+            self._create_menu_ledger(self.menu, menu_font)
+            # self.menu_builder = MenuBuilder(self).build(menu)
+        if self.bank_names != {} and application_store.get(None):  # application customizing is done
+            self._create_menu_show(self.menu, bank_owner_account, menu_font)
+            self._create_menu_download(self.menu, menu_font)
+        if application_store.get(None):  # application customizing is done
+            self._create_menu_database(
+                self.menu, menu_font, bank_owner_account)
+        self._create_menu_customizing(self.menu, menu_font, MariaDBname)
+
+    def _create_menu_ledger(self, menu, menu_font):
+        """
+         LEDGER Menu
+        """
+        ledger_menu = Menu(
+            menu, tearoff=0, font=menu_font, bg='Lightblue')
+        menu.add_cascade(
+            label=get_menu_text("Ledger"), menu=ledger_menu)
+        if self.mariadb.select_scalar(LEDGER_COA, 'COUNT(*)'):  # count rows in LEDGER_COA table
+            ledger_menu.add_command(
+                label=get_menu_text("Check Upload"), command=self._ledger_upload_check)
+            ledger_menu.add_command(
+                label=get_menu_text("Check Bank Statement"), command=self._ledger_bank_statement_check)
+            ledger_menu.add_separator()
+            ledger_menu.add_command(
+                label=get_menu_text("Balances"), command=self._ledger_balances)
+            ledger_menu.add_command(
+                label=get_menu_text("Assets"), command=self._ledger_assets)
+            ledger_menu.add_command(
+                label=get_menu_text("Journal"), command=self._ledger_journal)
+            ledger_menu.add_command(
+                label=get_menu_text("Account"), command=self._ledger_account)
+            ledger_menu.add_command(
+                label=get_menu_text("Account Category"), command=self._ledger_account_category)
+            ledger_menu.add_separator()
+        ledger_menu.add_command(
+            label=get_menu_text("Reset Ledger_daily_balance"), command=self._ledger_daily_balance)            
+        ledger_menu.add_command(
+            label=get_menu_text("Chart of Accounts"), command=self._ledger_coa_table)
+
+    def _create_menu_show(self, menu, bank_owner_account, menu_font):
+        """
+         SHOW Menu
+        """
+        show_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
+        menu.add_cascade(label=get_menu_text("Show"), menu=show_menu)
+        site_menu = Menu(show_menu, tearoff=0,
+                         font=menu_font, bg='Lightblue')
+        show_menu.add_cascade(
+            label=get_menu_text("WebSites"), menu=site_menu, underline=0)
+        for website in WEBSITES.keys():
+            site_menu.add_command(label=website,
+                                  command=lambda x=WEBSITES[website]: self._websites(x))
+        show_menu.add_separator()
+        if application_store.get(DB_alpha_vantage):
+            show_menu.add_command(
+                label=get_menu_text("Alpha Vantage"), command=self._show_alpha_vantage)
+            show_menu.add_command(
+                label=get_menu_text("Alpha Vantage Symbol Search"), command=self._show_alpha_vantage_search_symbol)
+        show_menu.add_separator()
+        show_menu.add_command(
+            label=get_menu_text("Balances"), command=self._show_balances_all_banks)
+        show_menu.add_separator()
+        self._create_menu_banks(
+            get_menu_text("Show"), bank_owner_account, show_menu, menu_font)
+
+    def _create_menu_download(self, menu, menu_font):
+        """
+        DOWNLOAD Menu
+        """
+        download_menu = Menu(
+            menu, tearoff=0, font=menu_font, bg='Lightblue')
+        menu.add_cascade(label=get_menu_text("Download"), menu=download_menu)
+        download_menu.add_command(
+            label=get_menu_text("All_Banks"), command=self._all_banks)
+        download_menu.add_separator()
+        download_menu.add_command(
+            label=get_menu_text("Prices"), command=self._import_prices)
+        download_menu.add_separator()
+        for bank_name in self.bank_names.values():
+            bank_code = dict_get_first_key(self.bank_names, bank_name)
+            download_menu.add_cascade(
+                label=bank_name,
+                command=lambda x=bank_code: self._all_accounts(x))
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
+            if accounts:
+                for acc in accounts:
+                    if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                        download_menu.add_cascade(
+                            label=' '.join(
+                                [bank_name, get_menu_text("Holding"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]]),
+                            command=lambda x=bank_code: self._all_holdings(x))
+            download_menu.add_separator()
+
+    def _create_menu_database(self, menu, menu_font, bank_owner_account):
+        """
+        DATABASE Menu
+        """
+        database_menu = Menu(
+            menu, tearoff=0, font=menu_font, bg='Lightblue')
+        menu.add_cascade(label=get_menu_text("Database"), menu=database_menu)
+        bank_names = {}
+        for bank_name in self.bank_names.values():
+            bank_code = dict_get_first_key(self.bank_names, bank_name)
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
+            if accounts:
+                for acc in accounts:
+                    if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                        bank_names[bank_code] = bank_name
+        if bank_names != {}:
+            all_banks_menu = Menu(
+                database_menu, tearoff=0, font=menu_font, bg='Lightblue')
+            database_menu.add_cascade(
+                label=get_menu_text("All_Banks"), menu=all_banks_menu, underline=0)
+            database_menu.add_separator()
+            all_banks_menu.add_command(
+                label=get_menu_text("Holding Performance"),
+                command=(lambda x=FN_ALL_BANKS, y='':
+                         self._data_holding_performance(x, y)))
+            all_banks_menu.add_command(
+                label=get_menu_text("Holding ISIN Comparision"),
+                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision(x, '')))
+            all_banks_menu.add_command(
+                label=get_menu_text("Holding ISIN Comparision") + '%',
+                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision_percent(x, '')))
+            all_banks_menu.add_command(
+                label=get_menu_text("Transaction Detail"),
+                command=(lambda x=FN_ALL_BANKS,
+                         y=None: self._data_transaction_detail(x, y)))
+            self._create_menu_banks(
+                get_menu_text("Database"), bank_owner_account, database_menu, menu_font)
+        database_menu.add_command(
+            label=get_menu_text("ISIN Table"), command=self._data_isin_table)
+        database_menu.add_separator()
+        database_menu.add_command(
+            label=get_menu_text("Technical Indicators"), command=self._data_technical_indicators)
+        database_menu.add_separator()
+        database_menu.add_command(
+            label=get_menu_text("Prices ISINs"),
+            command=(lambda x=None: self._data_prices(x)))
+        database_menu.add_command(
+            label=get_menu_text("Prices ISINs") + '%',
+            command=(lambda x=PERCENT: self._data_prices(x)))
+
+    def _create_menu_customizing(self, menu, menu_font, MariaDBname):
+        """
+        CUSTOMIZE Menu
+        """
+        customize_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
+        menu.add_cascade(label=get_menu_text("Customize"), menu=customize_menu)
+        customize_menu.add_command(label=get_menu_text("Application INI File"),
+                                   command=self._appcustomizing)
+        if application_store.get(None):  # Customizing is done
+            customize_menu.add_separator()
+            customize_menu.add_command(label=get_menu_text("Import Bankidentifier CSV-File"),
+                                       command=self._import_bankidentifier)
+            customize_menu.add_command(label=get_menu_text("Import Server CSV-File"),
+                                       command=self._import_server)
+            customize_menu.add_separator()
+            customize_menu.add_command(label=get_menu_text("Reset Screen Positions"),
+                                       command=self._reset)
+            if application_store.get(DB_alpha_vantage):
+                customize_menu.add_command(label=get_menu_text("Refresh Alpha Vantage"),
+                                           command=self._alpha_vantage_refresh)
+                customize_menu.add_separator()
+            if application_store.get(None):  # application customizing is done
+                if self.mariadb.select_server:
+                    customize_menu.add_command(label=get_menu_text("New Bank"),
+                                               command=self._bank_data_new)
+                    customize_menu.add_command(label=get_menu_text("Delete Bank"),
+                                               command=self._bank_data_delete)
+                else:
+                    MessageBoxInfo(message=get_message(MESSAGE_TEXT, 'PRODUCT_ID'))
+            if self.bank_names:
+                for bank_name in self.bank_names.values():
+                    bank_code = dict_get_first_key(self.bank_names, bank_name)
+                    cust_bank_menu = Menu(customize_menu, tearoff=0,
+                                          font=menu_font, bg='Lightblue')
+                    cust_bank_menu.add_command(label=get_menu_text("Change Login Data"),
+                                               command=lambda x=bank_code: self._bank_data_change(x))
+                    if bank_code not in list(SCRAPER_BANKDATA.keys()):
+                        cust_bank_menu.add_command(label=get_menu_text("Change Security Function"),
+                                                   command=lambda
+                                                   x=bank_code: self._bank_security_function(x, False))
+                        cust_bank_menu.add_command(label=get_menu_text("Synchronize"),
+                                                   command=lambda x=bank_code: self._bank_sync(x))
+                        cust_bank_menu.add_command(label=get_menu_text("Change FinTS Transaction Version"),
+                                                   command=lambda
+                                                   x=bank_code: self._bank_version_transaction(x))
+                        """
+                        cust_bank_menu.add_command(label=get_menu_text("Refresh BankParameterData"),
+                                                   command=lambda
+                                                   x=bank_code: self._bank_refresh_bpd(x))
+                        """
+                    cust_bank_menu.add_command(label=get_menu_text("Show Data"),
+                                               command=lambda x=bank_code: self._bank_show_shelve(x))
+                    customize_menu.add_separator()
+                    customize_menu.add_cascade(
+                        label=bank_name, menu=cust_bank_menu, underline=0)
+
+    def _create_menu_banks(self, menu_text, bank_owner_account, typ_menu, menu_font):
+        """
+        Populate the top-level bank menu with owners and their accounts.
+        
+        :param menu_text: Type of menu ("Show", "Transfer", "Database").
+        :param bank_owner_account: Dict mapping bank_code -> owner_name -> accounts.
+        :param typ_menu: The Tkinter menu object to populate.
+        :param menu_font: Font for menus.
+        """
+        def add_account_menu(accounts, parent_menu, bank_code, bank_name, owner_name=None):
+            """Helper to create the appropriate account submenu based on menu_text."""
+            if menu_text == get_menu_text("Show"):
+                return self._create_menu_show_accounts(accounts, parent_menu, bank_code, bank_name, owner_name)
+            elif menu_text == get_menu_text("Transfer"):
+                return self._create_menu_transfer_accounts(accounts, parent_menu, bank_code, bank_name, owner_name)
+            elif menu_text == get_menu_text("Database"):
+                return self._create_menu_database_accounts(accounts, parent_menu, bank_name, menu_font)
+            return False
+    
+        for bank_code, bank_name in self.bank_names.items():
+            # If bank has owner accounts
+            if bank_code in bank_owner_account:
+                owner_menu = Menu(typ_menu, tearoff=0, font=menu_font, bg='Lightblue')
+    
+                # Add balances at bank level if in "Show" menu
+                if menu_text == get_menu_text("Show"):
+                    owner_menu.add_command(
+                        label=get_menu_text("Balances"),
+                        command=lambda bc=bank_code, bn=bank_name: self._show_balances(bc, bn)
+                    )
+    
+                owners_exist = False
+                for owner_name, accounts in bank_owner_account[bank_code].items():
+                    account_menu = Menu(owner_menu, tearoff=0, font=menu_font, bg='Lightblue')
+                    accounts_exist = add_account_menu(accounts, account_menu, bank_code, bank_name, owner_name)
+                    
+                    if accounts_exist:
+                        owners_exist = True
+                        owner_menu.add_cascade(label=owner_name, menu=account_menu, underline=0)
+    
+                if owners_exist:
+                    typ_menu.add_cascade(label=bank_name, menu=owner_menu, underline=0)
+                    typ_menu.add_separator()
+    
+            # If bank has no owner accounts, create menu directly for bank
+            else:
+                account_menu = Menu(typ_menu, tearoff=0, font=menu_font, bg='Lightblue')
+                # Fallback to first bank code in bank_names if not in bank_owner_account
+                bank_code = dict_get_first_key(self.bank_names, bank_name)
+                accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
+                accounts_exist = add_account_menu(accounts, account_menu, bank_code, bank_name)
+    
+                if accounts_exist:
+                    typ_menu.add_cascade(label=bank_name, menu=account_menu, underline=0)
+                    typ_menu.add_separator()
+
+
+    def _create_menu_show_accounts(self, accounts, account_menu, bank_code, bank_name, owner_name=None):
+        """
+        Populate account menu with balances, statements, holdings, and transactions
+        using a concise mapping-driven approach.
+        """
+        account_menu.add_command(
+            label=get_menu_text("Balances"),
+            command=lambda bc=bank_code, bn=bank_name: self._show_balances(bc, bn, owner_name=owner_name)
+        )
+    
+        if not accounts:
+            return True
+    
+        TRANSACTION_MAP = {
+            'HKKAZ': ('Statement', self._show_statements),
+            'HKCAZ': ('Statement', self._show_statements),
+            'HKWPD': [('Holding', self._show_holdings), ('Transactions', self._show_transactions)],
+            'HKWDU': ('Transactions', self._show_transactions),
+        }
+    
+        for acc in accounts:
+            transactions = acc.get(KEY_ACC_ALLOWED_TRANSACTIONS, "")
+            for txn_type, actions in TRANSACTION_MAP.items():
+                if txn_type not in transactions:
+                    continue
+                actions = actions if isinstance(actions, list) else [actions]
+                for label_prefix, callback in (action if isinstance(action, tuple) else action for action in actions):
+                    if label_prefix == 'Statement':
+                        self.kaz_iban.append(acc[KEY_ACC_IBAN])
+                    label = f"{get_menu_text(label_prefix)} {acc[KEY_ACC_PRODUCT_NAME]} {acc[KEY_ACC_ACCOUNT_NUMBER]}"
+                    if label_prefix == 'Transactions':
+                        label += f" {TRANSACTION.upper()}"
+                    account_menu.add_command(
+                        label=label,
+                        command=lambda bc=bank_code, a=acc, cb=callback: cb(bc, a)
+                    )
+    
+        return True
+
+
+    def _create_menu_transfer_accounts(self, accounts, account_menu, bank_code, bank_name, owner_name=None):
+
+        accounts_exist = False
+        if accounts:
+            for acc in accounts:
+                if 'HKCCS' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                    accounts_exist = True
+                    label = acc[KEY_ACC_PRODUCT_NAME]
+                    if not label:
+                        label = acc[KEY_ACC_ACCOUNT_NUMBER]
+                    label = ' '.join([get_menu_text("Statement"), label])
+                    account_menu.add_command(
+                        label=label,
+                        command=(lambda x=bank_code,
+                                 y=acc: self._sepa_credit_transfer(x, y)))
+        return accounts_exist
+
+    def _create_menu_database_accounts(self, accounts, account_menu, bank_name, menu_font):
+
+        accounts_exist = False
+        if accounts:
+            for acc in accounts:
+                if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
+                    accounts_exist = True
+                    account_menu.add_command(
+                        label=get_menu_text("Holding Performance"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]: self._data_holding_performance(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Holding ISIN Comparision"),
+                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Holding ISIN Comparision") + '%',
+                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision_percent(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Transaction Detail"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]: self._data_transaction_detail(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Profit of closed Transactions"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]: self._transactions_profit(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Profit Transactions incl. current Depot Positions"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]: self._transactions_profit_all(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Prices ISINs"),
+                        command=(lambda x=None: self._data_prices(x)))
+                    account_menu.add_command(
+                        label=get_menu_text("Prices ISINs") + '%',
+                        command=(lambda x=PERCENT: self._data_prices(x)))
+
+                    account_menu.add_separator()
+                    account_menu.add_command(
+                        label=get_menu_text("Transactions Table"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]: self._data_transaction_table(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Holding Table"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]: self._data_holding_table(x, y)))
+                    account_menu.add_separator()
+                    account_menu.add_command(
+                        label=get_menu_text("Update Holding Market Price by Closing Price"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]:
+                                 self._data_update_holding_prices(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Update Portfolio Total Amount"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]:
+                                 self._update_holding_total_amount_portfolio(x, y)))
+                    account_menu.add_separator()
+                    account_menu.add_command(
+                        label=get_menu_text("Import Transactions"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]: self._import_transaction(x, y)))
+                    account_menu.add_command(
+                        label=get_menu_text("Check Transactions Pieces"),
+                        command=(lambda x=bank_name,
+                                 y=acc[KEY_ACC_IBAN]: self._transactions_pieces(x, y)))
+        return accounts_exist
+
+    def _create_bank_owner_account(self):
+        bank_owner_account = {}
+    
+        for bank_code in self.bank_names:
+            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
+            if not accounts:
+                continue
+    
+            product_names = [acc[KEY_ACC_PRODUCT_NAME] for acc in accounts]
+            if len(product_names) == len(set(product_names)):
+                continue
+    
+            owners = defaultdict(list)
+            for acc in accounts:
+                owner = acc.get(KEY_ACC_OWNER_NAME) or bank_code
+                acc[KEY_ACC_OWNER_NAME] = owner
+                owners[owner].append(acc)
+    
+            bank_owner_account[bank_code] = dict(owners)
+    
+        return bank_owner_account
+
+
 
     def _bank_data_change(self, bank_code):
 
@@ -642,413 +1058,6 @@ class BankenLedger(object):
                     )
                 )
 
-    def _create_menu(self, MariaDBname):
-
-        menu_font = font.Font(family='Arial', size=11)
-        menu = Menu(self.window)
-        self.window.config(menu=menu, borderwidth=10, relief=GROOVE)
-        if application_store.get(DB_ledger):
-            self._create_menu_ledger(menu, menu_font)
-        if self.bank_names != {} and application_store.get(None):  # application customizing is done
-            self._create_menu_show(menu, self.bank_owner_account, menu_font)
-            self._create_menu_download(menu, menu_font)
-            """
-            Deactivated: Verification of Payyee
-            self._create_menu_transfer(menu, self.bank_owner_account, menu_font)
-            """
-        if application_store.get(None):  # application customizing is done
-            self._create_menu_database(
-                menu, menu_font, self.bank_owner_account)
-        self._create_menu_customizing(menu, menu_font, MariaDBname)
-
-    def _create_menu_ledger(self, menu, menu_font):
-        """
-         LEDGER Menu
-        """
-        ledger_menu = Menu(
-            menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(
-            label=get_menu_text("Ledger"), menu=ledger_menu)
-        if self.mariadb.select_scalar(LEDGER_COA, 'COUNT(*)'):  # count rows in LEDGER_COA table
-            ledger_menu.add_command(
-                label=get_menu_text("Check Upload"), command=self._ledger_upload_check)
-            ledger_menu.add_command(
-                label=get_menu_text("Check Bank Statement"), command=self._ledger_bank_statement_check)
-            ledger_menu.add_separator()
-            ledger_menu.add_command(
-                label=get_menu_text("Balances"), command=self._ledger_balances)
-            ledger_menu.add_command(
-                label=get_menu_text("Assets"), command=self._ledger_assets)
-            ledger_menu.add_command(
-                label=get_menu_text("Journal"), command=self._ledger_journal)
-            ledger_menu.add_command(
-                label=get_menu_text("Account"), command=self._ledger_account)
-            ledger_menu.add_command(
-                label=get_menu_text("Account Category"), command=self._ledger_account_category)
-            ledger_menu.add_separator()
-        ledger_menu.add_command(
-            label=get_menu_text("Reset Ledger_daily_balance"), command=self._ledger_daily_balance)            
-        ledger_menu.add_command(
-            label=get_menu_text("Chart of Accounts"), command=self._ledger_coa_table)
-
-    def _create_menu_show(self, menu, bank_owner_account, menu_font):
-        """
-         SHOW Menu
-        """
-        show_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=get_menu_text("Show"), menu=show_menu)
-        site_menu = Menu(show_menu, tearoff=0,
-                         font=menu_font, bg='Lightblue')
-        show_menu.add_cascade(
-            label=get_menu_text("WebSites"), menu=site_menu, underline=0)
-        for website in WEBSITES.keys():
-            site_menu.add_command(label=website,
-                                  command=lambda x=WEBSITES[website]: self._websites(x))
-        show_menu.add_separator()
-        if application_store.get(DB_alpha_vantage):
-            show_menu.add_command(
-                label=get_menu_text("Alpha Vantage"), command=self._show_alpha_vantage)
-            show_menu.add_command(
-                label=get_menu_text("Alpha Vantage Symbol Search"), command=self._show_alpha_vantage_search_symbol)
-        show_menu.add_separator()
-        show_menu.add_command(
-            label=get_menu_text("Balances"), command=self._show_balances_all_banks)
-        show_menu.add_separator()
-        self._create_menu_banks(
-            get_menu_text("Show"), bank_owner_account, show_menu, menu_font)
-
-    def _create_menu_download(self, menu, menu_font):
-        """
-        DOWNLOAD Menu
-        """
-        download_menu = Menu(
-            menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=get_menu_text("Download"), menu=download_menu)
-        download_menu.add_command(
-            label=get_menu_text("All_Banks"), command=self._all_banks)
-        download_menu.add_separator()
-        download_menu.add_command(
-            label=get_menu_text("Prices"), command=self._import_prices)
-        download_menu.add_separator()
-        for bank_name in self.bank_names.values():
-            bank_code = dict_get_first_key(self.bank_names, bank_name)
-            download_menu.add_cascade(
-                label=bank_name,
-                command=lambda x=bank_code: self._all_accounts(x))
-            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
-            if accounts:
-                for acc in accounts:
-                    if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                        download_menu.add_cascade(
-                            label=' '.join(
-                                [bank_name, get_menu_text("Holding"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]]),
-                            command=lambda x=bank_code: self._all_holdings(x))
-            download_menu.add_separator()
-
-    def _create_menu_database(self, menu, menu_font, bank_owner_account):
-        """
-        DATABASE Menu
-        """
-        database_menu = Menu(
-            menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=get_menu_text("Database"), menu=database_menu)
-        bank_names = {}
-        for bank_name in self.bank_names.values():
-            bank_code = dict_get_first_key(self.bank_names, bank_name)
-            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
-            if accounts:
-                for acc in accounts:
-                    if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                        bank_names[bank_code] = bank_name
-        if bank_names != {}:
-            all_banks_menu = Menu(
-                database_menu, tearoff=0, font=menu_font, bg='Lightblue')
-            database_menu.add_cascade(
-                label=get_menu_text("All_Banks"), menu=all_banks_menu, underline=0)
-            database_menu.add_separator()
-            all_banks_menu.add_command(
-                label=get_menu_text("Holding Performance"),
-                command=(lambda x=FN_ALL_BANKS, y='':
-                         self._data_holding_performance(x, y)))
-            all_banks_menu.add_command(
-                label=get_menu_text("Holding ISIN Comparision"),
-                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision(x, '')))
-            all_banks_menu.add_command(
-                label=get_menu_text("Holding ISIN Comparision") + '%',
-                command=(lambda x=FN_ALL_BANKS: self._data_holding_isin_comparision_percent(x, '')))
-            all_banks_menu.add_command(
-                label=get_menu_text("Transaction Detail"),
-                command=(lambda x=FN_ALL_BANKS,
-                         y=None: self._data_transaction_detail(x, y)))
-            self._create_menu_banks(
-                get_menu_text("Database"), bank_owner_account, database_menu, menu_font)
-        database_menu.add_command(
-            label=get_menu_text("ISIN Table"), command=self._data_isin_table)
-        database_menu.add_separator()
-        database_menu.add_command(
-            label=get_menu_text("Technical Indicators"), command=self._data_technical_indicators)
-        database_menu.add_separator()
-        database_menu.add_command(
-            label=get_menu_text("Prices ISINs"),
-            command=(lambda x=None: self._data_prices(x)))
-        database_menu.add_command(
-            label=get_menu_text("Prices ISINs") + '%',
-            command=(lambda x=PERCENT: self._data_prices(x)))
-
-    def _create_menu_customizing(self, menu, menu_font, MariaDBname):
-        """
-        CUSTOMIZE Menu
-        """
-        customize_menu = Menu(menu, tearoff=0, font=menu_font, bg='Lightblue')
-        menu.add_cascade(label=get_menu_text("Customize"), menu=customize_menu)
-        customize_menu.add_command(label=get_menu_text("Application INI File"),
-                                   command=self._appcustomizing)
-        if application_store.get(None):  # Customizing is done
-            customize_menu.add_separator()
-            customize_menu.add_command(label=get_menu_text("Import Bankidentifier CSV-File"),
-                                       command=self._import_bankidentifier)
-            customize_menu.add_command(label=get_menu_text("Import Server CSV-File"),
-                                       command=self._import_server)
-            customize_menu.add_separator()
-            customize_menu.add_command(label=get_menu_text("Reset Screen Positions"),
-                                       command=self._reset)
-            if application_store.get(DB_alpha_vantage):
-                customize_menu.add_command(label=get_menu_text("Refresh Alpha Vantage"),
-                                           command=self._alpha_vantage_refresh)
-                customize_menu.add_separator()
-            if application_store.get(None):  # application customizing is done
-                if self.mariadb.select_server:
-                    customize_menu.add_command(label=get_menu_text("New Bank"),
-                                               command=self._bank_data_new)
-                    customize_menu.add_command(label=get_menu_text("Delete Bank"),
-                                               command=self._bank_data_delete)
-                else:
-                    MessageBoxInfo(message=get_message(MESSAGE_TEXT, 'PRODUCT_ID'))
-            if self.bank_names:
-                for bank_name in self.bank_names.values():
-                    bank_code = dict_get_first_key(self.bank_names, bank_name)
-                    cust_bank_menu = Menu(customize_menu, tearoff=0,
-                                          font=menu_font, bg='Lightblue')
-                    cust_bank_menu.add_command(label=get_menu_text("Change Login Data"),
-                                               command=lambda x=bank_code: self._bank_data_change(x))
-                    if bank_code not in list(SCRAPER_BANKDATA.keys()):
-                        cust_bank_menu.add_command(label=get_menu_text("Change Security Function"),
-                                                   command=lambda
-                                                   x=bank_code: self._bank_security_function(x, False))
-                        cust_bank_menu.add_command(label=get_menu_text("Synchronize"),
-                                                   command=lambda x=bank_code: self._bank_sync(x))
-                        cust_bank_menu.add_command(label=get_menu_text("Change FinTS Transaction Version"),
-                                                   command=lambda
-                                                   x=bank_code: self._bank_version_transaction(x))
-                        """
-                        cust_bank_menu.add_command(label=get_menu_text("Refresh BankParameterData"),
-                                                   command=lambda
-                                                   x=bank_code: self._bank_refresh_bpd(x))
-                        """
-                    cust_bank_menu.add_command(label=get_menu_text("Show Data"),
-                                               command=lambda x=bank_code: self._bank_show_shelve(x))
-                    customize_menu.add_separator()
-                    customize_menu.add_cascade(
-                        label=bank_name, menu=cust_bank_menu, underline=0)
-
-    def _create_menu_banks(self, menu_text, bank_owner_account, typ_menu, menu_font):
-
-        for bank_code in self.bank_names.keys():
-            bank_name = self.bank_names[bank_code]
-            if bank_code in bank_owner_account.keys():
-                owner_menu = Menu(typ_menu, tearoff=0,
-                                  font=menu_font, bg='Lightblue')
-                if menu_text == get_menu_text("Show"):
-                    owner_menu.add_command(label=get_menu_text("Balances"),
-                                           command=lambda x=bank_code, y=bank_name: self._show_balances(x, y))
-                if bank_owner_account:
-                    owners_exist = False
-                    for owner_name in bank_owner_account[bank_code].keys():
-                        account_menu = Menu(
-                            owner_menu, tearoff=0, font=menu_font, bg='Lightblue')
-                        accounts = bank_owner_account[bank_code][owner_name]
-                        if menu_text == get_menu_text("Show"):
-                            accounts_exist = self._create_menu_show_accounts(
-                                accounts, account_menu, bank_code, bank_name, owner_name=owner_name)
-                        if menu_text == get_menu_text("Transfer"):
-                            accounts_exist = self._create_menu_transfer_accounts(
-                                accounts, account_menu, bank_code, bank_name, owner_name=owner_name)
-                        elif menu_text == get_menu_text("Database"):
-                            accounts_exist = self._create_menu_database_accounts(
-                                accounts, account_menu, bank_name, menu_font)
-                        if accounts_exist:
-                            owners_exist = True
-                            owner_menu.add_cascade(
-                                label=owner_name, menu=account_menu, underline=0)
-                    if owners_exist:
-                        typ_menu.add_cascade(
-                            label=bank_name, menu=owner_menu, underline=0)
-                        typ_menu.add_separator()
-            else:
-                account_menu = Menu(
-                    typ_menu, tearoff=0, font=menu_font, bg='Lightblue')
-                bank_code = dict_get_first_key(self.bank_names, bank_name)
-                accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
-                if menu_text == get_menu_text("Show"):
-                    accounts_exist = self._create_menu_show_accounts(
-                        accounts, account_menu, bank_code, bank_name)
-                if menu_text == get_menu_text("Transfer"):
-                    accounts_exist = self._create_menu_transfer_accounts(
-                        accounts, account_menu, bank_code, bank_name)
-                elif menu_text == get_menu_text("Database"):
-                    accounts_exist = self._create_menu_database_accounts(
-                        accounts, account_menu, bank_name, menu_font)
-                if accounts_exist:
-                    typ_menu.add_cascade(
-                        label=bank_name, menu=account_menu, underline=0)
-                    typ_menu.add_separator()
-
-    def _create_menu_show_accounts(self, accounts, account_menu, bank_code, bank_name, owner_name=None):
-
-        accounts_exist = True
-        account_menu.add_command(label=get_menu_text("Balances"),
-                                 command=lambda x=bank_code, y=bank_name: self._show_balances(x, y, owner_name=owner_name))
-        if accounts:
-            for acc in accounts:
-                if 'HKKAZ' in acc[KEY_ACC_ALLOWED_TRANSACTIONS] or 'HKCAZ' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                    self.kaz_iban.append(acc[KEY_ACC_IBAN])
-                    label = ' '.join(
-                        [get_menu_text("Statement"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]])
-                    account_menu.add_command(
-                        label=label,
-                        command=lambda x=bank_code, y=acc: self._show_statements(x, y))
-                if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                    label = ' '.join(
-                        [get_menu_text("Holding"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER]])
-                    account_menu.add_command(
-                        label=label,
-                        command=lambda x=bank_code, y=acc: self._show_holdings(x, y))
-                if 'HKWDU' in acc[KEY_ACC_ALLOWED_TRANSACTIONS] or \
-                        'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                    label = ' '.join(
-                        [get_menu_text("Transactions"), acc[KEY_ACC_PRODUCT_NAME], acc[KEY_ACC_ACCOUNT_NUMBER], TRANSACTION.upper()])
-                    account_menu.add_command(
-                        label=label,
-                        command=(lambda x=bank_code, y=acc: self._show_transactions(x, y)))
-        return accounts_exist
-
-    def _create_menu_transfer_accounts(self, accounts, account_menu, bank_code, bank_name, owner_name=None):
-
-        accounts_exist = False
-        if accounts:
-            for acc in accounts:
-                if 'HKCCS' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                    accounts_exist = True
-                    label = acc[KEY_ACC_PRODUCT_NAME]
-                    if not label:
-                        label = acc[KEY_ACC_ACCOUNT_NUMBER]
-                    label = ' '.join([get_menu_text("Statement"), label])
-                    account_menu.add_command(
-                        label=label,
-                        command=(lambda x=bank_code,
-                                 y=acc: self._sepa_credit_transfer(x, y)))
-        return accounts_exist
-
-    def _create_menu_database_accounts(self, accounts, account_menu, bank_name, menu_font):
-
-        accounts_exist = False
-        if accounts:
-            for acc in accounts:
-                if 'HKWPD' in acc[KEY_ACC_ALLOWED_TRANSACTIONS]:
-                    accounts_exist = True
-                    account_menu.add_command(
-                        label=get_menu_text("Holding Performance"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]: self._data_holding_performance(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Holding ISIN Comparision"),
-                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Holding ISIN Comparision") + '%',
-                        command=(lambda x=bank_name, y=acc[KEY_ACC_IBAN]: self._data_holding_isin_comparision_percent(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Transaction Detail"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]: self._data_transaction_detail(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Profit of closed Transactions"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]: self._transactions_profit(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Profit Transactions incl. current Depot Positions"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]: self._transactions_profit_all(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Prices ISINs"),
-                        command=(lambda x=None: self._data_prices(x)))
-                    account_menu.add_command(
-                        label=get_menu_text("Prices ISINs") + '%',
-                        command=(lambda x=PERCENT: self._data_prices(x)))
-
-                    account_menu.add_separator()
-                    account_menu.add_command(
-                        label=get_menu_text("Transactions Table"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]: self._data_transaction_table(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Holding Table"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]: self._data_holding_table(x, y)))
-                    account_menu.add_separator()
-                    account_menu.add_command(
-                        label=get_menu_text("Update Holding Market Price by Closing Price"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]:
-                                 self._data_update_holding_prices(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Update Portfolio Total Amount"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]:
-                                 self._update_holding_total_amount_portfolio(x, y)))
-                    account_menu.add_separator()
-                    account_menu.add_command(
-                        label=get_menu_text("Import Transactions"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]: self._import_transaction(x, y)))
-                    account_menu.add_command(
-                        label=get_menu_text("Check Transactions Pieces"),
-                        command=(lambda x=bank_name,
-                                 y=acc[KEY_ACC_IBAN]: self._transactions_pieces(x, y)))
-        return accounts_exist
-
-    def _create_bank_owner_account(self):
-        """
-        create  multiple bank_owner_account hierarchy as dicts
-        returns: dict : key--> bank_name:
-                            value/key--> owner:
-                                value --> list  accounts
-                                    list_item  --> dict account_data
-        """
-        bank_owner_account = {}
-        for bank_code in self.bank_names.keys():
-            accounts = self.mariadb.shelve_get_key(bank_code, KEY_ACCOUNTS)
-            account_product_names = []
-            if accounts:
-                for acc in accounts:
-                    account_product_names.append(acc[KEY_ACC_PRODUCT_NAME])
-                # all account names are different
-                if len(account_product_names) == len(set(account_product_names)):
-                    pass  # owner name not used in menu
-                else:
-                    owners = {}  # list of owner accounts
-                    if accounts:
-                        owners = {}  # list of owner accounts
-                        for acc in accounts:
-                            if acc[KEY_ACC_OWNER_NAME] is None:
-                                acc[KEY_ACC_OWNER_NAME] = bank_code
-                            owners[acc[KEY_ACC_OWNER_NAME]] = []
-                        for acc in accounts:
-                            if acc[KEY_ACC_OWNER_NAME] is None:
-                                acc[KEY_ACC_OWNER_NAME] = bank_code
-                            owners[acc[KEY_ACC_OWNER_NAME]
-                                   ] = owners[acc[KEY_ACC_OWNER_NAME]] + [acc]
-                    bank_owner_account[bank_code] = owners
-        return bank_owner_account
 
     def _data_holding_performance(self, bank_name, iban):
 
@@ -1454,10 +1463,10 @@ class BankenLedger(object):
             else:
                 select_holding_ibans = self.mariadb.select_table_distinct(TRANSACTION, DB_iban, period=period)
                 select_isin_transaction = []
-                for iban in select_holding_ibans:
-                    iban = iban[0]
+                for _iban in select_holding_ibans:
+                    _iban = _iban[0]
                     result = self.mariadb.get_transaction_overview(
-                        isin_code, period, iban, data_dict[FN_COST_METHOD])
+                        isin_code, period, _iban, data_dict[FN_COST_METHOD])
                     select_isin_transaction.extend(result)
             if select_isin_transaction:
                 title_period = '   '.join(
@@ -2662,4 +2671,3 @@ class BankenLedger(object):
         else:
             self.footer.set(
                 get_message(MESSAGE_TEXT, 'DATA_NO', LEDGER_DAILY_BALANCE.upper(), ''))
-

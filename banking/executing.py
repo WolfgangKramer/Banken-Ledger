@@ -2456,7 +2456,7 @@ class BankenLedger(object):
                 if self.mariadb.select_scalar(LEDGER_COA, DB_asset_accounting, account=account):
                     self.mariadb.execute_replace(
                         LEDGER_DAILY_BALANCE,
-                        {DB_account: account, DB_entry_date: to_date, DB_balance: balance}
+                        {DB_account: account, DB_entry_date: from_date, DB_balance: balance}
                         )
                 data.append({
                     DB_account: account,
@@ -2662,3 +2662,4 @@ class BankenLedger(object):
         else:
             self.footer.set(
                 get_message(MESSAGE_TEXT, 'DATA_NO', LEDGER_DAILY_BALANCE.upper(), ''))
+
